@@ -100,8 +100,9 @@
         <div><input type="file" id="file" accept=".csv,.txt,.xlsx,.xls" style="display:none" onchange="onFile(event)">
         <button class="primary" onclick="document.getElementById('file').click()">选择文件</button>
         <button class="ghost" onclick="loadDemo()">用示例数据（HT1860040 风格）</button></div>
-        <div class="hint">瘦单列：<code>单號,箱號,SKU,数量,毛重,净重,纸箱规格</code>（箱数可另列）。系统只解析这几列，其余信息从「商品库 / 主体信息维护」拉取。</div>
+        <div class="hint">列名自动识别（简繁体/带单位均可）：SKU列认 <code>款号/货号/商品编码/款式编码/SKU/style</code>；箱号认 <code>箱号/箱號/carton</code>；单号认 <code>订单号/单号/唛头号</code>。表头行自动探测，毛净重按箱号去重汇总。</div>
       </div>
+      <div id="parseDiag"></div>
       <div id="recTable" style="margin-top:14px"></div>
     </div>
   </div>
@@ -196,11 +197,18 @@ DB=load()||defaultDB();
 /* 商品库 = 大批量源数据(商品库数据.js, 不持久化) + 用户覆盖层(skuOverride, 持久化, 体积小)。
    getSku 优先取批量源，再用覆盖层合并，避免把 13019 行塞进 localStorage 撑爆配额。 */
 function getSku(s){
+  const key=String(s==null?'':s).trim();
+  if(!key) return undefined;
+  const eq=(a,b)=>String(a==null?'':a).trim().toUpperCase()===String(b==null?'':b).trim().toUpperCase();
   const bulk=window.__SKU_BULK__||[];
-  const base=bulk.length?bulk.find(x=>x&&x.sku===s):(DB.sku||[]).find(x=>x.sku===s);
-  const ov=DB.skuOverride&&DB.skuOverride[s];
+  const pool=bulk.length?bulk:(DB.sku||[]);
+  /* ① 商品编码(sku)精确 → ② 款式编码(style)回退：箱包不分码时款号即商品编码；鞋类多尺码取同款首条 */
+  let base=pool.find(x=>x&&eq(x.sku,key));
+  let byStyle=false;
+  if(!base){ base=pool.find(x=>x&&x.style&&eq(x.style,key)); byStyle=!!base; }
+  const ov=DB.skuOverride&&DB.skuOverride[key];
   if(!base&&!ov) return undefined;
-  return Object.assign({},base,ov);
+  return Object.assign({},base,ov,byStyle?{_byStyle:true}:{});
 }
 
 /* ============== 工具 ============== */
@@ -213,17 +221,118 @@ function sub(dateStr,n){const d=new Date(dateStr);d.setDate(d.getDate()-n);retur
 function opt(list,sel){return list.map(([v,t])=>`<option value="${v} ${t}" ${sel===v?'selected':''}>${v} ${t}</option>`).join('')}
 function optStr(list,sel){return list.map(s=>`<option ${sel===s?'selected':''}>${s}</option>`).join('')}
 
-/* ============== 文件解析 ============== */
+/* ============== 文件解析 v2：同义词字典 + 表头探测 + 引号安全 + 同箱去重 ============== */
 const DEMO_CSV=
 `单號,箱號,SKU,数量,毛重,净重,纸箱规格
 HT1860040,C01,BAG-001,28,19.6,17.2,1#
 HT1860040,C02,BAG-002,40,28.0,24.5,2#`;
-function parseCSV(txt){
-  const lines=txt.trim().split(/\r?\n/); let head=lines[0].split(',');
-  const idx=k=>head.findIndex(h=>h.trim().toLowerCase().includes(k));
-  const m={sku:idx('sku'),qty:idx('数量'),gw:idx('毛重'),nw:idx('净重'),box:idx('纸箱'),boxNo:idx('箱號'),no:idx('单號'),boxCnt:idx('箱数')};
-  return lines.slice(1).map(l=>{const c=l.split(',');const g=k=>{const i=m[k];return i>=0&&c[i]!=null?c[i].trim():'';};
-    return {sku:g('sku'),qty:+g('qty'),gw:+g('gw'),nw:+g('nw'),box:g('box'),boxNo:g('boxNo'),no:g('no'),boxCnt:g('boxCnt')?+g('boxCnt'):0};}).filter(r=>r.sku);
+
+/* 列同义词（数组顺序 = 处理优先级：先具体后宽泛，防止「箱号」抢走「纸箱规格」） */
+const PL_ALIAS=[
+  ['box',   ['纸箱规格','紙箱規格','箱规格','箱規格','纸箱','紙箱','箱型','箱规','箱規','cartonsize','箱子规格','外箱规格']],
+  ['boxCnt',['箱数','箱數','总箱数','總箱數','ctns','ctn','箱件数']],
+  ['boxNo', ['箱号','箱號','箱序号','箱序號','carton','cartonno','箱子编号','外箱号','外箱號','箱唛号','箱嘜號']],
+  ['sku',   ['sku','款号','款號','货号','貨號','商品编码','商品編碼','款式编码','款式編碼','style','styleno','物料编码','物料編碼','产品编码','產品編碼','商品编号','商品編號','型号','型號','itemcode','artno','商品条码']],
+  ['qty',   ['数量','數量','件数','件數','双数','雙數','对数','對數','qty','quantity','pcs','pairs','出货数量','出貨數量']],
+  ['gw',    ['毛重','毛重量','gw','grossweight','gross']],
+  ['nw',    ['净重','淨重','净重量','淨重量','nw','netweight']],
+  ['no',    ['订单号','訂單號','单号','單號','唛头号','嘜頭號','出货单号','出貨單號','orderno','pono','po','发票号','發票號']]
+];
+const PL_KEYS=['sku','qty','gw','nw','box','boxNo','no','boxCnt'];
+
+/* 表头归一：去括号注释(kg)、去空格/下划线/连字符/点/斜杠、小写 */
+function normHead(h){
+  return String(h==null?'':h)
+    .replace(/[（(【\[].*?[)）】\]]/g,'')
+    .replace(/[\s\u3000_\-\/\.：:*＊#]/g,'')
+    .toLowerCase();
+}
+function numv(v){
+  if(v==null) return 0;
+  const s=String(v).replace(/,/g,'').replace(/[^0-9.\-]/g,'');
+  const n=parseFloat(s); return isFinite(n)?n:0;
+}
+/* 列映射：精确命中优先，其次包含命中；已占用列不重复分配 */
+function mapColumns(head){
+  const H=(head||[]).map(normHead), used={}, m={};
+  PL_ALIAS.forEach(function(pair){
+    const key=pair[0], als=pair[1]; let idx=-1;
+    for(let a=0;a<als.length&&idx<0;a++){
+      for(let j=0;j<H.length;j++){ if(!used[j]&&H[j]&&H[j]===als[a]){ idx=j; break; } }
+    }
+    for(let a=0;a<als.length&&idx<0;a++){
+      if(als[a].length<2) continue;
+      for(let j=0;j<H.length;j++){ if(!used[j]&&H[j]&&H[j].indexOf(als[a])>=0){ idx=j; break; } }
+    }
+    if(idx>=0){ used[idx]=1; m[key]=idx; } else { m[key]=-1; }
+  });
+  return m;
+}
+/* 表头行探测：扫前 12 行，取「命中列最多 + 能认出SKU列」的那行 */
+function detectHeadRow(grid){
+  let best=-1,bs=-1;
+  const lim=Math.min(grid.length,12);
+  for(let i=0;i<lim;i++){
+    const r=grid[i]||[];
+    if(!r.filter(function(c){return String(c==null?'':c).trim();}).length) continue;
+    const m=mapColumns(r);
+    let sc=PL_KEYS.filter(function(k){return m[k]>=0;}).length;
+    if(m.sku>=0) sc+=3;
+    if(m.qty>=0) sc+=1;
+    if(sc>bs){bs=sc;best=i;}
+  }
+  return best<0?0:best;
+}
+/* 引号安全分列 */
+function splitLine(line,sep){
+  const out=[]; let cur='',q=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(q){ if(c==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else {q=false;} } else {cur+=c;} }
+    else if(c==='"'){ q=true; }
+    else if(c===sep){ out.push(cur); cur=''; }
+    else { cur+=c; }
+  }
+  out.push(cur); return out;
+}
+function csvToGrid(txt){
+  txt=String(txt||'').replace(/^\ufeff/,'');
+  const lines=txt.split(/\r?\n/).filter(function(l){return l.trim()!=='';});
+  if(!lines.length) return [];
+  const l0=lines[0];
+  const sep=(l0.split('\t').length>l0.split(',').length)?'\t':',';
+  return lines.map(function(l){return splitLine(l,sep).map(function(c){return c.trim();});});
+}
+/* 核心：二维数组 -> 明细行 */
+function parseGrid(grid,forceSku){
+  grid=(grid||[]).filter(function(r){return Array.isArray(r);});
+  const hr=detectHeadRow(grid);
+  const head=(grid[hr]||[]).map(function(c){return String(c==null?'':c).trim();});
+  const m=mapColumns(head);
+  if(forceSku!=null&&forceSku>=0) m.sku=forceSku;
+  const headKey=normHead(head[m.sku]||'');
+  const rows=[];
+  for(let i=hr+1;i<grid.length;i++){
+    const c=grid[i]||[];
+    const g=function(k){const j=m[k];return (j>=0&&c[j]!=null)?String(c[j]).trim():'';};
+    const sku=g('sku');
+    if(!sku) continue;
+    if(headKey&&normHead(sku)===headKey) continue;   /* 跳过重复表头行 */
+    rows.push({sku:sku,qty:numv(g('qty')),gw:numv(g('gw')),nw:numv(g('nw')),
+      box:g('box'),boxNo:g('boxNo'),no:g('no'),boxCnt:g('boxCnt')?numv(g('boxCnt')):0});
+  }
+  const missing=['sku','qty','gw','nw','box','boxNo','no'].filter(function(k){return m[k]<0;});
+  return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
+}
+/* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计 */
+function packSummary(items){
+  const seen=Object.create(null), boxes=[]; let gw=0,nw=0,conflict=0;
+  (items||[]).forEach(function(it,i){
+    const k=it.boxNo?('B:'+it.boxNo):('R:'+i);
+    if(seen[k]==null){ seen[k]={gw:+it.gw||0,nw:+it.nw||0}; boxes.push(k); gw+=(+it.gw||0); nw+=(+it.nw||0); }
+    else if(Math.abs((+it.gw||0)-seen[k].gw)>0.001){ conflict++; }
+  });
+  return {boxCount:boxes.length,totalGW:+gw.toFixed(3),totalNW:+nw.toFixed(3),conflict:conflict};
 }
 function ensureXLSX(cb){
   if(window.XLSX){cb();return;}
@@ -237,24 +346,93 @@ function onFile(e){const f=e.target.files[0];if(f)readFile(f);}
 function readFile(f){
   const name=f.name.toLowerCase();
   if(name.endsWith('.xlsx')||name.endsWith('.xls')){
-    ensureXLSX(()=>{const r=new FileReader();r.onload=ev=>{try{const wb=XLSX.read(ev.target.result,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1});const txt=rows.map(r=>r.join(',')).join('\n');ingest('来源:'+f.name+' | '+txt);}catch(err){alert('解析xlsx失败：'+err.message);}};r.readAsArrayBuffer(f);});
-  } else {const r=new FileReader();r.onload=()=>ingest('来源:'+f.name+' | '+r.result);r.readAsText(f);}
+    ensureXLSX(function(){
+      const r=new FileReader();
+      r.onload=function(ev){
+        try{
+          const wb=XLSX.read(ev.target.result,{type:'array'});
+          const ws=wb.Sheets[wb.SheetNames[0]];
+          const grid=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false,blankrows:false});
+          ingestGrid(f.name,grid);
+        }catch(err){alert('解析 xlsx 失败：'+err.message);}
+      };
+      r.readAsArrayBuffer(f);
+    });
+  } else {
+    const r=new FileReader();
+    r.onload=function(){
+      const t=String(r.result||'');
+      if(t.indexOf('\ufffd')>=0){   /* utf-8 读出乱码 -> 按 GBK 重读 */
+        const r2=new FileReader();
+        r2.onload=function(){ingestGrid(f.name,csvToGrid(String(r2.result||'')));};
+        try{ r2.readAsText(f,'gbk'); }catch(e){ ingestGrid(f.name,csvToGrid(t)); }
+        return;
+      }
+      ingestGrid(f.name,csvToGrid(t));
+    };
+    r.readAsText(f,'utf-8');
+  }
 }
-function loadDemo(){ingest('来源:示例HT1860040 | '+DEMO_CSV);}
-function ingest(meta){
-  const sep=meta.indexOf(' | '); const src=meta.slice(0,sep); const txt=meta.slice(sep+3);
-  const rows=parseCSV(txt);
-  if(!rows.length){alert('未解析到有效 SKU 行，请检查列名是否含 SKU/数量/毛重/净重');return;}
-  const rec={id:uid('R'),fileName:src.replace('来源:',''),at:new Date().toLocaleString(),items:rows,raw:rows};
+function loadDemo(){ingestGrid('示例HT1860040',csvToGrid(DEMO_CSV));}
+let PEND=null;
+function ingestGrid(src,grid,forceSku){
+  const r=parseGrid(grid,forceSku);
+  if(!r.rows.length){ PEND={src:src,grid:grid}; showDiag(r); return; }
+  const ps=packSummary(r.rows);
+  const rec={id:uid('R'),fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
+    sum:ps,head:r.head,missing:r.missing};
   DB.records.push(rec);DB.sel.rec=rec.id;save();renderRecords();
+  showOk(r,ps);
+}
+function diagEl(){return document.getElementById('parseDiag');}
+function clearDiag(){const el=diagEl();if(el)el.innerHTML='';}
+function headTable(r){
+  const rows=(r.preview||[]).map(function(row,i){
+    return '<tr>'+(row||[]).map(function(c){
+      return '<td style="max-width:110px;overflow:hidden;text-overflow:ellipsis">'+esc(String(c==null?'':c).slice(0,18))+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
+  return '<table style="font-size:12px">'+rows+'</table>';
+}
+function showDiag(r){
+  const el=diagEl();
+  if(!el){alert('未识别到 SKU 列，请检查表头');return;}
+  const opts=(r.head||[]).map(function(h,i){return '<option value="'+i+'">'+(i+1)+'. '+esc(h||'(空)')+'</option>';}).join('');
+  el.innerHTML='<div style="margin-top:12px;border:1px solid #a33;border-radius:8px;padding:12px;background:#2a1b1b">'
+    +'<b style="color:#ff8a8a">✗ 解析失败：识别不到 SKU 列</b>'
+    +'<div class="muted" style="margin:6px 0">识别到的表头（第 '+((r.headRow||0)+1)+' 行）：<code>'+esc((r.head||[]).join(' | '))+'</code></div>'
+    +'<div class="muted" style="margin:6px 0">缺失列：<b style="color:#ffb86b">'+esc((r.missing||[]).join(', ')||'无')+'</b></div>'
+    +'<div style="margin:8px 0">'+headTable(r)+'</div>'
+    +'<div style="margin-top:8px">手动指定 SKU 列：<select id="skuColSel" style="width:220px">'+opts+'</select> '
+    +'<button class="primary small" onclick="applySkuCol()">用这列重新解析</button> '
+    +'<button class="ghost small" onclick="clearDiag()">关闭</button></div></div>';
+}
+function applySkuCol(){
+  if(!PEND){clearDiag();return;}
+  const v=+document.getElementById('skuColSel').value;
+  ingestGrid(PEND.src,PEND.grid,v);
+}
+function showOk(r,ps){
+  const el=diagEl(); if(!el) return;
+  const warn=[];
+  if((r.missing||[]).indexOf('boxNo')>=0) warn.push('无箱号列 → 毛净重按行汇总');
+  if((r.missing||[]).indexOf('gw')>=0) warn.push('无毛重列');
+  if((r.missing||[]).indexOf('nw')>=0) warn.push('无净重列');
+  if(ps.conflict) warn.push('同一箱号出现 '+ps.conflict+' 处重量不一致（已取首行）');
+  el.innerHTML='<div style="margin-top:12px;border:1px solid '+(warn.length?'#7a6320':'#2c5d3f')+';border-radius:8px;padding:10px 12px;background:'+(warn.length?'#2a2416':'#16241c')+'">'
+    +'<b style="color:'+(warn.length?'#ffd479':'#7ee2a8')+'">'+(warn.length?'⚠ 解析完成（有提示）':'✓ 解析成功')+'</b> '
+    +'<span class="muted">明细 '+r.rows.length+' 行 · 箱数 '+ps.boxCount+' · 毛重 '+ps.totalGW+'kg · 净重 '+ps.totalNW+'kg</span>'
+    +(warn.length?'<div class="muted" style="margin-top:6px">'+esc(warn.join('；'))+'</div>':'')
+    +'<div class="muted" style="margin-top:6px">表头：<code>'+esc((r.head||[]).join(' | '))+'</code></div></div>';
 }
 function renderRecords(){
   document.getElementById('recCount').textContent=DB.records.length+' 条记录';
   if(!DB.records.length){document.getElementById('recTable').innerHTML='<p class="muted">暂无记录，请上传装箱单。</p>';return;}
-  let h='<table><thead><tr><th></th><th>记录ID</th><th>文件名</th><th>SKU数</th><th>总件数</th><th>上传时间</th><th>操作</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th></th><th>记录ID</th><th>文件名</th><th>明细行</th><th>总件数</th><th>箱数</th><th>总毛重</th><th>总净重</th><th>上传时间</th><th>操作</th></tr></thead><tbody>';
   DB.records.forEach(r=>{const n=r.items.length,q=r.items.reduce((a,b)=>a+(+b.qty||0),0);
+    const ps=r.sum||packSummary(r.items);
     h+=`<tr class="${DB.sel.rec===r.id?'sel':''}"><td><input type="checkbox" ${DB.sel.rec===r.id?'checked':''} onchange="pickRec('${r.id}')"></td>
-      <td>${r.id}</td><td>${r.fileName}</td><td>${n}</td><td>${q}</td><td class="muted">${r.at}</td>
+      <td>${r.id}</td><td>${r.fileName}</td><td>${n}</td><td>${q}</td><td>${ps.boxCount}</td><td>${ps.totalGW}</td><td>${ps.totalNW}</td><td class="muted">${r.at}</td>
       <td><button onclick="genOrder('${r.id}')">生单→</button> <button class="ghost small" onclick="delRec('${r.id}')">删</button></td></tr>`;});
   h+='</tbody></table>';
   document.getElementById('recTable').innerHTML=h;
@@ -297,7 +475,7 @@ function genDraft(ordId){
   const e0=enjoysOf(o.destCountry);
   const lines=o.items.map(it=>{const s=getSku(it.sku)||{};
     return {sku:it.sku,name:s.cn||'⚠未匹配商品库',en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:s.brandType||'',enjoys:e0,
-      decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,factory:s.factory||'⚠未匹配',matched:!!s.cn};});
+      decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',factory:s.factory||'⚠未匹配',matched:!!s.cn};});
   const dft={id:uid('D'),ordId,locked,
     header:{shipper:DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
       tradeMode:'0110 一般贸易',transMode:'2 水路运输',tradeTerm:'FOB',port:'',levy:'1 照章征税',
@@ -445,8 +623,9 @@ function buildData(doc){
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base)},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
     totalAmount:lines.reduce((a,l)=>a+(+l.decl)*(+l.qty),0).toFixed(2),
-    totalGW:lines.reduce((a,l)=>a+(+l.gw||0),0).toFixed(2),
-    totalNW:lines.reduce((a,l)=>a+(+l.nw||0),0).toFixed(2),
+    totalGW:packSummary(lines).totalGW.toFixed(2),
+    totalNW:packSummary(lines).totalNW.toFixed(2),
+    boxCount:packSummary(lines).boxCount,
     contractCount:contracts.length};
 }
 /* 模板引擎（递归计数，正确处理嵌套 each + 注入 _i 序号） */
