@@ -218,7 +218,11 @@ const uid=p=>p+Date.now().toString().slice(-6)+Math.floor(Math.random()*90+10);
 function today(){const d=new Date();return d.toISOString().slice(0,10);}
 function fmt(d){return d;}
 function sub(dateStr,n){const d=new Date(dateStr);d.setDate(d.getDate()-n);return d.toISOString().slice(0,10);}
-function opt(list,sel){return list.map(([v,t])=>`<option value="${v} ${t}" ${sel===v?'selected':''}>${v} ${t}</option>`).join('')}
+/* selected 判定必须兼容两种存法：全串"USA 美国"(下拉回写值) 与 纯代码"USA"(调用方已split)。
+   原实现只比 sel===v，导致回写全串后重渲染选不中、浏览器回落到第一项。 */
+function opt(list,sel){const s=String(sel==null?'':sel).trim();if(!s)return list.map(([v,t])=>`<option value="${v} ${t}">${v} ${t}</option>`).join('');
+  const code=s.split(' ')[0];
+  return list.map(([v,t])=>{const val=v+' '+t;return `<option value="${val}" ${(s===val||code===v)?'selected':''}>${val}</option>`;}).join('')}
 function optStr(list,sel){return list.map(s=>`<option ${sel===s?'selected':''}>${s}</option>`).join('')}
 
 /* ============== 文件解析 v2：同义词字典 + 表头探测 + 引号安全 + 同箱去重 ============== */
@@ -454,7 +458,7 @@ function renderOrders(){
     h+=`<tr class="${DB.sel.ord===o.id?'sel':''}">
       <td><input type="checkbox" ${DB.sel.ord===o.id?'checked':''} onchange="pickOrd('${o.id}')"></td>
       <td>${o.id}</td><td class="muted">${o.recId}</td>
-      <td><select class="req" style="width:120px" onchange="setOrd('${o.id}','destCountry',this.value)">${opt(CODE.country,o.destCountry)}</select></td>
+      <td><select class="req" style="width:120px" onchange="setOrd('${o.id}','destCountry',this.value)"><option value="">选目的国</option>${opt(CODE.country,o.destCountry)}</select></td>
       <td><select class="req" style="width:100px" onchange="setOrd('${o.id}','currency',this.value)"><option value="">选币种</option>${optStr(DB.parties.currencyList,o.currency)}</select></td>
       <td><select style="width:100px" onchange="setOrd('${o.id}','tradeCountry',this.value)"><option value="">买方地</option>${opt(CODE.country,o.tradeCountry)}</select></td>
       <td><select style="width:100px" onchange="setOrd('${o.id}','arrivalCountry',this.value)"><option value="">货物到达</option>${opt(CODE.country,o.arrivalCountry)}</select></td>
