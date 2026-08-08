@@ -151,6 +151,8 @@
   <div class="bf"><button class="primary" onclick="downloadCurrent()">下载此单据</button></div>
 </div></div>
 
+<!-- 大批量商品库源数据（由 build_sku_data.py 生成；不存在则回退种子数据，不报错） -->
+<script src="商品库数据.js"></script>
 <script>
 /* ============== 持久化数据层 ============== */
 const LS_KEY='exp3_data_v1';
@@ -159,9 +161,20 @@ const CODE={
   trans:    [['2','水路运输'],['3','航空运输'],['4','铁路运输'],['5','邮递运输'],['W','物流货物'],['Y','过境运输']],
   tradeTerm:[['FOB','FOB 船上交货'],['CIF','CIF 成本加保险费运费'],['CFR','CFR 成本加运费'],['EXW','EXW 工厂交货'],['C&F','C&F 成本加运费']],
   port:     [['5304','东莞海关'],['5141','广州机场海关'],['5300','深圳海关'],['2225','黄埔海关'],['2900','上海海关'],['0100','北京海关'],['3700','青岛海关'],['3300','宁波海关'],['5100','广州海关']],
-  country:  [['CHN','中国'],['DEU','德国'],['USA','美国'],['JPN','日本'],['GBR','英国'],['FRA','法国'],['HKG','中国香港'],['NLD','荷兰'],['POL','波兰'],['AUS','澳大利亚']],
+  country:  [['CHN','中国'],['DEU','德国'],['USA','美国'],['JPN','日本'],['GBR','英国'],['FRA','法国'],['HKG','中国香港'],['NLD','荷兰'],['POL','波兰'],['AUS','澳大利亚'],
+             ['KOR','韩国'],['NZL','新西兰'],['CHL','智利'],['CHE','瑞士'],['PAK','巴基斯坦'],['PER','秘鲁'],['CRI','哥斯达黎加'],['ISL','冰岛'],['GEO','格鲁吉亚'],['MUS','毛里求斯'],
+             ['VNM','越南'],['THA','泰国'],['MYS','马来西亚'],['IDN','印度尼西亚'],['PHL','菲律宾'],['SGP','新加坡'],['KHM','柬埔寨'],['LAO','老挝'],['MMR','缅甸'],['BRN','文莱'],
+             ['CAN','加拿大'],['MEX','墨西哥'],['RUS','俄罗斯'],['TUR','土耳其'],['IND','印度'],['BRA','巴西'],['ARG','阿根廷'],['SAU','沙特阿拉伯'],['ARE','阿联酋'],['ISR','以色列'],['EGY','埃及'],['ZAF','南非'],['TWN','中国台湾']],
   levy:     [['1','照章征税']]
 };
+/* 出口享惠国别映射：目的国 → 0不享惠 / 1享惠(RCEP等协定) / 2不能确定。
+   本质按"最终目的国"判定，不是 SKU 属性，故不存商品库、由订单目的国派生。 */
+const COUNTRY_PREF={
+  JPN:'1',KOR:'1',AUS:'1',NZL:'1',CHL:'1',CHE:'1',PAK:'1',PER:'1',CRI:'1',ISL:'1',GEO:'1',MUS:'1',
+  VNM:'1',THA:'1',MYS:'1',IDN:'1',PHL:'1',SGP:'1',KHM:'1',LAO:'1',MMR:'1',BRN:'1',
+  USA:'0',DEU:'0',GBR:'0',FRA:'0',NLD:'0',POL:'0',ITA:'0',ESP:'0',CAN:'0',MEX:'0',RUS:'0',TUR:'0',IND:'0',BRA:'0',ARG:'0',SAU:'0',ARE:'0',ISR:'0',EGY:'0',ZAF:'0',TWN:'2'
+};
+function enjoysOf(code){const c=(code||'').split(' ')[0];return COUNTRY_PREF[c]!==undefined?COUNTRY_PREF[c]:'2';}
 function defaultDB(){
   return {
     parties:{shippers:['广州革瓦拉贸易有限公司'], consignees:['Leading Trade One Limited'], currencyList:['USD 美元','CNY 人民币','EUR 欧元']},
@@ -172,18 +185,27 @@ function defaultDB(){
     price:{rate:0.20, exch:7.1},
     templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null},
     records:[],orders:[],drafts:[],docs:[],
+    skuOverride:{},
     sel:{rec:null,ord:null,dft:null}
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties)return d;}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败：'+e.message);}}
 DB=load()||defaultDB();
+/* 商品库 = 大批量源数据(商品库数据.js, 不持久化) + 用户覆盖层(skuOverride, 持久化, 体积小)。
+   getSku 优先取批量源，再用覆盖层合并，避免把 13019 行塞进 localStorage 撑爆配额。 */
+function getSku(s){
+  const bulk=window.__SKU_BULK__||[];
+  const base=bulk.length?bulk.find(x=>x&&x.sku===s):(DB.sku||[]).find(x=>x.sku===s);
+  const ov=DB.skuOverride&&DB.skuOverride[s];
+  if(!base&&!ov) return undefined;
+  return Object.assign({},base,ov);
+}
 
 /* ============== 工具 ============== */
 const PRICE_RATE=()=>DB.price.rate;
 const declPrice=c=>+(c.noTax/(1-PRICE_RATE())).toFixed(3);
-const getSku=s=>DB.sku.find(x=>x.sku===s);
 const uid=p=>p+Date.now().toString().slice(-6)+Math.floor(Math.random()*90+10);
 function today(){const d=new Date();return d.toISOString().slice(0,10);}
 function fmt(d){return d;}
@@ -272,8 +294,9 @@ function setOrd(id,k,v){const o=DB.orders.find(x=>x.id===id);if(o){o[k]=v;save()
 function genDraft(ordId){
   const o=DB.orders.find(x=>x.id===ordId);if(!o)return;
   const locked=!(o.destCountry&&o.currency);
+  const e0=enjoysOf(o.destCountry);
   const lines=o.items.map(it=>{const s=getSku(it.sku)||{};
-    return {sku:it.sku,name:s.cn||'⚠未匹配商品库',en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:s.brandType||'',enjoys:s.enjoys||'',
+    return {sku:it.sku,name:s.cn||'⚠未匹配商品库',en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:s.brandType||'',enjoys:e0,
       decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,factory:s.factory||'⚠未匹配',matched:!!s.cn};});
   const dft={id:uid('D'),ordId,locked,
     header:{shipper:DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
@@ -355,8 +378,12 @@ function runMonitor(did){
   add('A','A1','表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)',a1?'OK':'BLOCK',!!a1,'缺表头必填项');
   add('A','A2','贸易国≠运抵国(转售场景应区分)',(H.tradeCountry&&H.arrivalCountry&&H.tradeCountry===H.arrivalCountry)?'WARN':'OK',!(H.tradeCountry&&H.arrivalCountry&&H.tradeCountry===H.arrivalCountry),'贸易国与运抵国相同，请确认是否转售');
   add('A','A3','成交方式与运费/保费一致(非FOB需核对)',H.tradeTerm==='FOB'?'OK':'WARN',H.tradeTerm==='FOB','非FOB，请确认运费/保费栏');
-  const a4=L.every(l=>l.hs&&l.brandType&&l.enjoys!=='');
-  add('A','A4','申报要素无空值(品牌类型/出口享惠/HS齐全)',a4?'OK':'WARN',a4,'存在要素空值，待补');
+  const a4=L.every(l=>l.hs&&l.brandType);
+  add('A','A4','申报要素无空值(品牌类型/HS齐全)',a4?'OK':'WARN',a4,'存在要素空值，待补');
+  const destCode=(H.destCountry||'').split(' ')[0];
+  const ePref=COUNTRY_PREF[destCode];
+  const a12bad = ePref==='1' ? L.some(l=>l.enjoys!=='1') : (ePref==='0' ? L.some(l=>l.enjoys==='1') : false);
+  add('A','A12','出口享惠与目的国协定一致',a12bad?'WARN':'OK',!a12bad,a12bad?('目的国 '+destCode+' 应享惠='+ePref+'，但存在矛盾'):'一致');
   const a5=L.every(l=>/^\d{10}$/.test(l.hs));
   add('A','A5','HS为10位商品编号',a5?'OK':'BLOCK',a5,'HS非10位');
   add('A','A6','法定计量单位与申报单位匹配','OK','OK','默认计量单位「个」，如需其他单位请人工确认');
@@ -515,8 +542,35 @@ function printAll(){const doc=DB.docs[DB.docs.length-1];let all='';doc.out.forEa
   const w=window.open('');w.document.write('<html lang="zh-CN"><head><meta charset="UTF-8"><title>整套单据</title></head><body>'+all+'</body></html>');w.document.close();setTimeout(()=>w.print(),400);}
 
 /* ============== 设置中心 ============== */
-const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'},{k:'price',n:'售价公式'},{k:'mon',n:'监控规则'},{k:'tmpl',n:'模板管理'}];
+const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'},{k:'pref',n:'享惠国别配置'},{k:'price',n:'售价公式'},{k:'mon',n:'监控规则'},{k:'tmpl',n:'模板管理'}];
 let curTab='party';
+let skuPage=1, skuSize=200;
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function skuList(){const b=window.__SKU_BULK__||[];if(b.length){const have=new Set(b.map(x=>x.sku));return b.concat((DB.sku||[]).filter(x=>!have.has(x.sku)));}return DB.sku||[];}
+function skuMerged(sku){const b=skuList().find(x=>x&&x.sku===sku);const ov=DB.skuOverride&&DB.skuOverride[sku];return Object.assign({},b,ov);}
+function setSkuOv(sku,k,v){if(!DB.skuOverride)DB.skuOverride={};DB.skuOverride[sku]=Object.assign({},DB.skuOverride[sku],{[k]:v});save();renderSetBody();}
+function importBulk(){const el=document.getElementById('bulkFile');if(el)el.click();}
+function normBulk(arr){
+  if(!arr.length) return arr;
+  const k0=Object.keys(arr[0]);
+  const hasCn=k0.some(k=>k&&(k.includes('款式')||k.includes('中文品名')||k.includes('海关编码')));
+  if(!hasCn) return arr; // 已是标准 schema
+  const pick=(d,...keys)=>{for(const k of d){if(k&&keys.some(kw=>k.includes(kw)))return d[k];}return null;};
+  const norm=v=>v==null?'':String(v).trim();
+  return arr.map(r=>{const img=r._img_file;return {
+    sku:norm(pick(r,'商品编码'))||norm(pick(r,'款式编码'))||norm(pick(r,'SKU')),
+    style:norm(pick(r,'款式编码')),prodCode:norm(pick(r,'商品编码')),
+    nameFull:norm(pick(r,'商品名称')),nameShort:norm(pick(r,'商品简称')),
+    cn:norm(pick(r,'中文品名')),en:norm(pick(r,'英文品名')),
+    usd:norm(pick(r,'销售单价')),noTax:norm(pick(r,'不含税'))||norm(pick(r,'采购单价')),
+    tax:norm(pick(r,'含税')),gw:norm(pick(r,'净重')),
+    hs:norm(pick(r,'海关编码')),unit:norm(pick(r,'计量单位')),
+    brand:norm(pick(r,'品牌')),mat:norm(pick(r,'材质')),soleMat:norm(pick(r,'鞋底')),
+    use:norm(pick(r,'用途')),img:img?('商品图片/'+img.split('/').pop()):'',
+    cat:norm(pick(r,'分类')),factory:'',brandType:''};}).filter(x=>x.sku);
+}
+function onBulkFile(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const arr=JSON.parse(r.result);if(Array.isArray(arr)){const normed=normBulk(arr);window.__SKU_BULK__=normed;skuPage=1;renderSetBody();alert('已导入 '+normed.length+' 行商品库（本会话生效；刷新后如需持久，请用 build_sku_data.py 烤入）');}else alert('JSON 应为数组');}catch(err){alert('解析失败：'+err.message);}};r.readAsText(f);}
+function onPrefFile(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);Object.assign(COUNTRY_PREF,o);renderSetBody();alert('已更新国别映射');}catch(err){alert('解析失败：'+err.message);}};r.readAsText(f);}
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('mask').classList.add('open');renderTabs();}
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('mask').classList.remove('open');}
 function renderTabs(){document.getElementById('setTabs').innerHTML=TABS.map(t=>`<button class="${curTab===t.k?'on':''}" onclick="curTab='${t.k}';renderTabs()">${t.n}</button>`).join('');renderSetBody();}
@@ -534,24 +588,38 @@ function renderSetBody(){
       <button onclick="addParty('consignee')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境外收货人</button>
       <div class="note">生产销售单位 默认=<b>境内发货人</b>（铁律，不可改）。贸易方式/运输方式/成交方式/出口关别 <b>在「生成草单」步骤下拉选</b>；征免固定「照章征税」。币种在订单双红线中设定。</div>`;
   } else if(curTab==='sku'){
-    h='<p class="muted">商品库（以 HS Code 为核心），字段来自「商品信息表」。可直接编辑，或批量上传：</p>';
-    h+=`<div class="toolbar"><button class="small" onclick="upSkuFile()">⬆ 上传商品信息表(CSV/XLSX)</button><button class="small" onclick="addSkuRow()">+ 新增行</button><input type="file" id="skuFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="onSkuFile(event)"></div>`;
-    h+='<table><thead><tr><th>款号</th><th>SKU</th><th>中文品名</th><th>英文品名</th><th>不含税价</th><th>含税价</th><th>工厂</th><th>HS</th><th>材质</th><th>品牌类型</th><th>出口享惠</th><th>申报价(算)</th><th></th></tr></thead><tbody>';
-    DB.sku.forEach((s,i)=>{h+=`<tr>
-      <td><input style="width:80px" value="${s.style||''}" onchange="setSku(${i},'style',this.value)"></td>
-      <td><input style="width:80px" value="${s.sku}" onchange="setSku(${i},'sku',this.value)"></td>
-      <td><input style="width:90px" value="${s.cn}" onchange="setSku(${i},'cn',this.value)"></td>
-      <td><input style="width:90px" value="${s.en||''}" onchange="setSku(${i},'en',this.value)"></td>
-      <td><input style="width:70px" value="${s.noTax}" onchange="setSku(${i},'noTax',this.value)"></td>
-      <td><input style="width:70px" value="${s.tax||''}" onchange="setSku(${i},'tax',this.value)"></td>
-      <td><input style="width:80px" value="${s.factory||''}" onchange="setSku(${i},'factory',this.value)"></td>
-      <td><input style="width:90px" value="${s.hs}" onchange="setSku(${i},'hs',this.value)"></td>
-      <td><input style="width:60px" value="${s.mat||''}" onchange="setSku(${i},'mat',this.value)"></td>
-      <td><input style="width:90px" value="${s.brandType||''}" onchange="setSku(${i},'brandType',this.value)"></td>
-      <td><input style="width:60px" value="${s.enjoys||''}" onchange="setSku(${i},'enjoys',this.value)"></td>
-      <td>${declPrice(s)}</td>
-      <td><button class="ghost small" onclick="delSkuRow(${i})">×</button></td></tr>`;});
-    h+='</tbody></table><div class="note">申报价由定价公式自动算（不含税÷(1−毛利率)）。同 HS 多款包，品牌类型/出口享惠逐行填；归类弹窗可「写回」更新此处。</div>';
+    const list=skuList();
+    const total=list.length;
+    const pages=Math.max(1,Math.ceil(total/skuSize));
+    if(skuPage>pages)skuPage=pages;
+    const start=(skuPage-1)*skuSize;
+    const slice=list.slice(start,start+skuSize);
+    h='<p class="muted">商品库 SKU（含 HS）—— 原封不动 18 源字段 + 工厂/品牌类型 2 维护字段。出口享惠由目的国自动派生，申报价生成时算，均不落表。图片存「商品图片/」本地路径，做发票时模板写 &lt;img src="{{img}}"&gt; 复用同一张图。</p>';
+    h+=`<div class="toolbar"><button class="small" onclick="upSkuFile()">⬆ 上传商品信息表(CSV/XLSX)</button>
+      <button class="small" onclick="importBulk()">⬆ 导入商品库JSON</button>
+      <button class="small" onclick="addSkuRow()">+ 新增行</button>
+      <span style="flex:1"></span>
+      <label class="muted">每页</label><select class="small" onchange="skuSize=+this.value;skuPage=1;renderSetBody()"><option ${skuSize===100?'selected':''}>100</option><option ${skuSize===200?'selected':''}>200</option><option ${skuSize===500?'selected':''}>500</option></select>
+      <button class="small" onclick="if(skuPage>1){skuPage--;renderSetBody()}">上一页</button>
+      <button class="small" onclick="if(skuPage<pages){skuPage++;renderSetBody()}">下一页</button>
+      <span class="muted">第 ${skuPage}/${pages} 页（${start+1}–${Math.min(start+skuSize,total)} / 共 ${total} 行）</span>
+      <input type="file" id="skuFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="onSkuFile(event)">
+      <input type="file" id="bulkFile" accept=".json" style="display:none" onchange="onBulkFile(event)"></div>`;
+    h+='<table><thead><tr><th>款式编码</th><th>SKU</th><th>商品名称</th><th>商品简称</th><th>中文品名</th><th>英文品名</th><th>销售单价USD</th><th>不含税价CNY</th><th>含税价CNY</th><th>净重kg</th><th>海关编码</th><th>计量单位</th><th>品牌</th><th>材质</th><th>鞋底材质</th><th>用途</th><th>图片</th><th>分类</th><th>工厂(维护)</th><th>品牌类型(维护)</th></tr></thead><tbody>';
+    slice.forEach(s=>{const m=skuMerged(s.sku);
+      const img=m.img?`<a href="${m.img}" target="_blank" style="color:#7fd1ff">${esc(m.img.split('/').pop())}</a>`:'<span class="muted">—</span>';
+      h+=`<tr>
+      <td class="muted">${esc(m.style)}</td><td><b>${esc(m.sku)}</b></td><td class="muted">${esc(m.nameFull)}</td><td class="muted">${esc(m.nameShort)}</td>
+      <td>${esc(m.cn)}</td><td class="muted">${esc(m.en)}</td><td class="muted">${esc(m.usd)}</td><td>${esc(m.noTax)}</td><td class="muted">${esc(m.tax)}</td>
+      <td class="muted">${esc(m.gw)}</td><td>${esc(m.hs)}</td><td class="muted">${esc(m.unit)}</td><td class="muted">${esc(m.brand)}</td><td>${esc(m.mat)}</td>
+      <td class="muted">${esc(m.soleMat)}</td><td class="muted">${esc(m.use)}</td><td>${img}</td><td class="muted">${esc(m.cat)}</td>
+      <td><input style="width:80px" value="${esc(m.factory)}" onchange="setSkuOv('${esc(m.sku)}','factory',this.value)"></td>
+      <td><input style="width:90px" value="${esc(m.brandType)}" onchange="setSkuOv('${esc(m.sku)}','brandType',this.value)"></td></tr>`;});
+    h+='</tbody></table><div class="note">源字段只读（来自商品信息表）；仅「工厂 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
+  } else if(curTab==='pref'){
+    h='<p class="muted">出口享惠国别配置：按「最终目的国」自动判定 0不享惠 / 1享惠(RCEP等自贸协定) / 2不能确定。生成草单时系统据此自动填规格型号的出口享惠段，一般无需改动。</p><div class="toolbar"><input type="file" id="prefFile" accept=".json" style="display:none" onchange="onPrefFile(event)"><button class="small" onclick="document.getElementById('prefFile').click()">⬆ 导入国别映射JSON</button></div><table><thead><tr><th>目的国</th><th>出口享惠</th></tr></thead><tbody>';
+    Object.keys(COUNTRY_PREF).forEach(c=>{h+=`<tr><td>${c}</td><td><select class="small" onchange="COUNTRY_PREF['${c}']=this.value;renderSetBody()"><option value="0" ${COUNTRY_PREF[c]==='0'?'selected':''}>0 不享惠</option><option value="1" ${COUNTRY_PREF[c]==='1'?'selected':''}>1 享惠</option><option value="2" ${COUNTRY_PREF[c]==='2'?'selected':''}>2 不能确定</option></select></td></tr>`;});
+    h+='</tbody></table>';
   } else if(curTab==='price'){
     h=`<div class="row"><div class="field"><label>毛利率（默认 0.20）</label><input value="${DB.price.rate}" onchange="DB.price.rate=+this.value;save();renderSetBody();renderDrafts();"></div>
       <div class="field"><label>美元汇率（换汇成本核用）</label><input value="${DB.price.exch}" onchange="DB.price.exch=+this.value;save();"></div></div>
@@ -559,7 +627,7 @@ function renderSetBody(){
   } else if(curTab==='mon'){
     h='<p class="muted">监控规则库（生成时后台静默跑，分 <span class="badge bad">BLOCK</span> 阻断 / <span class="badge warn">WARN</span> 提示）。仅两大类，覆盖你要求的两套合规：</p>';
     h+='<h4 style="margin:12px 0 6px">A · 报关单填制规范</h4>';
-    ['A1 表头必填项齐全','A2 贸易国≠运抵国(转售区分)','A3 成交方式与运费保费一致','A4 申报要素无空值','A5 HS 10位且与品名材质一致','A6 法定计量单位匹配','A7 单价×数量=总价','A8 毛重≥净重','A9 币制与发票一致','A10 生产销售单位=发货人(铁律)','A11 归类归并正确'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
+    ['A1 表头必填项齐全','A2 贸易国≠运抵国(转售区分)','A3 成交方式与运费保费一致','A4 申报要素无空值','A5 HS 10位且与品名材质一致','A6 法定计量单位匹配','A7 单价×数量=总价','A8 毛重≥净重','A9 币制与发票一致','A10 生产销售单位=发货人(铁律)','A11 归类归并正确','A12 出口享惠与目的国协定一致'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
     h+='<h4 style="margin:12px 0 6px">B · 国家出口退税政策</h4>';
     ['B1 票流一致(待进项发票)','B2 应退=不含税×13% 计算正确','B3 供货企业具退税资格','B4 换汇成本合理','B5 退税率与HS匹配','B6 收汇完成','B7 分项核算','B8 申报期内','B9 申报价>成本(防倒挂)'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
     h+='<div class="note">B1/B6 需外部凭证（进项发票/收汇水单）核对，系统在监控中标记「待补」；其余规则实时校验数据。</div>';
@@ -573,7 +641,7 @@ function renderSetBody(){
   b.innerHTML=h;
 }
 function setSku(i,k,v){if(k==='noTax'||k==='tax')v=+v;DB.sku[i][k]=v;save();}
-function addSkuRow(){DB.sku.push({sku:'NEW-'+DB.sku.length,style:'',cn:'',en:'',noTax:0,tax:0,factory:'',hs:'',mat:'',brandType:'境内自主品牌',enjoys:'0'});save();renderSetBody();}
+function addSkuRow(){DB.sku.push({sku:'NEW-'+Date.now().toString().slice(-5),style:'',prodCode:'',nameFull:'',nameShort:'',cn:'',en:'',usd:'',noTax:0,tax:0,gw:'',hs:'',unit:'',brand:'',mat:'',soleMat:'',use:'',img:'',cat:'',factory:'',brandType:'境内自主品牌'});save();renderSetBody();}
 function delSkuRow(i){DB.sku.splice(i,1);save();renderSetBody();}
 function upSkuFile(){document.getElementById('skuFile').click();}
 function onSkuFile(e){const f=e.target.files[0];if(!f)return;const name=f.name.toLowerCase();
