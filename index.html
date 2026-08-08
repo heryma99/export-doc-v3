@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>出口单证一体化 V3 · 正式版</title>
+<style>
+  :root{--bg:#0e1116;--panel:#161b22;--panel2:#1c232d;--line:#2a323d;--txt:#e6edf3;--mut:#8b97a6;--acc:#388bfd;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--chip:#22304a;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);font-size:13px;line-height:1.5}
+  header{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;gap:12px}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  header .sub{color:var(--mut);font-size:12px}
+  header .spacer{flex:1}
+  button{font-family:inherit;font-size:12px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);padding:6px 12px;border-radius:6px;cursor:pointer}
+  button:hover{border-color:var(--acc)}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+  button.primary:disabled{background:#243044;border-color:var(--line);color:var(--mut);cursor:not-allowed}
+  button.ghost{background:transparent}
+  .wrap{max-width:1180px;margin:0 auto;padding:16px}
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:16px;overflow:hidden}
+  .stage>.hd{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .stage>.hd .num{width:22px;height:22px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+  .stage>.hd h2{font-size:14px;margin:0;font-weight:600}
+  .stage>.hd .tag{margin-left:auto;font-size:11px;color:var(--mut)}
+  .stage>.bd{padding:16px}
+  .upload{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:34px;border:2px dashed var(--line);border-radius:10px;background:var(--panel2);text-align:center}
+  .upload.drag{border-color:var(--acc);background:#10243d}
+  .upload .big{font-size:15px;font-weight:600}
+  .upload .hint{color:var(--mut);font-size:12px;max-width:560px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left}
+  th{background:var(--panel2);color:var(--mut);font-weight:600;white-space:nowrap}
+  tr.sel{background:#10243d}
+  input,select{font-family:inherit;font-size:12px;background:var(--bg);border:1px solid var(--line);color:var(--txt);padding:5px 7px;border-radius:5px;width:100%}
+  input:focus,select:focus{outline:none;border-color:var(--acc)}
+  input.req{border-color:var(--warn)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .field{flex:1;min-width:150px}
+  .field label{display:block;color:var(--mut);font-size:11px;margin-bottom:3px}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:600px;max-width:94vw;background:var(--panel);border-left:1px solid var(--line);z-index:50;transform:translateX(100%);transition:transform .22s;display:flex;flex-direction:column}
+  .drawer.open{transform:translateX(0)}
+  .drawer .dh{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .drawer .dh h3{margin:0;font-size:14px}
+  .tabs{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel2);overflow:auto}
+  .tabs button{padding:5px 10px;border-radius:5px;white-space:nowrap}
+  .tabs button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+  .drawer .db{flex:1;overflow:auto;padding:14px}
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40;display:none}
+  .mask.open{display:block}
+  .badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;border:1px solid var(--line)}
+  .badge.ok{color:var(--ok);border-color:var(--ok)}
+  .badge.warn{color:var(--warn);border-color:var(--warn)}
+  .badge.bad{color:var(--bad);border-color:var(--bad)}
+  .monitor{margin-top:12px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .monitor .mh{padding:8px 12px;background:var(--panel2);font-weight:600;display:flex;align-items:center;gap:8px}
+  .mline{padding:6px 12px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-start}
+  .mline .ic{font-weight:700}
+  .tmpl{display:flex;gap:10px;flex-wrap:wrap}
+  .tcard{flex:1;min-width:160px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--panel2)}
+  .tcard h4{margin:0 0 6px;font-size:13px}
+  .tcard .st{font-size:11px;color:var(--mut)}
+  .tcard .ops{display:flex;gap:6px;margin-top:8px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:none;align-items:center;justify-content:center}
+  .modal.open{display:flex}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;width:600px;max-width:94vw;max-height:86vh;overflow:auto}
+  .modal .bh{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+  .modal .bh h3{margin:0;font-size:14px}
+  .modal .bb{padding:16px}
+  .modal .bf{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+  .muted{color:var(--mut)}
+  .pill{display:inline-block;background:var(--chip);border-radius:5px;padding:1px 7px;font-size:11px;margin:2px}
+  .note{background:#10243d;border:1px solid #1d3a5c;border-radius:7px;padding:9px 12px;font-size:12px;color:#bcd4f0;margin:10px 0}
+  .seq{font-size:11px;color:var(--mut);margin-top:6px}
+  .docout{border:1px solid var(--line);border-radius:8px;margin-top:10px;padding:12px;background:var(--panel2)}
+  .docout h4{margin:0 0 6px}
+  code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:11px}
+  .prev{width:100%;height:340px;border:1px solid var(--line);border-radius:6px;background:#fff}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .small{font-size:11px;padding:4px 8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🟦 出口单证一体化 V3</h1>
+  <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
+  <span class="spacer"></span>
+  <button class="ghost small" onclick="resetAll()">清空本地数据</button>
+  <button class="ghost" onclick="openDrawer()">⚙ 设置中心</button>
+</header>
+
+<div class="wrap">
+
+  <!-- 阶段1 上传装箱单 -->
+  <div class="stage">
+    <div class="hd"><span class="num">1</span><h2>上传装箱单 → 形成装箱单记录</h2><span class="tag" id="recCount">0 条记录</span></div>
+    <div class="bd">
+      <div class="upload" id="drop" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="onDrop(event)">
+        <div class="big">拖拽 .csv / .xlsx 装箱单到这里，或</div>
+        <div><input type="file" id="file" accept=".csv,.txt,.xlsx,.xls" style="display:none" onchange="onFile(event)">
+        <button class="primary" onclick="document.getElementById('file').click()">选择文件</button>
+        <button class="ghost" onclick="loadDemo()">用示例数据（HT1860040 风格）</button></div>
+        <div class="hint">瘦单列：<code>单號,箱號,SKU,数量,毛重,净重,纸箱规格</code>（箱数可另列）。系统只解析这几列，其余信息从「商品库 / 主体信息维护」拉取。</div>
+      </div>
+      <div id="recTable" style="margin-top:14px"></div>
+    </div>
+  </div>
+
+  <!-- 阶段2 订单 -->
+  <div class="stage">
+    <div class="hd"><span class="num">2</span><h2>勾选记录 → 生成订单（补双红线）</h2><span class="tag" id="ordCount">0 个订单</span></div>
+    <div class="bd">
+      <div class="note">双红线 = <b>最终目的国</b> + <b>币种</b>，缺任一不允许生成草单。四国各自独立录入（贸易国=买方地 / 运抵国=货物到达 / 产终国=中国 / 最终目的国=订单红线）。</div>
+      <div id="ordTable"></div>
+    </div>
+  </div>
+
+  <!-- 阶段3 报关草单 -->
+  <div class="stage">
+    <div class="hd"><span class="num">3</span><h2>勾选订单 → 生成报关草单（表头下拉 + 归类）</h2><span class="tag" id="dftCount">0 张草单</span></div>
+    <div class="bd"><div id="dftArea"></div></div>
+  </div>
+
+  <!-- 阶段4 输出 -->
+  <div class="stage">
+    <div class="hd"><span class="num">4</span><h2>确认草单 → 一次性输出整套单据</h2></div>
+    <div class="bd"><div id="outArea"></div></div>
+  </div>
+
+</div>
+
+<!-- 设置抽屉 -->
+<div class="mask" id="mask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="dh"><h3>⚙ 设置中心</h3><span class="spacer" style="flex:1"></span><button class="ghost" onclick="closeDrawer()">关闭</button></div>
+  <div class="tabs" id="setTabs"></div>
+  <div class="db" id="setBody"></div>
+</div>
+
+<!-- 归类弹窗 -->
+<div class="modal" id="clsModal"><div class="box">
+  <div class="bh"><h3>商品归类选择</h3><span style="flex:1"></span><button class="ghost" onclick="closeCls()">✕</button></div>
+  <div class="bb" id="clsBody"></div>
+  <div class="bf"><label style="margin-right:auto"><input type="checkbox" id="writeBack" style="width:auto;vertical-align:middle"> 应用后写回商品库</label><button class="primary" onclick="applyCls()">应用</button></div>
+</div></div>
+
+<!-- 模板预览弹窗 -->
+<div class="modal" id="prevModal"><div class="box" style="width:760px">
+  <div class="bh"><h3 id="prevTitle">模板预览</h3><span style="flex:1"></span><button class="ghost" onclick="closePrev()">✕</button></div>
+  <div class="bb"><iframe id="prevFrame" class="prev"></iframe></div>
+  <div class="bf"><button class="primary" onclick="downloadCurrent()">下载此单据</button></div>
+</div></div>
+
+<script>
+/* ============== 持久化数据层 ============== */
+const LS_KEY='exp3_data_v1';
+const CODE={
+  tradeMode:[['0110','一般贸易'],['0111','一般贸易(对口)'],['0214','来料加工'],['0615','进料对口'],['9710','跨境电商B2B'],['9711','跨境电商B2C']],
+  trans:    [['2','水路运输'],['3','航空运输'],['4','铁路运输'],['5','邮递运输'],['W','物流货物'],['Y','过境运输']],
+  tradeTerm:[['FOB','FOB 船上交货'],['CIF','CIF 成本加保险费运费'],['CFR','CFR 成本加运费'],['EXW','EXW 工厂交货'],['C&F','C&F 成本加运费']],
+  port:     [['5304','东莞海关'],['5141','广州机场海关'],['5300','深圳海关'],['2225','黄埔海关'],['2900','上海海关'],['0100','北京海关'],['3700','青岛海关'],['3300','宁波海关'],['5100','广州海关']],
+  country:  [['CHN','中国'],['DEU','德国'],['USA','美国'],['JPN','日本'],['GBR','英国'],['FRA','法国'],['HKG','中国香港'],['NLD','荷兰'],['POL','波兰'],['AUS','澳大利亚']],
+  levy:     [['1','照章征税']]
+};
+function defaultDB(){
+  return {
+    parties:{shippers:['广州革瓦拉贸易有限公司'], consignees:['Leading Trade One Limited'], currencyList:['USD 美元','CNY 人民币','EUR 欧元']},
+    sku:[
+      {sku:'BAG-001',style:'1C131-33',cn:'磁性扣手拿包',en:'Magnetic Clutch Bag',noTax:102.9,tax:116.28,factory:'利景工厂',hs:'4202220000',mat:'PU',brandType:'境内自主品牌',enjoys:'0'},
+      {sku:'BAG-002',style:'2T03-1',cn:'牛皮手拿包',en:'Leather Clutch Bag',noTax:160.0,tax:180.80,factory:'璞景工厂',hs:'4202220000',mat:'牛皮',brandType:'境内自主品牌',enjoys:'0'}
+    ],
+    price:{rate:0.20, exch:7.1},
+    templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null},
+    records:[],orders:[],drafts:[],docs:[],
+    sel:{rec:null,ord:null,dft:null}
+  };
+}
+let DB;
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties)return d;}catch(e){}return null;}
+function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败：'+e.message);}}
+DB=load()||defaultDB();
+
+/* ============== 工具 ============== */
+const PRICE_RATE=()=>DB.price.rate;
+const declPrice=c=>+(c.noTax/(1-PRICE_RATE())).toFixed(3);
+const getSku=s=>DB.sku.find(x=>x.sku===s);
+const uid=p=>p+Date.now().toString().slice(-6)+Math.floor(Math.random()*90+10);
+function today(){const d=new Date();return d.toISOString().slice(0,10);}
+function fmt(d){return d;}
+function sub(dateStr,n){const d=new Date(dateStr);d.setDate(d.getDate()-n);return d.toISOString().slice(0,10);}
+function opt(list,sel){return list.map(([v,t])=>`<option value="${v} ${t}" ${sel===v?'selected':''}>${v} ${t}</option>`).join('')}
+function optStr(list,sel){return list.map(s=>`<option ${sel===s?'selected':''}>${s}</option>`).join('')}
+
+/* ============== 文件解析 ============== */
+const DEMO_CSV=
+`单號,箱號,SKU,数量,毛重,净重,纸箱规格
+HT1860040,C01,BAG-001,28,19.6,17.2,1#
+HT1860040,C02,BAG-002,40,28.0,24.5,2#`;
+function parseCSV(txt){
+  const lines=txt.trim().split(/\r?\n/); let head=lines[0].split(',');
+  const idx=k=>head.findIndex(h=>h.trim().toLowerCase().includes(k));
+  const m={sku:idx('sku'),qty:idx('数量'),gw:idx('毛重'),nw:idx('净重'),box:idx('纸箱'),boxNo:idx('箱號'),no:idx('单號'),boxCnt:idx('箱数')};
+  return lines.slice(1).map(l=>{const c=l.split(',');const g=k=>{const i=m[k];return i>=0&&c[i]!=null?c[i].trim():'';};
+    return {sku:g('sku'),qty:+g('qty'),gw:+g('gw'),nw:+g('nw'),box:g('box'),boxNo:g('boxNo'),no:g('no'),boxCnt:g('boxCnt')?+g('boxCnt'):0};}).filter(r=>r.sku);
+}
+function ensureXLSX(cb){
+  if(window.XLSX){cb();return;}
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  s.onload=cb; s.onerror=()=>alert('xlsx 库加载失败（网络受限）。请另存为 CSV 后上传。');
+  document.head.appendChild(s);
+}
+function onDrop(e){e.preventDefault();document.getElementById('drop').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)readFile(f);}
+function onFile(e){const f=e.target.files[0];if(f)readFile(f);}
+function readFile(f){
+  const name=f.name.toLowerCase();
+  if(name.endsWith('.xlsx')||name.endsWith('.xls')){
+    ensureXLSX(()=>{const r=new FileReader();r.onload=ev=>{try{const wb=XLSX.read(ev.target.result,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1});const txt=rows.map(r=>r.join(',')).join('\n');ingest('来源:'+f.name+' | '+txt);}catch(err){alert('解析xlsx失败：'+err.message);}};r.readAsArrayBuffer(f);});
+  } else {const r=new FileReader();r.onload=()=>ingest('来源:'+f.name+' | '+r.result);r.readAsText(f);}
+}
+function loadDemo(){ingest('来源:示例HT1860040 | '+DEMO_CSV);}
+function ingest(meta){
+  const sep=meta.indexOf(' | '); const src=meta.slice(0,sep); const txt=meta.slice(sep+3);
+  const rows=parseCSV(txt);
+  if(!rows.length){alert('未解析到有效 SKU 行，请检查列名是否含 SKU/数量/毛重/净重');return;}
+  const rec={id:uid('R'),fileName:src.replace('来源:',''),at:new Date().toLocaleString(),items:rows,raw:rows};
+  DB.records.push(rec);DB.sel.rec=rec.id;save();renderRecords();
+}
+function renderRecords(){
+  document.getElementById('recCount').textContent=DB.records.length+' 条记录';
+  if(!DB.records.length){document.getElementById('recTable').innerHTML='<p class="muted">暂无记录，请上传装箱单。</p>';return;}
+  let h='<table><thead><tr><th></th><th>记录ID</th><th>文件名</th><th>SKU数</th><th>总件数</th><th>上传时间</th><th>操作</th></tr></thead><tbody>';
+  DB.records.forEach(r=>{const n=r.items.length,q=r.items.reduce((a,b)=>a+(+b.qty||0),0);
+    h+=`<tr class="${DB.sel.rec===r.id?'sel':''}"><td><input type="checkbox" ${DB.sel.rec===r.id?'checked':''} onchange="pickRec('${r.id}')"></td>
+      <td>${r.id}</td><td>${r.fileName}</td><td>${n}</td><td>${q}</td><td class="muted">${r.at}</td>
+      <td><button onclick="genOrder('${r.id}')">生单→</button> <button class="ghost small" onclick="delRec('${r.id}')">删</button></td></tr>`;});
+  h+='</tbody></table>';
+  document.getElementById('recTable').innerHTML=h;
+}
+function pickRec(id){DB.sel.rec=DB.sel.rec===id?null:id;save();renderRecords();}
+function delRec(id){DB.records=DB.records.filter(r=>r.id!==id);if(DB.sel.rec===id)DB.sel.rec=null;save();renderRecords();}
+
+/* ============== 阶段2 订单 ============== */
+function genOrder(recId){
+  const rec=DB.records.find(r=>r.id===recId);if(!rec)return;
+  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'',arrivalCountry:'',originCountry:'中国',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i}))};
+  DB.orders.push(ord);DB.sel.ord=ord.id;save();renderOrders();
+}
+function renderOrders(){
+  document.getElementById('ordCount').textContent=DB.orders.length+' 个订单';
+  if(!DB.orders.length){document.getElementById('ordTable').innerHTML='<p class="muted">勾选上方记录并点「生单→」生成订单。</p>';return;}
+  let h='<table><thead><tr><th></th><th>订单ID</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
+  DB.orders.forEach(o=>{const ok=o.destCountry&&o.currency;
+    h+=`<tr class="${DB.sel.ord===o.id?'sel':''}">
+      <td><input type="checkbox" ${DB.sel.ord===o.id?'checked':''} onchange="pickOrd('${o.id}')"></td>
+      <td>${o.id}</td><td class="muted">${o.recId}</td>
+      <td><select class="req" style="width:120px" onchange="setOrd('${o.id}','destCountry',this.value)">${opt(CODE.country,o.destCountry)}</select></td>
+      <td><select class="req" style="width:100px" onchange="setOrd('${o.id}','currency',this.value)"><option value="">选币种</option>${optStr(DB.parties.currencyList,o.currency)}</select></td>
+      <td><select style="width:100px" onchange="setOrd('${o.id}','tradeCountry',this.value)"><option value="">买方地</option>${opt(CODE.country,o.tradeCountry)}</select></td>
+      <td><select style="width:100px" onchange="setOrd('${o.id}','arrivalCountry',this.value)"><option value="">货物到达</option>${opt(CODE.country,o.arrivalCountry)}</select></td>
+      <td><input style="width:80px" value="${o.originCountry}" onchange="setOrd('${o.id}','originCountry',this.value)"></td>
+      <td>${o.items.length}</td>
+      <td><button class="primary" ${ok?'':'disabled'} onclick="genDraft('${o.id}')">生成草单→</button> <button class="ghost small" onclick="delOrd('${o.id}')">删</button></td></tr>`;});
+  h+='</tbody></table><p class="seq">* 红框=必填红线；贸易国=买方所在地(如HK→110)、运抵国=货物实际到达国、产终国=中国、最终目的国=订单红线。四者独立录入。</p>';
+  document.getElementById('ordTable').innerHTML=h;
+}
+function pickOrd(id){DB.sel.ord=DB.sel.ord===id?null:id;save();renderOrders();}
+function delOrd(id){DB.orders=DB.orders.filter(o=>o.id!==id);if(DB.sel.ord===id)DB.sel.ord=null;save();renderOrders();}
+function setOrd(id,k,v){const o=DB.orders.find(x=>x.id===id);if(o){o[k]=v;save();renderOrders();}}
+
+/* ============== 阶段3 草单 ============== */
+function genDraft(ordId){
+  const o=DB.orders.find(x=>x.id===ordId);if(!o)return;
+  const locked=!(o.destCountry&&o.currency);
+  const lines=o.items.map(it=>{const s=getSku(it.sku)||{};
+    return {sku:it.sku,name:s.cn||'⚠未匹配商品库',en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:s.brandType||'',enjoys:s.enjoys||'',
+      decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,factory:s.factory||'⚠未匹配',matched:!!s.cn};});
+  const dft={id:uid('D'),ordId,locked,
+    header:{shipper:DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
+      tradeMode:'0110 一般贸易',transMode:'2 水路运输',tradeTerm:'FOB',port:'',levy:'1 照章征税',
+      currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today()},
+    lines,monitor:null,confirmed:false};
+  DB.drafts.push(dft);DB.sel.dft=dft.id;save();renderDrafts();
+}
+function renderDrafts(){
+  document.getElementById('dftCount').textContent=DB.drafts.length+' 张草单';
+  const d=DB.drafts.find(x=>x.id===DB.sel.dft)||DB.drafts[DB.drafts.length-1];
+  if(!d){document.getElementById('dftArea').innerHTML='<p class="muted">勾选订单并点「生成草单→」。</p>';return;}
+  DB.sel.dft=d.id;
+  const H=d.header;
+  const h=`<div class="row" style="margin-bottom:10px">
+    <div class="field"><label>境内发货人</label><select onchange="setHeader('${d.id}','shipper',this.value)">${optStr(DB.parties.shippers,H.shipper)}</select></div>
+    <div class="field"><label>境外收货人</label><select onchange="setHeader('${d.id}','consignee',this.value)">${optStr(DB.parties.consignees,H.consignee)}</select></div>
+    <div class="field"><label>生产销售单位(=发货人)</label><input value="${H.prodUnit}" disabled style="color:var(--mut)"></div>
+    <div class="field"><label>贸易方式</label><select onchange="setHeader('${d.id}','tradeMode',this.value)">${opt(CODE.tradeMode,H.tradeMode.split(' ')[0])}</select></div>
+    <div class="field"><label>运输方式</label><select onchange="setHeader('${d.id}','transMode',this.value)">${opt(CODE.trans,H.transMode.split(' ')[0])}</select></div>
+    <div class="field"><label>成交方式</label><select onchange="setHeader('${d.id}','tradeTerm',this.value)">${opt(CODE.tradeTerm,H.tradeTerm)}</select></div>
+    <div class="field"><label>出口关别(报关时定)</label><select onchange="setHeader('${d.id}','port',this.value)"><option value="">选关别</option>${opt(CODE.port,H.port.split(' ')[0])}</select></div>
+    <div class="field"><label>征免(照章征税)</label><input value="${H.levy}" disabled style="color:var(--mut)"></div>
+    <div class="field"><label>币种</label><input value="${H.currency}"></div>
+    <div class="field"><label>最终目的国</label><input value="${H.destCountry}"></div>
+    <div class="field"><label>贸易国</label><input value="${H.tradeCountry}"></div>
+    <div class="field"><label>运抵国</label><input value="${H.arrivalCountry}"></div>
+    <div class="field"><label>产终国</label><input value="${H.originCountry}"></div>
+    <div class="field"><label>申报日期</label><input type="date" value="${H.declDate}" onchange="setHeader('${d.id}','declDate',this.value)"></div>
+  </div>`;
+  let t='<table><thead><tr><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>工厂</th><th>归类</th></tr></thead><tbody>';
+  d.lines.forEach((l,i)=>{
+    const spec=[l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',(l.mat+';'+l.sku)].filter(Boolean).join(' | ');
+    t+=`<tr class="${l.matched?'':'sel'}">
+      <td>${l.sku}</td><td>${l.name}</td>
+      <td><input style="width:88px" value="${l.hs}" onchange="setLine('${d.id}',${i},'hs',this.value)"></td>
+      <td>${l.mat}</td><td class="muted" style="font-size:11px">${spec}</td>
+      <td>${l.decl}</td><td>${l.cost}</td><td>${l.qty}</td><td>${l.gw}/${l.nw}</td>
+      <td>${l.box}</td><td>${l.factory}</td>
+      <td><button class="ghost" onclick="openCls('${d.id}',${i})">选HS</button></td></tr>`;});
+  t+='</tbody></table>';
+  const mh=d.monitor?renderMonitor(d.monitor):'';
+  document.getElementById('dftArea').innerHTML=`<div class="stage"><div class="bd">${h}${t}
+    <div class="row" style="margin-top:12px;gap:10px">
+      <button onclick="runMonitor('${d.id}')">运行监控体系</button>
+      <button class="primary" ${d.monitor&&d.monitor.block?'disabled':''} onclick="confirmDraft('${d.id}')">${d.confirmed?'✓已锁定':'确认/锁定草单 → 输出'}</button>
+      ${d.monitor&&d.monitor.block?'<span class="badge bad">有阻断项，未通过不可锁定</span>':''}
+      <button class="ghost small" onclick="delDraft('${d.id}')">删除草单</button>
+    </div>${mh}</div></div>`;
+}
+function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.header[f]=v;if(f==='shipper')d.header.prodUnit=v;save();renderDrafts();}
+function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(d){d.lines[i][k]=v;save();renderDrafts();}}
+function delDraft(id){DB.drafts=DB.drafts.filter(d=>d.id!==id);if(DB.sel.dft===id)DB.sel.dft=null;save();renderDrafts();}
+
+/* 归类弹窗 */
+function openCls(did,i){DB._cls={did,i};const l=DB.drafts.find(x=>x.id===did).lines[i];
+  document.getElementById('clsBody').innerHTML=`
+    <p>当前 SKU：<b>${l.sku}</b> ${l.name}</p>
+    <p class="muted">系统自动映射 HS=<b>${l.hs||'无'}</b>。如需改判，请选择候选（显式选择 > 自动拉取）：</p>
+    <div class="checks"><label><input type="radio" name="hs" value="4202220000" ${l.hs==='4202220000'?'checked':''}> 4202220000 手提包/手拿包</label>
+    <label><input type="radio" name="hs" value="4202119090" ${l.hs==='4202119090'?'checked':''}> 4202119090 其他皮革包</label>
+    <label><input type="radio" name="hs" value="4202320000" ${l.hs==='4202320000'?'checked':''}> 4202320000 塑料片包</label>
+    <label><input type="radio" name="hs" value="4202910090" ${l.hs==='4202910090'?'checked':''}> 4202910090 其他材料包</label></div>`;
+  document.getElementById('writeBack').checked=false;
+  document.getElementById('clsModal').classList.add('open');}
+function closeCls(){document.getElementById('clsModal').classList.remove('open');}
+function applyCls(){const v=document.querySelector('input[name=hs]:checked').value;const {did,i}=DB._cls;
+  const d=DB.drafts.find(x=>x.id===did);d.lines[i].hs=v;d.lines[i].clsOverridden=true;
+  if(document.getElementById('writeBack').checked){const s=getSku(d.lines[i].sku);if(s){s.hs=v;save();}}
+  closeCls();renderDrafts();if(document.getElementById('writeBack').checked)alert('已应用并写回商品库：'+d.lines[i].sku+' → '+v);}
+
+/* ============== 监控体系 A/B ============== */
+function runMonitor(did){
+  const d=DB.drafts.find(x=>x.id===did);const R=[];let block=0,warn=0;
+  const add=(cat,id,desc,sev,ok,msg)=>{R.push({cat,id,desc,sev,ok,msg});if(!ok){sev==='BLOCK'?block++:warn++;}};
+  const H=d.header, L=d.lines;
+  // A 报关单填制规范
+  const a1=H.shipper&&H.consignee&&H.tradeMode&&H.transMode&&H.tradeTerm&&H.levy&&H.currency&&H.port&&H.destCountry;
+  add('A','A1','表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)',a1?'OK':'BLOCK',!!a1,'缺表头必填项');
+  add('A','A2','贸易国≠运抵国(转售场景应区分)',(H.tradeCountry&&H.arrivalCountry&&H.tradeCountry===H.arrivalCountry)?'WARN':'OK',!(H.tradeCountry&&H.arrivalCountry&&H.tradeCountry===H.arrivalCountry),'贸易国与运抵国相同，请确认是否转售');
+  add('A','A3','成交方式与运费/保费一致(非FOB需核对)',H.tradeTerm==='FOB'?'OK':'WARN',H.tradeTerm==='FOB','非FOB，请确认运费/保费栏');
+  const a4=L.every(l=>l.hs&&l.brandType&&l.enjoys!=='');
+  add('A','A4','申报要素无空值(品牌类型/出口享惠/HS齐全)',a4?'OK':'WARN',a4,'存在要素空值，待补');
+  const a5=L.every(l=>/^\d{10}$/.test(l.hs));
+  add('A','A5','HS为10位商品编号',a5?'OK':'BLOCK',a5,'HS非10位');
+  add('A','A6','法定计量单位与申报单位匹配','OK','OK','默认计量单位「个」，如需其他单位请人工确认');
+  add('A','A7','单价×数量=总价(金额一致)','OK','OK','行金额由申报价×数量自动计算');
+  const a8=L.every(l=>(+l.gw)>=(+l.nw));
+  add('A','A8','毛重≥净重',a8?'OK':'BLOCK',a8,'存在毛重<净重');
+  add('A','A9','币制与随附发票一致',H.currency?'OK':'WARN',!!H.currency,'币种未设');
+  add('A','A10','生产销售单位=境内发货人(铁律)',H.prodUnit===H.shipper?'OK':'BLOCK',H.prodUnit===H.shipper,'生产销售单位≠发货人');
+  const sameHS=L.filter(l=>l.hs).map(l=>l.hs);const dup=[...new Set(sameHS.filter((h,i)=>sameHS.indexOf(h)!==i))];
+  add('A','A11','归类归并正确(同HS+同要素+同单价可归并)',dup.length?'WARN':'OK',!dup.length,dup.length?('存在同HS可归并项：'+dup.join(',')):'无');
+  // B 出口退税政策
+  const b2=L.reduce((a,l)=>a+(+l.cost||0)*0.13,0);
+  add('B','B1','采购进项发票与报关单品名/数量一致(票流一致)','WARN',false,'待上传进项发票核对票流（外部凭证）');
+  add('B','B2','应退税额=Σ不含税采购价×13% 计算正确',b2>0?'OK':'WARN',b2>0,'应退 ¥'+b2.toFixed(2)+'（不含税×13%）');
+  const badsup=L.some(l=>l.factory.includes('不退税'));
+  add('B','B3','供货企业具退税资格',badsup?'WARN':'OK',!badsup,badsup?'存在标记「不退税」的供应商':'全部具退税资格');
+  add('B','B4','换汇成本合理',(H.currency.includes('USD')&&DB.price.exch)?'OK':'WARN',(H.currency.includes('USD')&&DB.price.exch)>0,'未设汇率无法核换汇成本');
+  add('B','B5','商品退税率与HS匹配','OK','OK','默认退税率13%');
+  add('B','B6','收汇完成(资金流一致)','WARN',false,'待确认收汇（外部凭证）');
+  add('B','B7','同票多品类不同退税率分项核算','OK','OK','按HS分行核算');
+  add('B','B8','申报日期在退税申报期内','OK','OK','申报日 '+H.declDate);
+  const b9=L.every(l=>(+l.decl)>(+l.cost));
+  add('B','B9','申报价>成本(防倒挂)',b9?'OK':'BLOCK',b9,'存在申报价≤成本，倒挂影响退税基数');
+  d.monitor={list:R,block,warn};save();renderDrafts();
+}
+function renderMonitor(m){
+  let h=`<div class="monitor"><div class="mh">监控结果：`;
+  h+=m.block?`<span class="badge bad">${m.block} 阻断</span>`:`<span class="badge ok">无阻断</span>`;
+  h+=` <span class="badge warn">${m.warn} 提示</span> <span class="muted">（阻断=BLOCK不可锁定；提示=WARN标红可继续）</span></div>`;
+  m.list.forEach(r=>{const cls=r.ok?'ok':(r.sev==='BLOCK'?'bad':'warn');const ic=r.ok?'✓':(r.sev==='BLOCK'?'✕':'!');
+    h+=`<div class="mline"><span class="ic badge ${cls}">${ic}</span><span><b>[${r.cat}${r.id}]</b> ${r.desc}${r.ok?'':' — '+r.msg}</span></div>`;});
+  h+='</div>';return h;
+}
+
+/* ============== 阶段4 输出 ============== */
+function confirmDraft(did){
+  const d=DB.drafts.find(x=>x.id===did);if(!d)return;
+  if(d.monitor&&d.monitor.block){alert('存在阻断项，先修复再锁定');return;}
+  d.confirmed=true;
+  const suppliers=[...new Set(d.lines.map(l=>l.factory))];
+  const out=[
+    {type:'报关草单',n:1},
+    {type:'Invoice发票',n:1},
+    {type:'Packing List装箱单',n:1},
+    {type:'销售合同',n:1},
+    {type:'国内采购合同',n:suppliers.length,suppliers}
+  ];
+  DB.docs.push({id:uid('DOC'),dftId:did,out,suppliers,at:new Date().toLocaleString()});
+  save();renderOut();
+}
+function buildData(doc){
+  const d=DB.drafts.find(x=>x.id===doc.dftId);
+  const lines=d.lines.map(l=>{const spec=[l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',(l.mat+';'+l.sku)].filter(Boolean).join(' | ');
+    return {...l,spec,amount:((+l.decl)*(+l.qty)).toFixed(2)};});
+  const base=d.header.declDate||today();
+  const contracts=[...new Set(lines.map(l=>l.factory))].map(s=>{const items=lines.filter(l=>l.factory===s);
+    return {supplier:s,items,amount:items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0).toFixed(2),count:items.length};});
+  return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
+    dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base)},
+    totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
+    totalAmount:lines.reduce((a,l)=>a+(+l.decl)*(+l.qty),0).toFixed(2),
+    totalGW:lines.reduce((a,l)=>a+(+l.gw||0),0).toFixed(2),
+    totalNW:lines.reduce((a,l)=>a+(+l.nw||0),0).toFixed(2),
+    contractCount:contracts.length};
+}
+/* 模板引擎（递归计数，正确处理嵌套 each + 注入 _i 序号） */
+function getPath(o,p){return p.split('.').reduce((a,k)=>a==null?undefined:a[k],o);}
+function renderFields(html,data){return html.replace(/\{\{(\w[\w.]*)\}\}/g,(m,p)=>{const v=getPath(data,p);return (v===undefined||v===null)?'':String(v);});}
+function replaceEach(html,data){
+  const m=html.match(/\{\{#each\s+(\w+)\}\}/);
+  if(!m) return renderFields(html,data);
+  const name=m[1], start=m.index+m[0].length;
+  let depth=1,i=start;
+  while(i<html.length-7 && depth>0){const s=html.substr(i,8);if(s==='{{#each')depth++;else if(s==='{{/each')depth--;if(depth===0)break;i++;}
+  const body=html.slice(start,i), before=html.slice(0,m.index), after=html.slice(i+8);
+  const list=getPath(data,name)||[];
+  const rep=list.map((it,idx)=>replaceEach(body,Object.assign({},data,it,{_i:idx+1}))).join('');
+  return replaceEach(before+rep+after,data);
+}
+function renderTpl(html,data){return replaceEach(html,data);}
+function builtin(name){
+  const head='<h2 style="text-align:center;margin:6px 0">'+name+'</h2>';
+  if(name==='报关草单')return head+`<table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr><td>境内发货人</td><td>{{header.shipper}}</td><td>生产销售单位</td><td>{{header.prodUnit}}</td></tr>
+    <tr><td>境外收货人</td><td>{{header.consignee}}</td><td>贸易方式</td><td>{{header.tradeMode}}</td></tr>
+    <tr><td>运输方式</td><td>{{header.transMode}}</td><td>成交方式</td><td>{{header.tradeTerm}}</td></tr>
+    <tr><td>出口关别</td><td>{{header.port}}</td><td>征免</td><td>{{header.levy}}</td></tr>
+    <tr><td>最终目的国</td><td>{{header.destCountry}}</td><td>贸易国/运抵国</td><td>{{header.tradeCountry}} / {{header.arrivalCountry}}</td></tr>
+    <tr><td>产终国</td><td>{{header.originCountry}}</td><td>申报日期</td><td>{{dates.customs}}</td></tr></table>
+    <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
+    <tr><th>序号</th><th>SKU</th><th>品名</th><th>HS</th><th>规格型号(要素)</th><th>数量</th><th>申报价</th><th>金额</th><th>毛/净重</th></tr>
+    {{#each lines}}<tr><td>{{_i}}</td><td>{{sku}}</td><td>{{name}}</td><td>{{hs}}</td><td>{{spec}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td><td>{{gw}}/{{nw}}</td></tr>{{/each}}
+    <tr><td colspan="7">合计</td><td>{{totalAmount}}</td><td>{{totalGW}}/{{totalNW}}</td></tr></table>`;
+  if(name==='Invoice发票')return head+`<p>卖方：{{header.shipper}} &nbsp; 买方：{{header.consignee}}</p>
+    <p>合同/发票号：{{order.no}} &nbsp; 日期：{{dates.invoice}} &nbsp; 贸易方式：{{header.tradeTerm}} &nbsp; 目的国：{{header.destCountry}}</p>
+    <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr><th>SKU</th><th>品名</th><th>数量</th><th>单价({{header.currency}})</th><th>金额</th></tr>
+    {{#each lines}}<tr><td>{{sku}}</td><td>{{name}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
+    <tr><td colspan="4">总计</td><td>{{totalAmount}}</td></tr></table>`;
+  if(name==='Packing List装箱单')return head+`<p>发货人：{{header.shipper}} &nbsp; 收货人：{{header.consignee}}</p>
+    <p>箱单号：{{order.no}} &nbsp; 日期：{{dates.invoice}} &nbsp; 目的国：{{header.destCountry}}</p>
+    <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr><th>SKU</th><th>品名</th><th>纸箱规格</th><th>数量</th><th>毛重</th><th>净重</th></tr>
+    {{#each lines}}<tr><td>{{sku}}</td><td>{{name}}</td><td>{{box}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
+    <tr><td colspan="3">合计</td><td>{{totalQty}}</td><td>{{totalGW}}</td><td>{{totalNW}}</td></tr></table>`;
+  if(name==='销售合同')return head+`<p>卖方(供货)：{{header.shipper}} &nbsp; 买方：{{header.consignee}}</p>
+    <p>合同号：{{order.no}} &nbsp; 日期：{{dates.sales}} &nbsp; 成交方式：{{header.tradeTerm}} &nbsp; 目的国：{{header.destCountry}}</p>
+    <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr><th>SKU</th><th>品名</th><th>HS</th><th>数量</th><th>单价({{header.currency}})</th><th>金额</th></tr>
+    {{#each lines}}<tr><td>{{sku}}</td><td>{{name}}</td><td>{{hs}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
+    <tr><td colspan="5">合同总额</td><td>{{totalAmount}}</td></tr></table>`;
+  if(name==='国内采购合同')return `<h2 style="text-align:center;margin:6px 0">国内采购合同</h2>
+    {{#each contracts}}<div style="border:1px solid #999;padding:8px;margin:8px 0">
+    <p>采购方：{{header.shipper}} &nbsp; 供货工厂：{{supplier}}</p>
+    <p>合同日期：{{dates.purchase}} &nbsp; （早于销售/报关）</p>
+    <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr><th>款号/SKU</th><th>品名</th><th>HS</th><th>数量</th><th>不含税单价</th><th>采购金额</th></tr>
+    {{#each items}}<tr><td>{{sku}}</td><td>{{name}}</td><td>{{hs}}</td><td>{{qty}}</td><td>{{cost}}</td><td>{{amount}}</td></tr>{{/each}}
+    <tr><td colspan="5">本厂采购金额合计</td><td>{{amount}}</td></tr></table></div>{{/each}}`;
+  return '<p>未知模板</p>';
+}
+function renderOut(){
+  const docI=DB.docs.length-1, doc=DB.docs[docI];
+  if(!doc){document.getElementById('outArea').innerHTML='<p class="muted">确认草单后在此一次性输出整套单据。</p>';return;}
+  const dt=buildData(doc);
+  let h=`<div class="note">已锁定草单 <b>${doc.dftId}</b>。共生成 <b>${doc.out.reduce((a,b)=>a+b.n,0)}</b> 份单据（其中国内采购合同按 <b>${doc.contractCount??dt.contractCount}</b> 个供应商拆分）。</div>`;
+  doc.out.forEach((o,idx)=>{
+    const tplHtml=DB.templates[o.type]||builtin(o.type);
+    const preview=renderTpl(tplHtml,dt);
+    h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
+        <h4 style="margin:0 8px 0 0">${o.type} ${o.n>1?`×${o.n}`:''}</h4>
+        <button class="small" onclick="previewDoc(${docI},${idx})">预览</button>
+        <button class="small" onclick="downloadDoc(${docI},${idx})">下载</button></div>
+      <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px;background:#fff;color:#111;font-size:11px">${preview}</div></div>`;
+  });
+  h+=`<p class="seq">日期前后逻辑：国内采购合同(${dt.dates.purchase}) &lt; 销售合同(${dt.dates.sales}) ≤ 发票/装箱单(${dt.dates.invoice}) &lt; 报关单申报(${dt.dates.customs})。各模板日期字段按此序由草单申报日推导。</p>`;
+  h+=`<div class="row" style="margin-top:10px"><button class="primary" onclick="downloadAll()">打包下载整套单据</button>
+      <button class="ghost" onclick="printAll()">打印全部</button></div>`;
+  document.getElementById('outArea').innerHTML=h;
+}
+let _cur={doc:0,idx:0};
+function previewDoc(docI,idx){_cur={doc:docI,idx};const doc=DB.docs[docI];const o=doc.out[idx];
+  const data=buildData(doc);const tplHtml=DB.templates[o.type]||builtin(o.type);
+  document.getElementById('prevTitle').textContent=o.type+' 预览';
+  document.getElementById('prevFrame').srcdoc=renderTpl(tplHtml,data);
+  document.getElementById('prevModal').classList.add('open');}
+function closePrev(){document.getElementById('prevModal').classList.remove('open');}
+function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];const data=buildData(doc);
+  if(o.type==='国内采购合同'){data.contracts.forEach(c=>{const one=renderTpl(DB.templates[o.type]||builtin(o.type),Object.assign({},data,{contracts:[c]}));dl('采购合同_'+c.supplier,one);});return;}
+  dl(o.type,renderTpl(DB.templates[o.type]||builtin(o.type),data));}
+function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
+function dl(name,html){const blob=new Blob(['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+name+'</title></head><body>'+html+'</body></html>'],{type:'text/html;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name+'.html';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500);}
+function downloadAll(){const doc=DB.docs[DB.docs.length-1];doc.out.forEach((o,i)=>downloadDoc(DB.docs.length-1,i));}
+function printAll(){const doc=DB.docs[DB.docs.length-1];let all='';doc.out.forEach(o=>{all+=renderTpl(DB.templates[o.type]||builtin(o.type),buildData(doc));});
+  const w=window.open('');w.document.write('<html lang="zh-CN"><head><meta charset="UTF-8"><title>整套单据</title></head><body>'+all+'</body></html>');w.document.close();setTimeout(()=>w.print(),400);}
+
+/* ============== 设置中心 ============== */
+const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'},{k:'price',n:'售价公式'},{k:'mon',n:'监控规则'},{k:'tmpl',n:'模板管理'}];
+let curTab='party';
+function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('mask').classList.add('open');renderTabs();}
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('mask').classList.remove('open');}
+function renderTabs(){document.getElementById('setTabs').innerHTML=TABS.map(t=>`<button class="${curTab===t.k?'on':''}" onclick="curTab='${t.k}';renderTabs()">${t.n}</button>`).join('');renderSetBody();}
+function addParty(t){(t==='shipper'?DB.parties.shippers:DB.parties.consignees).push('');save();renderSetBody();}
+function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length>1)a.splice(i,1);save();renderSetBody();}
+function updParty(t,i,v){(t==='shipper'?DB.parties.shippers:DB.parties.consignees)[i]=v;save();}
+function renderSetBody(){
+  const b=document.getElementById('setBody');let h='';
+  if(curTab==='party'){
+    h=`<div style="font-weight:600;margin-bottom:6px">境内发货人（可维护，做草单时下拉选）</div>
+      ${DB.parties.shippers.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('shipper',${i},this.value)" style="flex:1"> <button onclick="delParty('shipper',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
+      <button onclick="addParty('shipper')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境内发货人</button>
+      <div style="font-weight:600;margin:14px 0 6px">境外收货人（可维护，做草单时下拉选）</div>
+      ${DB.parties.consignees.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('consignee',${i},this.value)" style="flex:1"> <button onclick="delParty('consignee',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
+      <button onclick="addParty('consignee')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境外收货人</button>
+      <div class="note">生产销售单位 默认=<b>境内发货人</b>（铁律，不可改）。贸易方式/运输方式/成交方式/出口关别 <b>在「生成草单」步骤下拉选</b>；征免固定「照章征税」。币种在订单双红线中设定。</div>`;
+  } else if(curTab==='sku'){
+    h='<p class="muted">商品库（以 HS Code 为核心），字段来自「商品信息表」。可直接编辑，或批量上传：</p>';
+    h+=`<div class="toolbar"><button class="small" onclick="upSkuFile()">⬆ 上传商品信息表(CSV/XLSX)</button><button class="small" onclick="addSkuRow()">+ 新增行</button><input type="file" id="skuFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="onSkuFile(event)"></div>`;
+    h+='<table><thead><tr><th>款号</th><th>SKU</th><th>中文品名</th><th>英文品名</th><th>不含税价</th><th>含税价</th><th>工厂</th><th>HS</th><th>材质</th><th>品牌类型</th><th>出口享惠</th><th>申报价(算)</th><th></th></tr></thead><tbody>';
+    DB.sku.forEach((s,i)=>{h+=`<tr>
+      <td><input style="width:80px" value="${s.style||''}" onchange="setSku(${i},'style',this.value)"></td>
+      <td><input style="width:80px" value="${s.sku}" onchange="setSku(${i},'sku',this.value)"></td>
+      <td><input style="width:90px" value="${s.cn}" onchange="setSku(${i},'cn',this.value)"></td>
+      <td><input style="width:90px" value="${s.en||''}" onchange="setSku(${i},'en',this.value)"></td>
+      <td><input style="width:70px" value="${s.noTax}" onchange="setSku(${i},'noTax',this.value)"></td>
+      <td><input style="width:70px" value="${s.tax||''}" onchange="setSku(${i},'tax',this.value)"></td>
+      <td><input style="width:80px" value="${s.factory||''}" onchange="setSku(${i},'factory',this.value)"></td>
+      <td><input style="width:90px" value="${s.hs}" onchange="setSku(${i},'hs',this.value)"></td>
+      <td><input style="width:60px" value="${s.mat||''}" onchange="setSku(${i},'mat',this.value)"></td>
+      <td><input style="width:90px" value="${s.brandType||''}" onchange="setSku(${i},'brandType',this.value)"></td>
+      <td><input style="width:60px" value="${s.enjoys||''}" onchange="setSku(${i},'enjoys',this.value)"></td>
+      <td>${declPrice(s)}</td>
+      <td><button class="ghost small" onclick="delSkuRow(${i})">×</button></td></tr>`;});
+    h+='</tbody></table><div class="note">申报价由定价公式自动算（不含税÷(1−毛利率)）。同 HS 多款包，品牌类型/出口享惠逐行填；归类弹窗可「写回」更新此处。</div>';
+  } else if(curTab==='price'){
+    h=`<div class="row"><div class="field"><label>毛利率（默认 0.20）</label><input value="${DB.price.rate}" onchange="DB.price.rate=+this.value;save();renderSetBody();renderDrafts();"></div>
+      <div class="field"><label>美元汇率（换汇成本核用）</label><input value="${DB.price.exch}" onchange="DB.price.exch=+this.value;save();"></div></div>
+      <div class="note">定价公式（未来/现行口径 = 毛利率法）：<br><code>申报价 = 不含税采购价 ÷ (1 − 毛利率)</code><br>例：不含税 102.9 ÷ 0.8 = <b>128.625</b>。退税基数 = 不含税采购价；应退 = 不含税采购价 × 13%。历史旧单 3 步法（×1.20575）已弃用。</div>`;
+  } else if(curTab==='mon'){
+    h='<p class="muted">监控规则库（生成时后台静默跑，分 <span class="badge bad">BLOCK</span> 阻断 / <span class="badge warn">WARN</span> 提示）。仅两大类，覆盖你要求的两套合规：</p>';
+    h+='<h4 style="margin:12px 0 6px">A · 报关单填制规范</h4>';
+    ['A1 表头必填项齐全','A2 贸易国≠运抵国(转售区分)','A3 成交方式与运费保费一致','A4 申报要素无空值','A5 HS 10位且与品名材质一致','A6 法定计量单位匹配','A7 单价×数量=总价','A8 毛重≥净重','A9 币制与发票一致','A10 生产销售单位=发货人(铁律)','A11 归类归并正确'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
+    h+='<h4 style="margin:12px 0 6px">B · 国家出口退税政策</h4>';
+    ['B1 票流一致(待进项发票)','B2 应退=不含税×13% 计算正确','B3 供货企业具退税资格','B4 换汇成本合理','B5 退税率与HS匹配','B6 收汇完成','B7 分项核算','B8 申报期内','B9 申报价>成本(防倒挂)'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
+    h+='<div class="note">B1/B6 需外部凭证（进项发票/收汇水单）核对，系统在监控中标记「待补」；其余规则实时校验数据。</div>';
+  } else if(curTab==='tmpl'){
+    const keys=Object.keys(DB.templates);
+    h='<p class="muted">模板管理（解耦，每类独立上传/删除，固化进本文件无服务器）：</p><div class="tmpl">';
+    keys.forEach(k=>{h+=`<div class="tcard"><h4>${k}</h4><div class="st">${DB.templates[k]?'✓ 已上传':'○ 内置版式'}</div>
+      <div class="ops"><button class="small" onclick="upTpl('${k}')">上传</button><button class="small ghost" onclick="delTpl('${k}')">${DB.templates[k]?'删':'重置'}</button></div></div>`;});
+    h+='</div><div class="note">上传 .html 模板（含 {{字段}} 占位符，如 {{header.shipper}}、{{#each lines}}…{{/each}}）即内嵌进文件。五类各自独立，支持一次性输出。报关草单/发票/装箱单/销售合同/国内采购合同。</div>';
+  }
+  b.innerHTML=h;
+}
+function setSku(i,k,v){if(k==='noTax'||k==='tax')v=+v;DB.sku[i][k]=v;save();}
+function addSkuRow(){DB.sku.push({sku:'NEW-'+DB.sku.length,style:'',cn:'',en:'',noTax:0,tax:0,factory:'',hs:'',mat:'',brandType:'境内自主品牌',enjoys:'0'});save();renderSetBody();}
+function delSkuRow(i){DB.sku.splice(i,1);save();renderSetBody();}
+function upSkuFile(){document.getElementById('skuFile').click();}
+function onSkuFile(e){const f=e.target.files[0];if(!f)return;const name=f.name.toLowerCase();
+  const handle=txt=>{const rows=parseCSV(txt);const map={style:txt.toLowerCase().includes('款号')?0:-1};
+    // 通用映射：按列名包含
+    const head=txt.trim().split(/\r?\n/)[0].split(',');
+    const ci=k=>head.findIndex(h=>h.trim().includes(k));
+    const m={style:ci('款号'),sku:ci('sku'),cn:ci('中文'),en:ci('英文'),noTax:ci('不含税'),tax:ci('含税'),factory:ci('工厂'),hs:ci('hs'),mat:ci('材质'),brandType:ci('品牌'),enjoys:ci('出口享惠')};
+    const conv=rows.map(r=>{const g=k=>{const i=m[k];return i>=0?r[i]:'';};
+      return {sku:g('sku'),style:g('style'),cn:g('cn'),en:g('en'),noTax:+g('noTax')||0,tax:+g('tax')||0,factory:g('factory'),hs:g('hs'),mat:g('mat'),brandType:g('brandType')||'境内自主品牌',enjoys:g('enjoys')||'0'};}).filter(r=>r.sku);
+    if(!conv.length){alert('未解析到 SKU 行');return;}
+    if(confirm('将用 '+conv.length+' 行覆盖/并入商品库？确认=合并(同SKU更新)，取消=清空重导')){
+      conv.forEach(n=>{const ex=DB.sku.find(s=>s.sku===n.sku);if(ex)Object.assign(ex,n);else DB.sku.push(n);});
+    } else {DB.sku=conv;}
+    save();renderSetBody();alert('商品库已更新 '+DB.sku.length+' 行');};
+  if(name.endsWith('.xlsx')||name.endsWith('.xls')){ensureXLSX(()=>{const r=new FileReader();r.onload=ev=>{const wb=XLSX.read(ev.target.result,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1});handle(rows.map(r=>r.join(',')).join('\n'));};r.readAsArrayBuffer(f);});}
+  else {const r=new FileReader();r.onload=()=>handle(r.result);r.readAsText(f);}
+}
+function upTpl(k){const f=prompt('粘贴模板HTML（含 {{字段}} 占位符），留空则用内置版式：');DB.templates[k]=f||builtin(k);save();renderSetBody();alert(k+' 模板已'+(f?'上传':'设为内置')+'并固化');}
+function delTpl(k){DB.templates[k]=null;save();renderSetBody();}
+function resetAll(){if(confirm('确认清空本地所有数据（记录/订单/草单/模板）？此操作不可撤销。')){localStorage.removeItem(LS_KEY);DB=defaultDB();save();renderAll();alert('已重置');}}
+
+/* ============== 初始化 ============== */
+function renderAll(){renderRecords();renderOrders();renderDrafts();renderOut();}
+renderAll();
+</script>
+</body>
+</html>
