@@ -160,7 +160,7 @@ const LS_KEY='exp3_data_v1';
 const CODE={
   tradeMode:[['0110','一般贸易'],['0111','一般贸易(对口)'],['0214','来料加工'],['0615','进料对口'],['9710','跨境电商B2B'],['9711','跨境电商B2C']],
   trans:    [['2','水路运输'],['3','航空运输'],['4','铁路运输'],['5','邮递运输'],['W','物流货物'],['Y','过境运输']],
-  tradeTerm:[['FOB','FOB 船上交货'],['CIF','CIF 成本加保险费运费'],['CFR','CFR 成本加运费'],['EXW','EXW 工厂交货'],['C&F','C&F 成本加运费']],
+  tradeTerm:[['FOB','船上交货'],['CIF','成本加保险费运费'],['CFR','成本加运费'],['EXW','工厂交货'],['C&F','成本加运费']],
   port:     [['5304','东莞海关'],['5141','广州机场海关'],['5300','深圳海关'],['2225','黄埔海关'],['2900','上海海关'],['0100','北京海关'],['3700','青岛海关'],['3300','宁波海关'],['5100','广州海关']],
   country:  [['CHN','中国'],['DEU','德国'],['USA','美国'],['JPN','日本'],['GBR','英国'],['FRA','法国'],['HKG','中国香港'],['NLD','荷兰'],['POL','波兰'],['AUS','澳大利亚'],
              ['KOR','韩国'],['NZL','新西兰'],['CHL','智利'],['CHE','瑞士'],['PAK','巴基斯坦'],['PER','秘鲁'],['CRI','哥斯达黎加'],['ISL','冰岛'],['GEO','格鲁吉亚'],['MUS','毛里求斯'],
@@ -756,6 +756,28 @@ function renderTabs(){document.getElementById('setTabs').innerHTML=TABS.map(t=>`
 function addParty(t){(t==='shipper'?DB.parties.shippers:DB.parties.consignees).push('');save();renderSetBody();}
 function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length>1)a.splice(i,1);save();renderSetBody();}
 function updParty(t,i,v){(t==='shipper'?DB.parties.shippers:DB.parties.consignees)[i]=v;save();}
+function expParty(){
+  const data={shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,_v:'exp3-party-v1',_exported:new Date().toISOString()};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='出口单证_主体信息_'+new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')+'.json';
+  a.click();URL.revokeObjectURL(a.href);
+}
+function impParty(ev){
+  const f=ev.target.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=function(){
+    try{
+      const d=JSON.parse(rd.result);
+      let n=0;
+      if(Array.isArray(d.shippers)){d.shippers.forEach(s=>{if(s&&!DB.parties.shippers.includes(s)){DB.parties.shippers.push(s);n++}});}
+      if(Array.isArray(d.consignees)){d.consignees.forEach(s=>{if(s&&!DB.parties.consignees.includes(s)){DB.parties.consignees.push(s);n++}});}
+      if(Array.isArray(d.currencyList)){d.currencyList.forEach(c=>{if(c&&!DB.parties.currencyList.includes(c)){DB.parties.currencyList.push(c);n++}});}
+      save();renderSetBody();alert('导入成功，新增 '+n+' 条（去重合并）');
+    }catch(e){alert('导入失败：'+e.message);}
+  };rd.readAsText(f);
+  ev.target.value='';
+}
 function renderSetBody(){
   const b=document.getElementById('setBody');let h='';
   if(curTab==='party'){
@@ -765,7 +787,13 @@ function renderSetBody(){
       <div style="font-weight:600;margin:14px 0 6px">境外收货人（可维护，做草单时下拉选）</div>
       ${DB.parties.consignees.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('consignee',${i},this.value)" style="flex:1"> <button onclick="delParty('consignee',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
       <button onclick="addParty('consignee')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境外收货人</button>
-      <div class="note">生产销售单位 默认=<b>境内发货人</b>（铁律，不可改）。贸易方式/运输方式/成交方式/出口关别 <b>在「生成草单」步骤下拉选</b>；征免固定「照章征税」。币种在订单双红线中设定。</div>`;
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button onclick="expParty()" style="background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📥 导出主体信息(JSON)</button>
+        <label style="background:#2a1a3a;color:#c9b;border:1px solid #5a3a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📤 导入主体信息(JSON)
+          <input type="file" accept=".json" onchange="impParty(event)" style="display:none">
+        </label>
+      </div>
+      <div class="note">数据保存在浏览器本地（localStorage）。<b>导出</b>可备份为 JSON 文件发给同事，对方在「设置中心→主体信息维护」点<b>导入</b>即可加载。导出包含：境内发货人列表、境外收货人列表、币种列表。</div>`;
   } else if(curTab==='sku'){
     const list=skuList();
     const total=list.length;
