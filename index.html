@@ -145,6 +145,13 @@
   <div class="bf"><label style="margin-right:auto"><input type="checkbox" id="writeBack" style="width:auto;vertical-align:middle"> 应用后写回商品库</label><button class="primary" onclick="applyCls()">应用</button></div>
 </div></div>
 
+<!-- HS 要素库维护弹窗 -->
+<div class="modal" id="hsLibModal"><div class="box" style="width:640px">
+  <div class="bh"><h3>HS 要素库维护</h3><span style="flex:1"></span><button class="ghost" onclick="closeHsLib()">✕</button></div>
+  <div class="bb"><div class="muted" style="font-size:12px;margin-bottom:8px">精确 10 位匹配；库内无此码 → 规格型号显示「⚠要素序列待填」。下方列出 bulk 有行但库内缺失的码（按行数降序）+ 已维护码（可改）。要素序列用逗号分隔，取值：nm品名/mat材质/brand品牌/sku款号(≡SKU)/spu型号/weave织造/gender性别/kind种类/upmat鞋面/solemat鞋底/use用途。</div><div id="hsLibBody"></div></div>
+  <div class="bf"><button class="ghost" onclick="closeHsLib()">关闭</button></div>
+</div></div>
+
 <!-- 模板预览弹窗 -->
 <div class="modal" id="prevModal"><div class="box" style="width:760px">
   <div class="bh"><h3 id="prevTitle">模板预览</h3><span style="flex:1"></span><button class="ghost" onclick="closePrev()">✕</button></div>
@@ -176,6 +183,63 @@ const COUNTRY_PREF={
   USA:'0',DEU:'0',GBR:'0',FRA:'0',NLD:'0',POL:'0',ITA:'0',ESP:'0',CAN:'0',MEX:'0',RUS:'0',TUR:'0',IND:'0',BRA:'0',ARG:'0',SAU:'0',ARE:'0',ISR:'0',EGY:'0',ZAF:'0',TWN:'2'
 };
 function enjoysOf(code){const c=(code||'').split(' ')[0];return COUNTRY_PREF[c]!==undefined?COUNTRY_PREF[c]:'2';}
+
+/* ============== HS_LIB 申报要素库（精确10位匹配，否决前缀归类） ============== */
+/* 内置已验证的真实码；匹配不上 → ⚠要素序列待填；用户可在「HS要素库维护」补录缺失码。
+   要素序列 seq 取值：nm品名/mat材质/brand品牌/sku款号(≡SKU)/spu型号/weave织造/gender性别/kind种类/upmat鞋面/solemat鞋底/use用途。
+   服装类末位 style 已统一为 sku（款号≡SKU 铁律）。 */
+const HS_LIB={
+ '4202220000':{cat:'包', seq:['nm','mat','brand','sku']},
+ '6104490000':{cat:'针织女装(连衣裙)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6204620000':{cat:'梭织女裤(牛仔裤)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6402190000':{cat:'鞋靴(其他塑料/纺织面)', seq:['kind','upmat','solemat','brand','sku']},
+ '6402990000':{cat:'鞋靴(其他)', seq:['kind','upmat','solemat','brand','sku']},
+ '6403190000':{cat:'皮革面运动鞋', seq:['kind','upmat','solemat','brand','sku']},
+ '6403910000':{cat:'鞋靴(其他皮革面)', seq:['kind','upmat','solemat','brand','sku']},
+ '6404190000':{cat:'纺织面鞋靴', seq:['kind','upmat','solemat','brand','sku']},
+ '6405900000':{cat:'其他鞋靴', seq:['kind','upmat','solemat','brand','sku']},
+ '4202990000':{cat:'手机壳(皮革/其他)', seq:['use','mat','brand','sku']},
+ '3926909000':{cat:'手机壳(塑料)', seq:['use','mat','brand','sku']}
+};
+const SEQ_CN={nm:'品名',mat:'材质',ms:'材质标准',brand:'品牌',style:'款号',sku:'款号',spu:'型号',weave:'织造方法',gender:'性别',kind:'种类',upmat:'鞋面材质',solemat:'鞋底材质',use:'用途'};
+
+/* 归并模式 MODES（用户说的「8 种」= M0~M6 七种 + 供应商叠加开关）。 */
+const MODES=[
+ {id:'M0',lb:'不合并',keys:['sku']},
+ {id:'M1',lb:'仅HS',keys:['hs']},
+ {id:'M2',lb:'HS+品名',keys:['hs','nm']},
+ {id:'M3',lb:'HS+品名+编码',keys:['hs','nm','sku']},
+ {id:'M4',lb:'HS+品名+款式',keys:['hs','nm','spu']},
+ {id:'M5',lb:'HS+品名+款式+材质',keys:['hs','nm','spu','mat']},
+ {id:'M6',lb:'HS+品名+材质',keys:['hs','nm','mat']}
+];
+function mergedHsLib(){return Object.assign({},HS_LIB,DB.hsLibOverride||{});}
+/* 规格型号 = 品牌类型 | 出口享惠<X> | <要素序列按 HS_LIB.seq 拼装，缺码显示待填> */
+function buildSpec(l){
+  const lib=mergedHsLib();
+  const entry=lib[(l.hs||'').trim()];
+  if(!entry) return '⚠ 要素序列待填('+(l.hs||'?')+')';
+  const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:l.style||l.sku,
+    weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
+  const seqStr=entry.seq.map(k=>map[k]).filter(v=>v!=null&&String(v).trim()!=='').join(';');
+  return [l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | ');
+}
+/* 归并：按模式 keys 构建归并键；供应商开关在键尾追加 §SUP:<供应商>。同组合并，款号聚合。 */
+function mergeLines(lines,mode,sup){
+  if(mode==='M0'||!lines.length) return lines.map(x=>Object.assign({},x));
+  const m=MODES.find(x=>x.id===mode)||MODES[0];
+  const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:l.style||l.sku,mat:l.mat})[kk];
+  const groups={};
+  lines.forEach(l=>{const key=m.keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+(l.supplier||'')):'');(groups[key]=groups[key]||[]).push(l);});
+  return Object.keys(groups).map(k=>{const g=groups[k],rep=Object.assign({},g[0]);
+    rep.sku=[...new Set(g.map(x=>x.sku))].join(',');
+    rep.style=[...new Set(g.map(x=>x.style))].filter(Boolean).join(',');
+    rep.qty=g.reduce((a,x)=>a+(+x.qty||0),0);
+    rep.gw=g.reduce((a,x)=>a+(+x.gw||0),0);
+    rep.nw=g.reduce((a,x)=>a+(+x.nw||0),0);
+    rep._merged=g.length>1; rep._cnt=g.length; rep._keys=g.map(x=>x.sku);
+    return rep;});
+}
 function defaultDB(){
   return {
     parties:{shippers:['广州革瓦拉贸易有限公司'], consignees:['Leading Trade One Limited'], currencyList:['USD 美元','CNY 人民币','EUR 欧元']},
@@ -477,14 +541,16 @@ function genDraft(ordId){
   const o=DB.orders.find(x=>x.id===ordId);if(!o)return;
   const locked=!(o.destCountry&&o.currency);
   const e0=enjoysOf(o.destCountry);
-  const lines=o.items.map(it=>{const s=getSku(it.sku)||{};
+  const rawLines=o.items.map(it=>{const s=getSku(it.sku)||{};
     return {sku:it.sku,name:s.cn||'⚠未匹配商品库',en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:s.brandType||'',enjoys:e0,
-      decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',factory:s.factory||'⚠未匹配',matched:!!s.cn};});
+      decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',
+      supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
+      upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
   const dft={id:uid('D'),ordId,locked,
     header:{shipper:DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
       tradeMode:'0110 一般贸易',transMode:'2 水路运输',tradeTerm:'FOB',port:'',levy:'1 照章征税',
       currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today()},
-    lines,monitor:null,confirmed:false};
+    rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false};
   DB.drafts.push(dft);DB.sel.dft=dft.id;save();renderDrafts();
 }
 function renderDrafts(){
@@ -509,19 +575,33 @@ function renderDrafts(){
     <div class="field"><label>产终国</label><input value="${H.originCountry}"></div>
     <div class="field"><label>申报日期</label><input type="date" value="${H.declDate}" onchange="setHeader('${d.id}','declDate',this.value)"></div>
   </div>`;
-  let t='<table><thead><tr><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>工厂</th><th>归类</th></tr></thead><tbody>';
+  let t='<table><thead><tr><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>供应商</th><th>归类</th></tr></thead><tbody>';
   d.lines.forEach((l,i)=>{
-    const spec=[l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',(l.mat+';'+l.sku)].filter(Boolean).join(' | ');
+    const spec=buildSpec(l);
+    const over=spec.length>250;
+    const mergedTag=l._merged?' <span class="badge warn">归并'+l._cnt+'</span>':'';
     t+=`<tr class="${l.matched?'':'sel'}">
-      <td>${l.sku}</td><td>${l.name}</td>
+      <td>${l.sku}${mergedTag}</td><td>${l.name}</td>
       <td><input style="width:88px" value="${l.hs}" onchange="setLine('${d.id}',${i},'hs',this.value)"></td>
-      <td>${l.mat}</td><td class="muted" style="font-size:11px">${spec}</td>
+      <td>${l.mat}</td><td style="font-size:11px;${over?'color:var(--bad);font-weight:600':''}">${spec}${over?' ⚠超250字':''}</td>
       <td>${l.decl}</td><td>${l.cost}</td><td>${l.qty}</td><td>${l.gw}/${l.nw}</td>
-      <td>${l.box}</td><td>${l.factory}</td>
+      <td>${l.box}</td><td>${l.supplier}</td>
       <td><button class="ghost" onclick="openCls('${d.id}',${i})">选HS</button></td></tr>`;});
   t+='</tbody></table>';
   const mh=d.monitor?renderMonitor(d.monitor):'';
-  document.getElementById('dftArea').innerHTML=`<div class="stage"><div class="bd">${h}${t}
+  const rawCount=d.rawLines?d.rawLines.length:d.lines.length;
+  let maxLen0=0,total0=0;
+  d.lines.forEach(l=>{const sp=buildSpec(l);if(sp.length>maxLen0)maxLen0=sp.length;total0+=(+l.decl)*(+l.qty);});
+  const panel=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:12px;background:var(--panel2)">
+    <div style="font-size:12px;color:var(--mut);margin-bottom:6px">归并模式（任选其一，可叠加供应商分行）</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      ${MODES.map(m=>`<button class="small ${d.mergeMode===m.id?'primary':''}" onclick="setMerge('${d.id}','${m.id}')">${m.id} ${m.lb}</button>`).join('')}
+      <label style="font-size:12px;display:flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" ${d.mergeSup?'checked':''} onchange="setMergeSup('${d.id}',this.checked)"> 按供应商分行</label>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:6px">归并后 <b>${d.lines.length}</b> 项（原 ${rawCount} 行）· 规格型号最长 <b style="color:${maxLen0>250?'var(--bad)':'var(--ok)'}">${maxLen0}</b> 字${maxLen0>250?' ⚠超限(≤250)':''} · 合计金额 ¥${total0.toFixed(2)} 恒等</div>
+    <button class="small ghost" style="margin-top:6px" onclick="openHsLib()">HS 要素库维护</button>
+  </div>`;
+  document.getElementById('dftArea').innerHTML=panel+`<div class="stage"><div class="bd">${h}${t}
     <div class="row" style="margin-top:12px;gap:10px">
       <button onclick="runMonitor('${d.id}')">运行监控体系</button>
       <button class="primary" ${d.monitor&&d.monitor.block?'disabled':''} onclick="confirmDraft('${d.id}')">${d.confirmed?'✓已锁定':'确认/锁定草单 → 输出'}</button>
@@ -530,9 +610,13 @@ function renderDrafts(){
     </div>${mh}</div></div>`;
 }
 function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.header[f]=v;if(f==='shipper')d.header.prodUnit=v;save();renderDrafts();}
-function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(d){d.lines[i][k]=v;save();renderDrafts();}}
+function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
+  if(d.rawLines&&d.lines[i]._keys){d.rawLines.forEach(r=>{if(d.lines[i]._keys.indexOf(r.sku)>=0)r[k]=v;});}
+  save();renderDrafts();}
 function delDraft(id){DB.drafts=DB.drafts.filter(d=>d.id!==id);if(DB.sel.dft===id)DB.sel.dft=null;save();renderDrafts();}
 
+function setMerge(did,mode){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.mergeMode=mode;d.lines=mergeLines(d.rawLines,d.mergeMode,d.mergeSup);save();renderDrafts();}
+function setMergeSup(did,chk){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.mergeSup=!!chk;d.lines=mergeLines(d.rawLines,d.mergeMode,d.mergeSup);save();renderDrafts();}
 /* 归类弹窗 */
 function openCls(did,i){DB._cls={did,i};const l=DB.drafts.find(x=>x.id===did).lines[i];
   document.getElementById('clsBody').innerHTML=`
@@ -547,8 +631,38 @@ function openCls(did,i){DB._cls={did,i};const l=DB.drafts.find(x=>x.id===did).li
 function closeCls(){document.getElementById('clsModal').classList.remove('open');}
 function applyCls(){const v=document.querySelector('input[name=hs]:checked').value;const {did,i}=DB._cls;
   const d=DB.drafts.find(x=>x.id===did);d.lines[i].hs=v;d.lines[i].clsOverridden=true;
-  if(document.getElementById('writeBack').checked){const s=getSku(d.lines[i].sku);if(s){s.hs=v;save();}}
-  closeCls();renderDrafts();if(document.getElementById('writeBack').checked)alert('已应用并写回商品库：'+d.lines[i].sku+' → '+v);}
+  if(d.rawLines&&d.lines[i]._keys){d.rawLines.forEach(r=>{if(d.lines[i]._keys.indexOf(r.sku)>=0)r.hs=v;});}
+  if(document.getElementById('writeBack').checked){
+    const keys=d.lines[i]._keys||[d.lines[i].sku];
+    if(!DB.skuOverride)DB.skuOverride={};
+    keys.forEach(k=>{DB.skuOverride[k]=Object.assign({},DB.skuOverride[k],{hs:v});});
+    save();
+  }
+  closeCls();renderDrafts();if(document.getElementById('writeBack').checked)alert('已应用并写回商品库：'+(d.lines[i]._keys?d.lines[i]._keys.join(','):d.lines[i].sku)+' → '+v);}
+
+/* HS 要素库维护弹窗 */
+function openHsLib(){
+  const bulk=window.__SKU_BULK__||[];
+  const inBulk={};bulk.forEach(s=>{const h=s.hs?String(s.hs).trim():'';if(h)inBulk[h]=(inBulk[h]||0)+1;});
+  const lib=mergedHsLib();
+  const rows=[];
+  Object.keys(inBulk).forEach(h=>{if(!lib[h])rows.push({hs:h,n:inBulk[h],seq:''});});
+  Object.keys(lib).forEach(h=>{rows.push({hs:h,n:inBulk[h]||0,seq:lib[h].seq.join(',')});});
+  rows.sort((a,b)=>(b.n)-(a.n));
+  const body=rows.map(r=>`<div style="display:flex;gap:8px;align-items:center;margin:4px 0">
+    <span style="width:96px;font-family:monospace;font-size:12px">${r.hs}</span>
+    <span style="width:60px" class="muted">${r.n}行</span>
+    <input id="hs_${r.hs}" value="${esc(r.seq)}" placeholder="要素序列 如 nm,mat,brand,sku" style="flex:1">
+    <button class="small" onclick="saveHsSeq('${r.hs}')">存</button></div>`).join('');
+  document.getElementById('hsLibBody').innerHTML=body;
+  document.getElementById('hsLibModal').classList.add('open');
+}
+function saveHsSeq(hs){const v=document.getElementById('hs_'+hs).value.trim();
+  const seq=v?v.split(/[,，;；\s]+/).filter(Boolean):[];
+  if(!DB.hsLibOverride)DB.hsLibOverride={};
+  if(seq.length)DB.hsLibOverride[hs]={cat:'自定义',seq:seq};else delete DB.hsLibOverride[hs];
+  save();alert('已保存 '+hs+' 要素序列：'+(seq.join(',')||'(清空)'));}
+function closeHsLib(){document.getElementById('hsLibModal').classList.remove('open');}
 
 /* ============== 监控体系 A/B ============== */
 function runMonitor(did){
@@ -580,7 +694,7 @@ function runMonitor(did){
   const b2=L.reduce((a,l)=>a+(+l.cost||0)*0.13,0);
   add('B','B1','采购进项发票与报关单品名/数量一致(票流一致)','WARN',false,'待上传进项发票核对票流（外部凭证）');
   add('B','B2','应退税额=Σ不含税采购价×13% 计算正确',b2>0?'OK':'WARN',b2>0,'应退 ¥'+b2.toFixed(2)+'（不含税×13%）');
-  const badsup=L.some(l=>l.factory.includes('不退税'));
+  const badsup=L.some(l=>l.supplier.includes('不退税'));
   add('B','B3','供货企业具退税资格',badsup?'WARN':'OK',!badsup,badsup?'存在标记「不退税」的供应商':'全部具退税资格');
   add('B','B4','换汇成本合理',(H.currency.includes('USD')&&DB.price.exch)?'OK':'WARN',(H.currency.includes('USD')&&DB.price.exch)>0,'未设汇率无法核换汇成本');
   add('B','B5','商品退税率与HS匹配','OK','OK','默认退税率13%');
@@ -605,7 +719,7 @@ function confirmDraft(did){
   const d=DB.drafts.find(x=>x.id===did);if(!d)return;
   if(d.monitor&&d.monitor.block){alert('存在阻断项，先修复再锁定');return;}
   d.confirmed=true;
-  const suppliers=[...new Set(d.lines.map(l=>l.factory))];
+  const suppliers=[...new Set(d.lines.map(l=>l.supplier))];
   const out=[
     {type:'报关草单',n:1},
     {type:'Invoice发票',n:1},
@@ -621,7 +735,7 @@ function buildData(doc){
   const lines=d.lines.map(l=>{const spec=[l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',(l.mat+';'+l.sku)].filter(Boolean).join(' | ');
     return {...l,spec,amount:((+l.decl)*(+l.qty)).toFixed(2)};});
   const base=d.header.declDate||today();
-  const contracts=[...new Set(lines.map(l=>l.factory))].map(s=>{const items=lines.filter(l=>l.factory===s);
+  const contracts=[...new Set(lines.map(l=>l.supplier))].map(s=>{const items=lines.filter(l=>l.supplier===s);
     return {supplier:s,items,amount:items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0).toFixed(2),count:items.length};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base)},
@@ -816,7 +930,7 @@ function renderSetBody(){
       <span class="muted">第 ${skuPage}/${pages} 页（${start+1}–${Math.min(start+skuSize,total)} / 共 ${total} 行）</span>
       <input type="file" id="skuFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="onSkuFile(event)">
       <input type="file" id="bulkFile" accept=".json" style="display:none" onchange="onBulkFile(event)"></div>`;
-    h+='<table><thead><tr><th>款式编码</th><th>SKU</th><th>商品名称</th><th>商品简称</th><th>中文品名</th><th>英文品名</th><th>销售单价USD</th><th>不含税价CNY</th><th>含税价CNY</th><th>净重kg</th><th>海关编码</th><th>计量单位</th><th>品牌</th><th>材质</th><th>鞋底材质</th><th>用途</th><th>图片</th><th>分类</th><th>工厂(维护)</th><th>品牌类型(维护)</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th>款式编码</th><th>SKU</th><th>商品名称</th><th>商品简称</th><th>中文品名</th><th>英文品名</th><th>销售单价USD</th><th>不含税价CNY</th><th>含税价CNY</th><th>净重kg</th><th>海关编码</th><th>计量单位</th><th>品牌</th><th>材质</th><th>鞋底材质</th><th>用途</th><th>图片</th><th>分类</th><th>供应商(维护)</th><th>品牌类型(维护)</th></tr></thead><tbody>';
     slice.forEach(s=>{const m=skuMerged(s.sku);
       const img=m.img?`<a href="${m.img}" target="_blank" style="color:#7fd1ff">${esc(m.img.split('/').pop())}</a>`:'<span class="muted">—</span>';
       h+=`<tr>
@@ -824,9 +938,10 @@ function renderSetBody(){
       <td>${esc(m.cn)}</td><td class="muted">${esc(m.en)}</td><td class="muted">${esc(m.usd)}</td><td>${esc(m.noTax)}</td><td class="muted">${esc(m.tax)}</td>
       <td class="muted">${esc(m.gw)}</td><td>${esc(m.hs)}</td><td class="muted">${esc(m.unit)}</td><td class="muted">${esc(m.brand)}</td><td>${esc(m.mat)}</td>
       <td class="muted">${esc(m.soleMat)}</td><td class="muted">${esc(m.use)}</td><td>${img}</td><td class="muted">${esc(m.cat)}</td>
-      <td><input style="width:80px" value="${esc(m.factory)}" onchange="setSkuOv('${esc(m.sku)}','factory',this.value)"></td>
+      <td><input style="width:80px" value="${esc(m.supplier||m.factory)}" onchange="setSkuOv('${esc(m.sku)}','supplier',this.value)"></td>
       <td><input style="width:90px" value="${esc(m.brandType)}" onchange="setSkuOv('${esc(m.sku)}','brandType',this.value)"></td></tr>`;});
-    h+='</tbody></table><div class="note">源字段只读（来自商品信息表）；仅「工厂 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
+    h+='</tbody></table><div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
+    h+=batchTagPanel();
   } else if(curTab==='pref'){
     h='<p class="muted">出口享惠国别配置：按「最终目的国」自动判定 0不享惠 / 1享惠(RCEP等自贸协定) / 2不能确定。生成草单时系统据此自动填规格型号的出口享惠段，一般无需改动。</p><div class="toolbar"><input type="file" id="prefFile" accept=".json" style="display:none" onchange="onPrefFile(event)"><button class="small" onclick="document.getElementById(&quot;prefFile&quot;).click()">⬆ 导入国别映射JSON</button></div><table><thead><tr><th>目的国</th><th>出口享惠</th></tr></thead><tbody>';
     Object.keys(COUNTRY_PREF).forEach(c=>{h+=`<tr><td>${c}</td><td><select class="small" onchange="COUNTRY_PREF['${c}']=this.value;renderSetBody()"><option value="0" ${COUNTRY_PREF[c]==='0'?'selected':''}>0 不享惠</option><option value="1" ${COUNTRY_PREF[c]==='1'?'selected':''}>1 享惠</option><option value="2" ${COUNTRY_PREF[c]==='2'?'selected':''}>2 不能确定</option></select></td></tr>`;});
@@ -850,6 +965,40 @@ function renderSetBody(){
     h+='</div><div class="note">上传 .html 模板（含 {{字段}} 占位符，如 {{header.shipper}}、{{#each lines}}…{{/each}}）即内嵌进文件。五类各自独立，支持一次性输出。报关草单/发票/装箱单/销售合同/国内采购合同。</div>';
   }
   b.innerHTML=h;
+}
+function batchTagPanel(){
+  const list=skuList();
+  const cats=[...new Set(list.map(s=>s.cat).filter(Boolean))];
+  const catOpts='<option value="__all__">分类（全部）</option>'+cats.map(c=>'<option>'+esc(c)+'</option>').join('');
+  return `<div style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:14px;background:var(--panel2)">
+    <div style="font-weight:600;margin-bottom:6px">供应商批量打标</div>
+    <div class="muted" style="font-size:11px;margin-bottom:10px">商品库工厂(供应商)字段多为空，按条件筛一批一次性指定供应商（写进持久层，刷新不丢）。</div>
+    <div class="row" style="gap:8px;align-items:center">
+      <select id="btCat" style="width:150px">${catOpts}</select>
+      <input id="btHs" placeholder="HS 前缀 如 6402" style="width:130px">
+      <input id="btSku" placeholder="款号前缀 如 10LS" style="width:130px">
+      <input id="btSup" placeholder="指定供应商 如 利景工厂" style="width:170px">
+      <button class="primary small" onclick="batchTagSup()">应用到筛选结果</button>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px" id="btPrev"></div>
+  </div>`;
+}
+function batchTagSup(){
+  const cat=document.getElementById('btCat').value;
+  const hsP=(document.getElementById('btHs').value||'').trim();
+  const skuP=(document.getElementById('btSku').value||'').trim().toUpperCase();
+  const sup=(document.getElementById('btSup').value||'').trim();
+  if(!sup){alert('请填写供应商');return;}
+  const list=skuList();let n=0;const keys=[];
+  list.forEach(s=>{const sk=s.sku?String(s.sku):'';const hs=s.hs?String(s.hs):'';const c=s.cat?String(s.cat):'';
+    if(cat!=='__all__'&&c!==cat)return;
+    if(hsP&&!hs.startsWith(hsP))return;
+    if(skuP&&!sk.toUpperCase().startsWith(skuP))return;
+    keys.push(sk);n++;});
+  if(!DB.skuOverride)DB.skuOverride={};
+  keys.forEach(k=>{DB.skuOverride[k]=Object.assign({},DB.skuOverride[k],{supplier:sup});});
+  save();renderSetBody();
+  document.getElementById('btPrev').textContent='已为 '+n+' 行打标供应商：'+sup;
 }
 function setSku(i,k,v){if(k==='noTax'||k==='tax')v=+v;DB.sku[i][k]=v;save();}
 function addSkuRow(){DB.sku.push({sku:'NEW-'+Date.now().toString().slice(-5),style:'',prodCode:'',nameFull:'',nameShort:'',cn:'',en:'',usd:'',noTax:0,tax:0,gw:'',hs:'',unit:'',brand:'',mat:'',soleMat:'',use:'',img:'',cat:'',factory:'',brandType:'境内自主品牌'});save();renderSetBody();}
