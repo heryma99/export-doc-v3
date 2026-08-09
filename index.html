@@ -299,19 +299,32 @@ const DEMO_CSV=
 HT1860040,C01,BAG-001,28,19.6,17.2,1#
 HT1860040,C02,BAG-002,40,28.0,24.5,2#`;
 
-/* 列同义词（数组顺序 = 处理优先级：先具体后宽泛，防止「箱号」抢走「纸箱规格」） */
+/* 列同义词（数组顺序 = 处理优先级：先具体后宽泛，防止「箱号」抢走「纸箱规格」）
+   v2026-08-09 扩充：兼容 FBA 箱唛格式(ASIN/FNSKU/每箱件数/箱子总数/商品总数/包装箱重量/箱子长宽高) +
+   商单易格式(订单号/箱号/店铺号/款号/纸箱规格/毛净重/体积重/卡板号/卡板尺寸) + 通用格式 */
 const PL_ALIAS=[
-  ['box',   ['纸箱规格','紙箱規格','箱规格','箱規格','纸箱','紙箱','箱型','箱规','箱規','cartonsize','箱子规格','外箱规格']],
-  ['boxCnt',['箱数','箱數','总箱数','總箱數','ctns','ctn','箱件数']],
-  ['boxNo', ['箱号','箱號','箱序号','箱序號','carton','cartonno','箱子编号','外箱号','外箱號','箱唛号','箱嘜號']],
+  ['box',   ['纸箱规格','紙箱規格','箱规格','箱規格','纸箱','紙箱','箱型','箱规','箱規','cartonsize','箱子规格','外箱规格','boxsize','外箱尺寸','纸箱尺寸','紙箱尺寸']],
+  ['boxCnt',['箱数','箱數','总箱数','總箱數','ctns','ctn','箱件数','箱子总数','箱子總數','boxcount','totalboxes','总箱件数','总件箱数','總件箱數']],
+  ['boxNo', ['箱号','箱號','箱序号','箱序號','carton','cartonno','箱子编号','外箱号','外箱號','箱唛号','箱嘜號','ctnno','箱号no.','序号','序號','货箱编号']],
   ['sku',   ['sku','款号','款號','货号','貨號','商品编码','商品編碼','款式编码','款式編碼','style','styleno','物料编码','物料編碼','产品编码','產品編碼','商品编号','商品編號','型号','型號','itemcode','artno','商品条码']],
-  ['qty',   ['数量','數量','件数','件數','双数','雙數','对数','對數','qty','quantity','pcs','pairs','出货数量','出貨數量']],
-  ['gw',    ['毛重','毛重量','gw','grossweight','gross']],
-  ['nw',    ['净重','淨重','净重量','淨重量','nw','netweight']],
-  ['bw',    ['包装箱重量','包裝箱重量','纸箱重量','紙箱重量','箱皮重','箱重','箱子重量','箱子皮重','boxweight','cartonweight','tareweight','boxweightkg']],
-  ['no',    ['订单号','訂單號','单号','單號','唛头号','嘜頭號','出货单号','出貨單號','orderno','pono','po','发票号','發票號']]
+  ['asin',  ['asin','amazonasin','亚马逊asin','亞馬遜asin','商品asin']],
+  ['fnsku', ['fnsku','fba编号','fba編號','亚马逊fnsku','fba货件sku','货件fnsku']],
+  ['qty',   ['数量','數量','件数','件數','双数','雙數','对数','對數','qty','quantity','pcs','pairs','出货数量','出貨數量','商品总数','商品總數','totalunits','units','总数量','總數量']],
+  ['qtyPerBox',['每箱件数','每箱件數','每箱数量','每箱數量','箱内件数','箱內件數','每箱pcs','unitperbox','unitsperbox','每箱单位数','每箱單位數','每箱商品数','每箱商品數']],
+  ['gw',    ['毛重','毛重量','gw','grossweight','gross','毛重kg','毛重(kg)','毛重（kg）','箱毛重','总毛重','總毛重','grossweightkg']],
+  ['nw',    ['净重','淨重','净重量','淨重量','nw','netweight','净重kg','净重(kg)','净重（kg）','箱净重','總淨重','总净重','netweightkg']],
+  ['bw',    ['包装箱重量','包裝箱重量','纸箱重量','紙箱重量','箱皮重','箱重','箱子重量','箱子皮重','boxweight','cartonweight','tareweight','boxweightkg','包装箱重量（千克）','包装箱重量(千克)','包装箱重量kg']],
+  ['length',['长','長','长cm','長cm','l','length','长度','長度','箱子长度','箱子長度','纸箱长','紙箱長','箱长','箱長','长(厘米)','长（厘米）','箱子长度（厘米）','箱子长度(厘米)']],
+  ['width', ['宽','寬','宽cm','寬cm','w','width','宽度','寬度','箱子宽度','箱子寬度','纸箱宽','紙箱寬','箱宽','箱寬','宽(厘米)','宽（厘米）','箱子宽度（厘米）','箱子宽度(厘米)']],
+  ['height',['高','高cm','h','height','高度','箱子高度','箱子高度','纸箱高','紙箱高','箱高','高(厘米)','高（厘米）','箱子高度（厘米）','箱子高度(厘米)']],
+  ['volume',['体积','體積','体积cbm','體積cbm','cbm','体积(立方)','立方','方数','體積重','体积重','体积重(kg)','体积重（kg）','体积重kg','chargeableweight','cw','材积','材積','体积(立方米)','体积（立方米）']],
+  ['pallet',['卡板号','卡板號','卡板','托盘号','托盤號','palletno','pallet','卡板编号','卡板編號']],
+  ['palletSize',['卡板尺寸','托盤尺寸','卡板规格','palletSize']],
+  ['shop',  ['店铺号','店鋪號','店铺','店鋪','店铺名称','店鋪名稱','shop','门店','門店']],
+  ['name',  ['商品名称','商品名稱','品名','货品名称','貨品名稱','英文品名','中文品名','description','desc','productname','产品名称','產品名稱','商品描述','商品描述']],
+  ['no',    ['订单号','訂單號','单号','單號','唛头号','嘜頭號','出货单号','出貨單號','orderno','pono','po','发票号','發票號','货件号','貨件號','shipmentid','外箱单号','装箱单号','装箱單號','关联单号','關聯單號']]
 ];
-const PL_KEYS=['sku','qty','gw','nw','bw','box','boxNo','no','boxCnt'];
+const PL_KEYS=['sku','qty','gw','nw','bw','box','boxNo','no','boxCnt','qtyPerBox','asin','fnsku','length','width','height','volume'];
 
 /* 表头归一：去括号注释(kg)、去空格/下划线/连字符/点/斜杠、小写 */
 function normHead(h){
@@ -325,7 +338,8 @@ function numv(v){
   const s=String(v).replace(/,/g,'').replace(/[^0-9.\-]/g,'');
   const n=parseFloat(s); return isFinite(n)?n:0;
 }
-/* 列映射：精确命中优先，其次包含命中；已占用列不重复分配 */
+/* 列映射：精确命中优先，其次包含命中；已占用列不重复分配
+   v2026-08-09：防 FNSKU 被 sku 的「包含命中」抢走（'fnsku'.includes('sku')）——skv 包含命中时排除 fnsku/fba 列 */
 function mapColumns(head){
   const H=(head||[]).map(normHead), used={}, m={};
   PL_ALIAS.forEach(function(pair){
@@ -335,7 +349,13 @@ function mapColumns(head){
     }
     for(let a=0;a<als.length&&idx<0;a++){
       if(als[a].length<2) continue;
-      for(let j=0;j<H.length;j++){ if(!used[j]&&H[j]&&H[j].indexOf(als[a])>=0){ idx=j; break; } }
+      for(let j=0;j<H.length;j++){
+        if(!used[j]&&H[j]&&H[j].indexOf(als[a])>=0){
+          if(key==='sku'&&(H[j]==='fnsku'||H[j].indexOf('fnsku')===0||H[j].indexOf('fba')===0||H[j]==='fba')) continue;
+          if(key==='qty'&&(H[j]==='qtyperbox'||H[j].indexOf('每箱')===0)) continue; /* 「每箱件数」归 qtyPerBox 不归 qty */
+          idx=j; break;
+        }
+      }
     }
     if(idx>=0){ used[idx]=1; m[key]=idx; } else { m[key]=-1; }
   });
@@ -376,7 +396,8 @@ function csvToGrid(txt){
   const sep=(l0.split('\t').length>l0.split(',').length)?'\t':',';
   return lines.map(function(l){return splitLine(l,sep).map(function(c){return c.trim();});});
 }
-/* 核心：二维数组 -> 明细行（v2026-08-09：新增 bw 包装箱重量列 + 净重三级兜底：源文件nw → gw−bw → box_specs[sku].weight → 固定值） */
+/* 核心：二维数组 -> 明细行（v2026-08-09：新增 bw 包装箱重量列 + 净重三级兜底：源文件nw → gw−bw → box_specs[sku].weight → 固定值；
+   FBA 格式推导：qty 缺失时 = 每箱件数 × 箱子总数；box 缺失但长/宽/高齐全时拼 L*W*H） */
 function parseGrid(grid,forceSku,opts){
   opts=opts||{};
   const boxLib=(typeof window!=='undefined'&&window.BOX_SPECS)||opts.boxSpecLib||{};
@@ -401,10 +422,18 @@ function parseGrid(grid,forceSku,opts){
     /* 净重三级兜底：源文件 nw → gw−bw → box_specs[sku].weight → 固定值 */
     if(!nw&&gw&&!bw) bw=(boxLib[sku]||{}).weight||fixedBw;
     if(!nw&&gw&&bw) nw=Math.max(0,gw-bw);
-    rows.push({sku:sku,qty:numv(g('qty')),gw:gw,nw:nw,bw:bw,
-      box:g('box'),boxNo:g('boxNo'),no:g('no'),boxCnt:g('boxCnt')?numv(g('boxCnt')):0});
+    /* FBA 数量推导：无「数量」列但有 每箱件数×箱子总数 */
+    let qty=numv(g('qty'));
+    const qpb=numv(g('qtyPerBox')), bc=numv(g('boxCnt'));
+    if(!qty&&qpb&&bc) qty=qpb*bc;
+    /* box 缺失但长/宽/高齐全 → 拼 L*W*H */
+    let box=g('box');
+    if(!box){const L=numv(g('length')),W=numv(g('width')),H=numv(g('height'));if(L&&W&&H) box=L+'*'+W+'*'+H;}
+    rows.push({sku:sku,qty:qty,gw:gw,nw:nw,bw:bw,
+      box:box,boxNo:g('boxNo'),no:g('no'),boxCnt:bc||numv(g('boxCnt')),
+      asin:g('asin'),fnsku:g('fnsku'),name:g('name'),shop:g('shop'),pallet:g('pallet')||g('palletSize')});
   }
-  const missing=['sku','qty','gw','nw','bw','box','boxNo','no'].filter(function(k){return m[k]<0;});
+  const missing=['sku','qty','gw','nw','box','boxNo','no'].filter(function(k){return m[k]<0;});
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
 }
 /* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计 */
