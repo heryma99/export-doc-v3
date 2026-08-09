@@ -941,7 +941,6 @@ function renderSetBody(){
       <td><input style="width:80px" value="${esc(m.supplier||m.factory)}" onchange="setSkuOv('${esc(m.sku)}','supplier',this.value)"></td>
       <td><input style="width:90px" value="${esc(m.brandType)}" onchange="setSkuOv('${esc(m.sku)}','brandType',this.value)"></td></tr>`;});
     h+='</tbody></table><div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
-    h+=batchTagPanel();
   } else if(curTab==='pref'){
     h='<p class="muted">出口享惠国别配置：按「最终目的国」自动判定 0不享惠 / 1享惠(RCEP等自贸协定) / 2不能确定。生成草单时系统据此自动填规格型号的出口享惠段，一般无需改动。</p><div class="toolbar"><input type="file" id="prefFile" accept=".json" style="display:none" onchange="onPrefFile(event)"><button class="small" onclick="document.getElementById(&quot;prefFile&quot;).click()">⬆ 导入国别映射JSON</button></div><table><thead><tr><th>目的国</th><th>出口享惠</th></tr></thead><tbody>';
     Object.keys(COUNTRY_PREF).forEach(c=>{h+=`<tr><td>${c}</td><td><select class="small" onchange="COUNTRY_PREF['${c}']=this.value;renderSetBody()"><option value="0" ${COUNTRY_PREF[c]==='0'?'selected':''}>0 不享惠</option><option value="1" ${COUNTRY_PREF[c]==='1'?'selected':''}>1 享惠</option><option value="2" ${COUNTRY_PREF[c]==='2'?'selected':''}>2 不能确定</option></select></td></tr>`;});
@@ -965,40 +964,6 @@ function renderSetBody(){
     h+='</div><div class="note">上传 .html 模板（含 {{字段}} 占位符，如 {{header.shipper}}、{{#each lines}}…{{/each}}）即内嵌进文件。五类各自独立，支持一次性输出。报关草单/发票/装箱单/销售合同/国内采购合同。</div>';
   }
   b.innerHTML=h;
-}
-function batchTagPanel(){
-  const list=skuList();
-  const cats=[...new Set(list.map(s=>s.cat).filter(Boolean))];
-  const catOpts='<option value="__all__">分类（全部）</option>'+cats.map(c=>'<option>'+esc(c)+'</option>').join('');
-  return `<div style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:14px;background:var(--panel2)">
-    <div style="font-weight:600;margin-bottom:6px">供应商批量打标</div>
-    <div class="muted" style="font-size:11px;margin-bottom:10px">商品库工厂(供应商)字段多为空，按条件筛一批一次性指定供应商（写进持久层，刷新不丢）。</div>
-    <div class="row" style="gap:8px;align-items:center">
-      <select id="btCat" style="width:150px">${catOpts}</select>
-      <input id="btHs" placeholder="HS 前缀 如 6402" style="width:130px">
-      <input id="btSku" placeholder="款号前缀 如 10LS" style="width:130px">
-      <input id="btSup" placeholder="指定供应商 如 利景工厂" style="width:170px">
-      <button class="primary small" onclick="batchTagSup()">应用到筛选结果</button>
-    </div>
-    <div class="muted" style="font-size:11px;margin-top:8px" id="btPrev"></div>
-  </div>`;
-}
-function batchTagSup(){
-  const cat=document.getElementById('btCat').value;
-  const hsP=(document.getElementById('btHs').value||'').trim();
-  const skuP=(document.getElementById('btSku').value||'').trim().toUpperCase();
-  const sup=(document.getElementById('btSup').value||'').trim();
-  if(!sup){alert('请填写供应商');return;}
-  const list=skuList();let n=0;const keys=[];
-  list.forEach(s=>{const sk=s.sku?String(s.sku):'';const hs=s.hs?String(s.hs):'';const c=s.cat?String(s.cat):'';
-    if(cat!=='__all__'&&c!==cat)return;
-    if(hsP&&!hs.startsWith(hsP))return;
-    if(skuP&&!sk.toUpperCase().startsWith(skuP))return;
-    keys.push(sk);n++;});
-  if(!DB.skuOverride)DB.skuOverride={};
-  keys.forEach(k=>{DB.skuOverride[k]=Object.assign({},DB.skuOverride[k],{supplier:sup});});
-  save();renderSetBody();
-  document.getElementById('btPrev').textContent='已为 '+n+' 行打标供应商：'+sup;
 }
 function setSku(i,k,v){if(k==='noTax'||k==='tax')v=+v;DB.sku[i][k]=v;save();}
 function addSkuRow(){DB.sku.push({sku:'NEW-'+Date.now().toString().slice(-5),style:'',prodCode:'',nameFull:'',nameShort:'',cn:'',en:'',usd:'',noTax:0,tax:0,gw:'',hs:'',unit:'',brand:'',mat:'',soleMat:'',use:'',img:'',cat:'',factory:'',brandType:'境内自主品牌'});save();renderSetBody();}
