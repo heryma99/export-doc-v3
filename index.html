@@ -415,17 +415,27 @@ function parseGrid(grid,forceSku,opts){
     const sku=g('sku');
     if(!sku) continue;
     if(headKey&&normHead(sku)===headKey) continue;   /* 跳过重复表头行 */
-    const gw=numv(g('gw'));
+    let gw=numv(g('gw'));
     let nw=numv(g('nw'));
     const srcBw=numv(g('bw'));
     let bw=srcBw;
-    /* 净重三级兜底：源文件 nw → gw−bw → box_specs[sku].weight → 固定值 */
-    if(!nw&&gw&&!bw) bw=(boxLib[sku]||{}).weight||fixedBw;
-    if(!nw&&gw&&bw) nw=Math.max(0,gw-bw);
     /* FBA 数量推导：无「数量」列但有 每箱件数×箱子总数 */
     let qty=numv(g('qty'));
     const qpb=numv(g('qtyPerBox')), bc=numv(g('boxCnt'));
     if(!qty&&qpb&&bc) qty=qpb*bc;
+    /* 净重三级兜底：源文件 nw → gw−bw → box_specs[sku].weight → 固定值 */
+    if(!nw&&gw&&!bw) bw=(boxLib[sku]||{}).weight||fixedBw;
+    if(!nw&&gw&&bw) nw=Math.max(0,gw-bw);
+    /* FBA 无毛净重列 → 商品库单件净重推导：nw = sku.gw × qty；gw = nw + bw × 箱数 */
+    if(!nw&&!gw&&qty){
+      const s0=skuList().find(x=>x&&x.sku===sku);
+      const unitGw=s0?(+s0.gw||0):0;
+      if(unitGw&&qty){
+        nw=Math.round(unitGw*qty*1000)/1000;
+        if(bw&&bc) gw=Math.round((nw+bw*bc)*1000)/1000;
+        else if(bw&&qpb) gw=Math.round((nw+bw*(qty/qpb))*1000)/1000;
+      }
+    }
     /* box 缺失但长/宽/高齐全 → 拼 L*W*H */
     let box=g('box');
     if(!box){const L=numv(g('length')),W=numv(g('width')),H=numv(g('height'));if(L&&W&&H) box=L+'*'+W+'*'+H;}
@@ -434,6 +444,7 @@ function parseGrid(grid,forceSku,opts){
       asin:g('asin'),fnsku:g('fnsku'),name:g('name'),shop:g('shop'),pallet:g('pallet')||g('palletSize')});
   }
   const missing=['sku','qty','gw','nw','box','boxNo','no'].filter(function(k){return m[k]<0;});
+  if(m.bw<0) missing.push('bw');   /* bw 缺失仅提示（有 box_specs/固定值兜底），不阻断 */
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
 }
 /* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计 */
@@ -530,8 +541,9 @@ function showOk(r,ps){
   const el=diagEl(); if(!el) return;
   const warn=[];
   if((r.missing||[]).indexOf('boxNo')>=0) warn.push('无箱号列 → 毛净重按行汇总');
-  if((r.missing||[]).indexOf('gw')>=0) warn.push('无毛重列');
-  if((r.missing||[]).indexOf('nw')>=0) warn.push('无净重列');
+  if((r.missing||[]).indexOf('gw')>=0) warn.push(ps.totalGW>0?'毛重由商品库单件净重推导':'无毛重列');
+  if((r.missing||[]).indexOf('nw')>=0) warn.push(ps.totalNW>0?'净重由商品库单件净重推导':'无净重列');
+  if((r.missing||[]).indexOf('bw')>=0) warn.push('无包装箱重量列（毛重=净重，未扣箱重）');
   if(ps.conflict) warn.push('同一箱号出现 '+ps.conflict+' 处重量不一致（已取首行）');
   el.innerHTML='<div style="margin-top:12px;border:1px solid '+(warn.length?'#7a6320':'#2c5d3f')+';border-radius:8px;padding:10px 12px;background:'+(warn.length?'#2a2416':'#16241c')+'">'
     +'<b style="color:'+(warn.length?'#ffd479':'#7ee2a8')+'">'+(warn.length?'⚠ 解析完成（有提示）':'✓ 解析成功')+'</b> '
