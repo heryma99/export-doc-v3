@@ -78,6 +78,23 @@
   .prev{width:100%;height:340px;border:1px solid var(--line);border-radius:6px;background:#fff}
   .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
   .small{font-size:11px;padding:4px 8px}
+  /* 左栏步骤导航 + 单阶段工作区（2026-08-09 改造：替代垂直堆叠） */
+  .layout{display:flex;align-items:stretch;min-height:560px}
+  .rail{width:228px;flex:0 0 228px;background:var(--panel);border:1px solid var(--line);border-radius:10px 0 0 10px;border-right:none;padding:14px 10px;display:flex;flex-direction:column;gap:4px}
+  .rail .cap{color:var(--mut);font-size:11px;padding:0 8px 8px}
+  .rail .step{display:flex;gap:10px;align-items:flex-start;padding:10px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent;position:relative}
+  .rail .step:hover{background:var(--panel2)}
+  .rail .step.on{background:var(--panel2);border-color:var(--acc)}
+  .rail .step.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--acc)}
+  .rail .dot{width:22px;height:22px;border-radius:50%;flex:0 0 22px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;background:var(--panel2);border:1px solid var(--line);color:var(--mut)}
+  .rail .step.on .dot{background:var(--acc);border-color:var(--acc);color:#fff}
+  .rail .step.done .dot{background:var(--ok);border-color:var(--ok);color:#0e1116}
+  .rail .step .t{font-size:13px}
+  .rail .step .s{font-size:11px;color:var(--mut);margin-top:2px}
+  .rail .step.on .t{color:var(--txt)}
+  .content{flex:1;min-width:0;padding-left:16px}
+  .flow-stage{display:none}
+  .flow-stage.show{display:block}
 </style>
 </head>
 <body>
@@ -90,46 +107,64 @@
 </header>
 
 <div class="wrap">
-
-  <!-- 阶段1 上传装箱单 -->
-  <div class="stage">
-    <div class="hd"><span class="num">1</span><h2>上传装箱单 → 形成装箱单记录</h2><span class="tag" id="recCount">0 条记录</span></div>
-    <div class="bd">
-      <div class="upload" id="drop" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="onDrop(event)">
-        <div class="big">拖拽 .csv / .xlsx 装箱单到这里，或</div>
-        <div><input type="file" id="file" accept=".csv,.txt,.xlsx,.xls" style="display:none" onchange="onFile(event)">
-        <button class="primary" onclick="document.getElementById('file').click()">选择文件</button>
-        <button class="ghost" onclick="loadDemo()">用示例数据（HT1860040 风格）</button></div>
-        <div class="hint">列名自动识别（简繁体/带单位均可）：SKU列认 <code>款号/货号/商品编码/款式编码/SKU/style</code>；箱号认 <code>箱号/箱號/carton</code>；单号认 <code>订单号/单号/唛头号</code>。表头行自动探测，毛净重按箱号去重汇总。</div>
-        <div class="hint" style="margin-top:6px">净重兜底：无「净重」列时自动按 <code>毛重 − 包装箱重量</code> 计算（优先取源文件「包装箱重量」列，其次 <code>box_specs</code> 纸箱规格表，最后用固定值）。
-          箱重固定值(kg)：<input id="pkFixedBw" type="number" step="0.01" min="0" style="width:70px" placeholder="选填" onchange="localStorage.setItem('v3.fixedBoxWeight',this.value)"></div>
+  <div class="layout">
+    <!-- 左栏步骤导航 -->
+    <div class="rail">
+      <div class="cap">办理进度</div>
+      <div class="step on" data-step="1" onclick="gotoStage(1)"><div class="dot">1</div><div><div class="t">上传装箱单</div><div class="s" id="railSub1">形成装箱单记录</div></div></div>
+      <div class="step" data-step="2" onclick="gotoStage(2)"><div class="dot">2</div><div><div class="t">生成订单</div><div class="s" id="railSub2">补双红线</div></div></div>
+      <div class="step" data-step="3" onclick="gotoStage(3)"><div class="dot">3</div><div><div class="t">报关草单</div><div class="s" id="railSub3">表头 + 归类</div></div></div>
+      <div class="step" data-step="4" onclick="gotoStage(4)"><div class="dot">4</div><div><div class="t">输出整套单据</div><div class="s" id="railSub4">未开始</div></div></div>
+    </div>
+    <div class="content">
+      <!-- 阶段1 上传装箱单 -->
+      <div class="flow-stage show" data-stage="1">
+        <div class="stage">
+          <div class="hd"><span class="num">1</span><h2>上传装箱单 → 形成装箱单记录</h2><span class="tag" id="recCount">0 条记录</span></div>
+          <div class="bd">
+            <div class="upload" id="drop" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="onDrop(event)">
+              <div class="big">拖拽 .csv / .xlsx 装箱单到这里，或</div>
+              <div><input type="file" id="file" accept=".csv,.txt,.xlsx,.xls" style="display:none" onchange="onFile(event)">
+              <button class="primary" onclick="document.getElementById('file').click()">选择文件</button>
+              <button class="ghost" onclick="loadDemo()">用示例数据（HT1860040 风格）</button></div>
+              <div class="hint">列名自动识别（简繁体/带单位均可）：SKU列认 <code>款号/货号/商品编码/款式编码/SKU/style</code>；箱号认 <code>箱号/箱號/carton</code>；单号认 <code>订单号/单号/唛头号</code>。表头行自动探测，毛净重按箱号去重汇总。</div>
+              <div class="hint" style="margin-top:6px">净重兜底：无「净重」列时自动按 <code>毛重 − 包装箱重量</code> 计算（优先取源文件「包装箱重量」列，其次 <code>box_specs</code> 纸箱规格表，最后用固定值）。
+                箱重固定值(kg)：<input id="pkFixedBw" type="number" step="0.01" min="0" style="width:70px" placeholder="选填" onchange="localStorage.setItem('v3.fixedBoxWeight',this.value)"></div>
+            </div>
+            <div id="parseDiag"></div>
+            <div id="recTable" style="margin-top:14px"></div>
+          </div>
+        </div>
       </div>
-      <div id="parseDiag"></div>
-      <div id="recTable" style="margin-top:14px"></div>
+
+      <!-- 阶段2 订单 -->
+      <div class="flow-stage" data-stage="2">
+        <div class="stage">
+          <div class="hd"><span class="num">2</span><h2>勾选记录 → 生成订单（补双红线）</h2><span class="tag" id="ordCount">0 个订单</span></div>
+          <div class="bd">
+            <div class="note">双红线 = <b>最终目的国</b> + <b>币种</b>，缺任一不允许生成草单。四国各自独立录入（贸易国=买方地 / 运抵国=货物到达 / 产终国=中国 / 最终目的国=订单红线）。</div>
+            <div id="ordTable"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 阶段3 报关草单 -->
+      <div class="flow-stage" data-stage="3">
+        <div class="stage">
+          <div class="hd"><span class="num">3</span><h2>勾选订单 → 生成报关草单（表头下拉 + 归类）</h2><span class="tag" id="dftCount">0 张草单</span></div>
+          <div class="bd"><div id="dftArea"></div></div>
+        </div>
+      </div>
+
+      <!-- 阶段4 输出 -->
+      <div class="flow-stage" data-stage="4">
+        <div class="stage">
+          <div class="hd"><span class="num">4</span><h2>确认草单 → 一次性输出整套单据</h2></div>
+          <div class="bd"><div id="outArea"></div></div>
+        </div>
+      </div>
     </div>
   </div>
-
-  <!-- 阶段2 订单 -->
-  <div class="stage">
-    <div class="hd"><span class="num">2</span><h2>勾选记录 → 生成订单（补双红线）</h2><span class="tag" id="ordCount">0 个订单</span></div>
-    <div class="bd">
-      <div class="note">双红线 = <b>最终目的国</b> + <b>币种</b>，缺任一不允许生成草单。四国各自独立录入（贸易国=买方地 / 运抵国=货物到达 / 产终国=中国 / 最终目的国=订单红线）。</div>
-      <div id="ordTable"></div>
-    </div>
-  </div>
-
-  <!-- 阶段3 报关草单 -->
-  <div class="stage">
-    <div class="hd"><span class="num">3</span><h2>勾选订单 → 生成报关草单（表头下拉 + 归类）</h2><span class="tag" id="dftCount">0 张草单</span></div>
-    <div class="bd"><div id="dftArea"></div></div>
-  </div>
-
-  <!-- 阶段4 输出 -->
-  <div class="stage">
-    <div class="hd"><span class="num">4</span><h2>确认草单 → 一次性输出整套单据</h2></div>
-    <div class="bd"><div id="outArea"></div></div>
-  </div>
-
 </div>
 
 <!-- 设置抽屉 -->
@@ -562,6 +597,7 @@ function renderRecords(){
       <td><button onclick="genOrder('${r.id}')">生单→</button> <button class="ghost small" onclick="delRec('${r.id}')">删</button></td></tr>`;});
   h+='</tbody></table>';
   document.getElementById('recTable').innerHTML=h;
+  updRail();
 }
 function pickRec(id){DB.sel.rec=DB.sel.rec===id?null:id;save();renderRecords();}
 function delRec(id){DB.records=DB.records.filter(r=>r.id!==id);if(DB.sel.rec===id)DB.sel.rec=null;save();renderRecords();}
@@ -589,6 +625,7 @@ function renderOrders(){
       <td><button class="primary" ${ok?'':'disabled'} onclick="genDraft('${o.id}')">生成草单→</button> <button class="ghost small" onclick="delOrd('${o.id}')">删</button></td></tr>`;});
   h+='</tbody></table><p class="seq">* 红框=必填红线；贸易国=买方所在地(如HK→110)、运抵国=货物实际到达国、产终国=中国、最终目的国=订单红线。四者独立录入。</p>';
   document.getElementById('ordTable').innerHTML=h;
+  updRail();
 }
 function pickOrd(id){DB.sel.ord=DB.sel.ord===id?null:id;save();renderOrders();}
 function delOrd(id){DB.orders=DB.orders.filter(o=>o.id!==id);if(DB.sel.ord===id)DB.sel.ord=null;save();renderOrders();}
@@ -666,6 +703,7 @@ function renderDrafts(){
       ${d.monitor&&d.monitor.block?'<span class="badge bad">有阻断项，未通过不可锁定</span>':''}
       <button class="ghost small" onclick="delDraft('${d.id}')">删除草单</button>
     </div>${mh}</div></div>`;
+  updRail();
 }
 function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.header[f]=v;if(f==='shipper')d.header.prodUnit=v;save();renderDrafts();}
 function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
@@ -878,6 +916,7 @@ function renderOut(){
   h+=`<div class="row" style="margin-top:10px"><button class="primary" onclick="downloadAll()">打包下载整套单据</button>
       <button class="ghost" onclick="printAll()">打印全部</button></div>`;
   document.getElementById('outArea').innerHTML=h;
+  updRail();
 }
 let _cur={doc:0,idx:0};
 function previewDoc(docI,idx){_cur={doc:docI,idx};const doc=DB.docs[docI];const o=doc.out[idx];
@@ -1047,8 +1086,25 @@ function upTpl(k){const f=prompt('粘贴模板HTML（含 {{字段}} 占位符）
 function delTpl(k){DB.templates[k]=null;save();renderSetBody();}
 function resetAll(){if(confirm('确认清空本地所有数据（记录/订单/草单/模板）？此操作不可撤销。')){localStorage.removeItem(LS_KEY);DB=defaultDB();save();renderAll();alert('已重置');}}
 
+/* ============== 左栏步骤导航（2026-08-09 改造） ============== */
+let curStage=1;
+function gotoStage(n){curStage=n;updRail();}
+function updRail(){
+  const rc=(DB.records||[]).length, oc=(DB.orders||[]).length, dc=(DB.drafts||[]).length;
+  const locked=(DB.drafts||[]).some(d=>d.locked);
+  const subs={1:rc>0?rc+' 条记录':'形成装箱单记录',2:oc>0?oc+' 个订单':'补双红线',3:dc>0?dc+' 张草单':'表头 + 归类',4:locked?'已输出':'未开始'};
+  document.querySelectorAll('.rail .step').forEach(function(s){
+    const i=+s.dataset.step;
+    const done=[rc>0,oc>0,dc>0,locked][i-1];
+    s.classList.toggle('on', i===curStage);
+    s.classList.toggle('done', done && i!==curStage);
+    const sub=document.getElementById('railSub'+i); if(sub) sub.textContent=subs[i];
+  });
+  document.querySelectorAll('.flow-stage').forEach(function(s){s.classList.toggle('show', +s.dataset.stage===curStage);});
+}
+
 /* ============== 初始化 ============== */
-function renderAll(){renderRecords();renderOrders();renderDrafts();renderOut();}
+function renderAll(){renderRecords();renderOrders();renderDrafts();renderOut();updRail();}
 renderAll();
 </script>
 </body>
