@@ -101,6 +101,8 @@
         <button class="primary" onclick="document.getElementById('file').click()">选择文件</button>
         <button class="ghost" onclick="loadDemo()">用示例数据（HT1860040 风格）</button></div>
         <div class="hint">列名自动识别（简繁体/带单位均可）：SKU列认 <code>款号/货号/商品编码/款式编码/SKU/style</code>；箱号认 <code>箱号/箱號/carton</code>；单号认 <code>订单号/单号/唛头号</code>。表头行自动探测，毛净重按箱号去重汇总。</div>
+        <div class="hint" style="margin-top:6px">净重兜底：无「净重」列时自动按 <code>毛重 − 包装箱重量</code> 计算（优先取源文件「包装箱重量」列，其次 <code>box_specs</code> 纸箱规格表，最后用固定值）。
+          箱重固定值(kg)：<input id="pkFixedBw" type="number" step="0.01" min="0" style="width:70px" placeholder="选填" onchange="localStorage.setItem('v3.fixedBoxWeight',this.value)"></div>
       </div>
       <div id="parseDiag"></div>
       <div id="recTable" style="margin-top:14px"></div>
@@ -161,6 +163,8 @@
 
 <!-- 大批量商品库源数据（由 build_sku_data.py 生成；不存在则回退种子数据，不报错） -->
 <script src="sku_bulk.js"></script>
+<!-- 纸箱规格表（BOX_SPECS：SKU→纸箱重量weight/长宽高；净重兜底数据源。不存在则仅走源文件+固定值） -->
+<script src="box_specs.js"></script>
 <script>
 /* ============== 持久化数据层 ============== */
 const LS_KEY='exp3_data_v1';
@@ -304,9 +308,10 @@ const PL_ALIAS=[
   ['qty',   ['数量','數量','件数','件數','双数','雙數','对数','對數','qty','quantity','pcs','pairs','出货数量','出貨數量']],
   ['gw',    ['毛重','毛重量','gw','grossweight','gross']],
   ['nw',    ['净重','淨重','净重量','淨重量','nw','netweight']],
+  ['bw',    ['包装箱重量','包裝箱重量','纸箱重量','紙箱重量','箱皮重','箱重','箱子重量','箱子皮重','boxweight','cartonweight','tareweight','boxweightkg']],
   ['no',    ['订单号','訂單號','单号','單號','唛头号','嘜頭號','出货单号','出貨單號','orderno','pono','po','发票号','發票號']]
 ];
-const PL_KEYS=['sku','qty','gw','nw','box','boxNo','no','boxCnt'];
+const PL_KEYS=['sku','qty','gw','nw','bw','box','boxNo','no','boxCnt'];
 
 /* 表头归一：去括号注释(kg)、去空格/下划线/连字符/点/斜杠、小写 */
 function normHead(h){
@@ -371,8 +376,11 @@ function csvToGrid(txt){
   const sep=(l0.split('\t').length>l0.split(',').length)?'\t':',';
   return lines.map(function(l){return splitLine(l,sep).map(function(c){return c.trim();});});
 }
-/* 核心：二维数组 -> 明细行 */
-function parseGrid(grid,forceSku){
+/* 核心：二维数组 -> 明细行（v2026-08-09：新增 bw 包装箱重量列 + 净重三级兜底：源文件nw → gw−bw → box_specs[sku].weight → 固定值） */
+function parseGrid(grid,forceSku,opts){
+  opts=opts||{};
+  const boxLib=(typeof window!=='undefined'&&window.BOX_SPECS)||opts.boxSpecLib||{};
+  const fixedBw=+opts.fixedBoxWeight||0;
   grid=(grid||[]).filter(function(r){return Array.isArray(r);});
   const hr=detectHeadRow(grid);
   const head=(grid[hr]||[]).map(function(c){return String(c==null?'':c).trim();});
@@ -386,10 +394,17 @@ function parseGrid(grid,forceSku){
     const sku=g('sku');
     if(!sku) continue;
     if(headKey&&normHead(sku)===headKey) continue;   /* 跳过重复表头行 */
-    rows.push({sku:sku,qty:numv(g('qty')),gw:numv(g('gw')),nw:numv(g('nw')),
+    const gw=numv(g('gw'));
+    let nw=numv(g('nw'));
+    const srcBw=numv(g('bw'));
+    let bw=srcBw;
+    /* 净重三级兜底：源文件 nw → gw−bw → box_specs[sku].weight → 固定值 */
+    if(!nw&&gw&&!bw) bw=(boxLib[sku]||{}).weight||fixedBw;
+    if(!nw&&gw&&bw) nw=Math.max(0,gw-bw);
+    rows.push({sku:sku,qty:numv(g('qty')),gw:gw,nw:nw,bw:bw,
       box:g('box'),boxNo:g('boxNo'),no:g('no'),boxCnt:g('boxCnt')?numv(g('boxCnt')):0});
   }
-  const missing=['sku','qty','gw','nw','box','boxNo','no'].filter(function(k){return m[k]<0;});
+  const missing=['sku','qty','gw','nw','bw','box','boxNo','no'].filter(function(k){return m[k]<0;});
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
 }
 /* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计 */
@@ -442,9 +457,11 @@ function readFile(f){
   }
 }
 function loadDemo(){ingestGrid('示例HT1860040',csvToGrid(DEMO_CSV));}
+(function(){const el=document.getElementById('pkFixedBw');if(el)el.value=localStorage.getItem('v3.fixedBoxWeight')||'';})();
 let PEND=null;
 function ingestGrid(src,grid,forceSku){
-  const r=parseGrid(grid,forceSku);
+  const fixed=+(localStorage.getItem('v3.fixedBoxWeight')||0);
+  const r=parseGrid(grid,forceSku,{fixedBoxWeight:fixed});
   if(!r.rows.length){ PEND={src:src,grid:grid}; showDiag(r); return; }
   const ps=packSummary(r.rows);
   const rec={id:uid('R'),fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
