@@ -346,7 +346,7 @@ const PL_ALIAS=[
   ['fnsku', ['fnsku','fba编号','fba編號','亚马逊fnsku','fba货件sku','货件fnsku']],
   ['qty',   ['数量','數量','件数','件數','双数','雙數','对数','對數','qty','quantity','pcs','pairs','出货数量','出貨數量','商品总数','商品總數','totalunits','units','总数量','總數量']],
   ['qtyPerBox',['每箱件数','每箱件數','每箱数量','每箱數量','箱内件数','箱內件數','每箱pcs','unitperbox','unitsperbox','每箱单位数','每箱單位數','每箱商品数','每箱商品數']],
-  ['gw',    ['毛重','毛重量','gw','grossweight','gross','毛重kg','毛重(kg)','毛重（kg）','箱毛重','总毛重','總毛重','grossweightkg']],
+  ['gw',    ['毛重','毛重量','gw','grossweight','gross','毛重kg','毛重(kg)','毛重（kg）','箱毛重','总毛重','總毛重','grossweightkg','重量','重量kg','重量(kg)','重量（kg）','总重','總重','总重量','總重量']],
   ['nw',    ['净重','淨重','净重量','淨重量','nw','netweight','净重kg','净重(kg)','净重（kg）','箱净重','總淨重','总净重','netweightkg']],
   ['bw',    ['包装箱重量','包裝箱重量','纸箱重量','紙箱重量','箱皮重','箱重','箱子重量','箱子皮重','boxweight','cartonweight','tareweight','boxweightkg','包装箱重量（千克）','包装箱重量(千克)','包装箱重量kg']],
   ['length',['长','長','长cm','長cm','l','length','长度','長度','箱子长度','箱子長度','纸箱长','紙箱長','箱长','箱長','长(厘米)','长（厘米）','箱子长度（厘米）','箱子长度(厘米)']],
@@ -388,6 +388,7 @@ function mapColumns(head){
         if(!used[j]&&H[j]&&H[j].indexOf(als[a])>=0){
           if(key==='sku'&&(H[j]==='fnsku'||H[j].indexOf('fnsku')===0||H[j].indexOf('fba')===0||H[j]==='fba')) continue;
           if(key==='qty'&&(H[j]==='qtyperbox'||H[j].indexOf('每箱')===0)) continue; /* 「每箱件数」归 qtyPerBox 不归 qty */
+          if(key==='gw'&&/净|包装箱|皮重/.test(H[j])) continue; /* gw 的「重量」含匹配不可抢「净重/包装箱重量/皮重」列 */
           idx=j; break;
         }
       }
