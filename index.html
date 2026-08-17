@@ -639,11 +639,11 @@ function genOrder(recId){
 function renderOrders(){
   document.getElementById('ordCount').textContent=DB.orders.length+' 个订单';
   if(!DB.orders.length){document.getElementById('ordTable').innerHTML='<p class="muted">勾选上方记录并点「生单→」生成订单。</p>';return;}
-  let h='<table><thead><tr><th></th><th>订单ID</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
   DB.orders.forEach(o=>{const ok=o.destCountry&&o.currency;
     h+=`<tr class="${DB.sel.ord===o.id?'sel':''}">
       <td><input type="checkbox" ${DB.sel.ord===o.id?'checked':''} onchange="pickOrd('${o.id}')"></td>
-      <td>${o.id}</td><td class="muted">${o.recId}</td>
+      <td>${o.id}</td><td class="muted">${o.no||''}</td><td class="muted">${o.recId}</td>
       <td><select class="req" style="width:120px" onchange="setOrd('${o.id}','destCountry',this.value)"><option value="">选目的国</option>${opt(CODE.country,o.destCountry)}</select></td>
       <td><select class="req" style="width:100px" onchange="setOrd('${o.id}','currency',this.value)"><option value="">选币种</option>${optStr(DB.parties.currencyList,o.currency)}</select></td>
       <td><select style="width:100px" onchange="setOrd('${o.id}','tradeCountry',this.value)"><option value="">买方地</option>${opt(CODE.country,o.tradeCountry)}</select></td>
@@ -1210,7 +1210,7 @@ function updRail(){
   /* 渲染子项列表 */
   /* 订单列表 */
   const rl2=document.getElementById('railList2');
-  if(rl2){rl2.innerHTML=DB.orders.map(o=>`<div class="subitem${DB.sel.ord===o.id?' on':''}" onclick="event.stopPropagation();switchOrd('${o.id}')"><span class="subid">${o.id}</span><span>${o.destCountry||'?'}/${o.currency||''}</span></div>`).join('')||(oc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
+  if(rl2){rl2.innerHTML=DB.orders.map(o=>`<div class="subitem${DB.sel.ord===o.id?' on':''}" onclick="event.stopPropagation();switchOrd('${o.id}')"><span class="subid">${o.id}</span><span>${o.destCountry||'?'}/${o.currency||''}${o.no&&o.no!==o.id?' · 外部 '+o.no:''}</span></div>`).join('')||(oc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
   /* 草单列表 */
   const rl3=document.getElementById('railList3');
   if(rl3){rl3.innerHTML=DB.drafts.map(d=>`<div class="subitem${DB.sel.dft===d.id?' on':''}" onclick="event.stopPropagation();switchDraft('${d.id}')"><span class="subid">${d.id}</span><span>${d.lines.length}项${d.locked?' 🔒':''}</span></div>`).join('')||(dc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
