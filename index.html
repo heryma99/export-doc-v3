@@ -717,7 +717,7 @@ function genDraft(ordId){
       supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
   const dft={id:uid('D'),ordId,locked,
-    header:{shipper:DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
+    header:{no:o.no||'',shipper:DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
       tradeMode:'0110 一般贸易',transMode:'2 水路运输',tradeTerm:'FOB',port:'',levy:'1 照章征税',
       currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today(),
       /* 报关草单扩展字段（草单可留空，打印前补全） */
@@ -756,6 +756,7 @@ function renderDrafts(){
     <div class="field"><label>运抵国</label><input value="${H.arrivalCountry}"></div>
     <div class="field"><label>产终国</label><input value="${H.originCountry}"></div>
     <div class="field"><label>申报日期</label><input type="date" value="${H.declDate}" onchange="setHeader('${d.id}','declDate',this.value)"></div>
+    <div class="field"><label>合同协议号(=外部单号)</label><input value="${H.no||''}" onchange="setHeader('${d.id}','no',this.value)"></div>
   </div>`;
   let t='<table><thead><tr><th style="width:40px">项号</th><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>供应商</th><th>归类</th></tr></thead><tbody>';
   d.lines.forEach((l,i)=>{
@@ -971,7 +972,7 @@ function builtin(name){
 <tr><td style="width:14%">境内发货人<br><b>{{header.shipper}}</b></td><td style="width:18%">出境关别<br><b>{{header.port}}</b></td><td style="width:16%">出口日期<br><b>{{dates.exportDate}}</b></td><td style="width:16%">申报日期<br><b>{{dates.customs}}</b></td></tr>
 <tr><td>境外收货人<br><b>{{header.consignee}}</b></td><td>运输方式<br><b>{{header.transMode}}</b></td><td colspan="2">运输工具名称及航次号<br><b>{{header.vehicle}}</b></td><td>提运单号<br><b>{{header.billNo}}</b></td></tr>
 <tr><td>生产销售单位<br><b>{{header.prodUnit}}</b></td><td>监管方式<br><b>{{header.tradeMode}}</b></td><td>征免性质<br><b>{{header.levyNature}}</b></td><td colspan="2">许可证号<br><b>{{header.license}}</b></td></tr>
-<tr><td>合同协议号<br><b>{{order.no}}</b></td><td>贸易国(地区)<br><b>{{header.tradeCountry}}</b></td><td>运抵国(地区)<br><b>{{header.arrivalCountry}}</b></td><td>指运港<br><b>{{header.destPort}}</b></td><td>离境口岸<br><b>{{header.exitPort}}</b></td></tr>
+<tr><td>合同协议号<br><b>{{header.no||order.no}}</b></td><td>贸易国(地区)<br><b>{{header.tradeCountry}}</b></td><td>运抵国(地区)<br><b>{{header.arrivalCountry}}</b></td><td>指运港<br><b>{{header.destPort}}</b></td><td>离境口岸<br><b>{{header.exitPort}}</b></td></tr>
 <tr><td>包装种类<br><b>{{header.packKind}}</b></td><td>件数<br><b>{{boxCount}}</b></td><td>毛重(千克)<br><b>{{totalGW}}</b></td><td>净重(千克)<br><b>{{totalNW}}</b></td><td>成交方式<br><b>{{header.tradeTerm}}</b></td><td>运费<br><b>{{header.freight}}</b></td><td>保费<br><b>{{header.premium}}</b></td><td>杂费<br><b>{{header.misc}}</b></td></tr>
 <tr><td>集装箱号<br><b>{{header.container}}</b></td><td colspan="7">随附单证及编号<br><b>{{header.attach}}</b></td></tr>
 <tr><td colspan="8">标记唧码及备注<br><b>{{header.marks}}</b></td></tr>
@@ -1021,7 +1022,7 @@ function builtin(name){
     {{#each lines}}<tr><td>{{sku}}</td><td>{{name}}</td><td>{{box}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
     <tr><td colspan="3">合计</td><td>{{totalQty}}</td><td>{{totalGW}}</td><td>{{totalNW}}</td></tr></table>`;
   if(name==='销售合同')return head+`<p>卖方(供货)：{{header.shipper}} &nbsp; 买方：{{header.consignee}}</p>
-    <p>合同号：{{order.no}} &nbsp; 日期：{{dates.sales}} &nbsp; 成交方式：{{header.tradeTerm}} &nbsp; 目的国：{{header.destCountry}}</p>
+    <p>合同号：{{header.no||order.no}} &nbsp; 日期：{{dates.sales}} &nbsp; 成交方式：{{header.tradeTerm}} &nbsp; 目的国：{{header.destCountry}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>SKU</th><th>品名</th><th>HS</th><th>数量</th><th>单价({{header.currency}})</th><th>金额</th></tr>
     {{#each lines}}<tr><td>{{sku}}</td><td>{{name}}</td><td>{{hs}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
