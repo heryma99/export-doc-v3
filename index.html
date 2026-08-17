@@ -1264,10 +1264,10 @@ function updRail(){
   /* 渲染子项列表 */
   /* 订单列表 */
   const rl2=document.getElementById('railList2');
-  if(rl2){rl2.innerHTML=DB.orders.map(o=>`<div class="subitem${DB.sel.ord===o.id?' on':''}" onclick="event.stopPropagation();switchOrd('${o.id}')"><span class="subid">${o.id}</span><span>${o.destCountry||'?'}/${o.currency||''}${o.no&&o.no!==o.id?' · 外部 '+o.no:''}</span></div>`).join('')||(oc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
+  if(rl2){rl2.innerHTML=DB.orders.map(o=>{const ext=o.no&&o.no!==o.id?o.no:'';return `<div class="subitem${DB.sel.ord===o.id?' on':''}" onclick="event.stopPropagation();switchOrd('${o.id}')"><span class="subid">${ext||o.id}</span><span>${o.destCountry||'?'}/${o.currency||''}${ext?' · '+o.id:''}</span></div>`;}).join('')||(oc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
   /* 草单列表 */
   const rl3=document.getElementById('railList3');
-  if(rl3){rl3.innerHTML=DB.drafts.map(d=>`<div class="subitem${DB.sel.dft===d.id?' on':''}" onclick="event.stopPropagation();switchDraft('${d.id}')"><span class="subid">${d.id}</span><span>${d.lines.length}项${d.locked?' 🔒':''}</span></div>`).join('')||(dc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
+  if(rl3){rl3.innerHTML=DB.drafts.map(d=>{const ord=DB.orders.find(o=>o.id===d.ordId);const ext=d.header.no||(ord&&ord.no&&ord.no!==d.id?ord.no:'');return `<div class="subitem${DB.sel.dft===d.id?' on':''}" onclick="event.stopPropagation();switchDraft('${d.id}')"><span class="subid">${ext||d.id}</span><span>${d.lines.length}项${d.mergeMode||'M0'}${d.locked?' 🔒':''}${ext?' · '+d.id:''}</span></div>`;}).join('')||(dc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
 }
 
 /* ============== 初始化 ============== */
