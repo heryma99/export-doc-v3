@@ -486,14 +486,17 @@ function parseGrid(grid,forceSku,opts){
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
 }
 /* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计 */
-function packSummary(items){
+function packSummary(items, opts){
   const seen=Object.create(null), boxes=[]; let gw=0,nw=0,conflict=0;
   (items||[]).forEach(function(it,i){
     const k=it.boxNo?('B:'+it.boxNo):('R:'+i);
     if(seen[k]==null){ seen[k]={gw:+it.gw||0,nw:+it.nw||0}; boxes.push(k); gw+=(+it.gw||0); nw+=(+it.nw||0); }
     else if(Math.abs((+it.gw||0)-seen[k].gw)>0.001){ conflict++; }
   });
-  return {boxCount:boxes.length,totalGW:+gw.toFixed(3),totalNW:+nw.toFixed(3),conflict:conflict};
+  /* 无净重列场景：皮重统一按箱数扣（perBoxBw），贴合"单位是箱"业务口径，避免空毛重行漏扣 */
+  let totalNW=nw;
+  if(opts&&opts.perBoxBw){ totalNW=+(gw - opts.perBoxBw*boxes.length).toFixed(3); if(totalNW<0) totalNW=0; }
+  return {boxCount:boxes.length,totalGW:+gw.toFixed(3),totalNW:+totalNW.toFixed(3),conflict:conflict};
 }
 function ensureXLSX(cb){
   if(window.XLSX){cb();return;}
@@ -541,7 +544,7 @@ function ingestGrid(src,grid,forceSku){
   const fixed=+(localStorage.getItem('v3.fixedBoxWeight')||0);
   const r=parseGrid(grid,forceSku,{fixedBoxWeight:fixed});
   if(!r.rows.length){ PEND={src:src,grid:grid}; showDiag(r); return; }
-  const ps=packSummary(r.rows);
+  const ps=packSummary(r.rows, (r.missing||[]).indexOf('nw')>=0 ? {perBoxBw:(fixed||1.3)} : null);
   const rec={id:uid('R'),fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
     sum:ps,head:r.head,missing:r.missing};
   DB.records.push(rec);DB.sel.rec=rec.id;save();renderRecords();
