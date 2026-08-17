@@ -686,12 +686,14 @@ function renderDrafts(){
     <div class="field"><label>产终国</label><input value="${H.originCountry}"></div>
     <div class="field"><label>申报日期</label><input type="date" value="${H.declDate}" onchange="setHeader('${d.id}','declDate',this.value)"></div>
   </div>`;
-  let t='<table><thead><tr><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>供应商</th><th>归类</th></tr></thead><tbody>';
+  let t='<table><thead><tr><th style="width:40px">项号</th><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>供应商</th><th>归类</th></tr></thead><tbody>';
   d.lines.forEach((l,i)=>{
     const spec=buildSpec(l);
     const over=spec.length>250;
     const mergedTag=l._merged?' <span class="badge warn">归并'+l._cnt+'</span>':'';
+    const gwVal=(+l.gw||0), nwVal=(+l.nw||0);
     t+=`<tr class="${l.matched?'':'sel'}">
+      <td style="text-align:center;color:var(--mut)">${i+1}</td>
       <td>${l.sku}${mergedTag}</td><td>${l.name}</td>
       <td><input style="width:88px" value="${l.hs}" onchange="setLine('${d.id}',${i},'hs',this.value)"></td>
       <td>${l.mat}</td><td style="font-size:11px;${over?'color:var(--bad);font-weight:600':''}">${spec}${over?' ⚠超250字':''}</td>
