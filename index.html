@@ -473,6 +473,8 @@ function parseGrid(grid,forceSku,opts){
         nw=Math.round(unitGw*qty*1000)/1000;
         if(bw&&bc) gw=Math.round((nw+bw*bc)*1000)/1000;
         else if(bw&&qpb) gw=Math.round((nw+bw*(qty/qpb))*1000)/1000;
+        /* 兜底：有nw但无法算gw(无箱数)时，按至少1箱皮重补gw，避免毛重<净重 */
+        if(nw&&!gw) gw=Math.round((nw+bw)*1000)/1000;
       }
     }
     /* box 缺失但长/宽/高齐全 → 拼 L*W*H */
