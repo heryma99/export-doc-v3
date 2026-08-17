@@ -864,10 +864,17 @@ function renderFields(html,data){return html.replace(/\{\{(\w[\w.]*)\}\}/g,(m,p)
 function replaceEach(html,data){
   const m=html.match(/\{\{#each\s+(\w+)\}\}/);
   if(!m) return renderFields(html,data);
-  const name=m[1], start=m.index+m[0].length;
-  let depth=1,i=start;
-  while(i<html.length-7 && depth>0){const s=html.substr(i,8);if(s==='{{#each')depth++;else if(s==='{{/each')depth--;if(depth===0)break;i++;}
-  const body=html.slice(start,i), before=html.slice(0,m.index), after=html.slice(i+8);
+  const name=m[1], tagStart=m.index, bodyStart=tagStart+m[0].length;
+  /* 用正则收集所有 {{#each / {{/each 的位置，按深度栈匹配找到对应的闭合标签 */
+  const re=/\{\{(#|\/)each\s*\w*\}\}/g;
+  let match, depth=0, closePos=-1;
+  while((match=re.exec(html))!==null){
+    if(match.index<tagStart) continue;
+    if(match[1]==='#') depth++;
+    else{depth--; if(depth===0){closePos=match.index;break;}}
+  }
+  if(closePos<0){const fb=html.indexOf('{{/each}}',bodyStart);closePos=fb>=0?fb:html.length;}
+  const body=html.slice(bodyStart,closePos), before=html.slice(0,tagStart), after=html.slice(closePos+9);
   const list=getPath(data,name)||[];
   const rep=list.map((it,idx)=>replaceEach(body,Object.assign({},data,it,{_i:idx+1}))).join('');
   return replaceEach(before+rep+after,data);
@@ -957,11 +964,18 @@ function renderOut(){
   let h=`<div class="note">已锁定草单 <b>${doc.dftId}</b>。共生成 <b>${doc.out.reduce((a,b)=>a+b.n,0)}</b> 份单据（其中国内采购合同按 <b>${doc.contractCount??dt.contractCount}</b> 个供应商拆分）。</div>`;
   doc.out.forEach((o,idx)=>{
     const tplHtml=DB.templates[o.type]||builtin(o.type);
-    const preview=renderTpl(tplHtml,dt);
+    let preview=renderTpl(tplHtml,dt);
+    /* 防护：检测残留模板标签（说明渲染不完整），自动降级到内置模板重试 */
+    const broken=/\{\{[\/#]|\{\{each/.test(preview);
+    if(broken && DB.templates[o.type]){
+      preview=renderTpl(builtin(o.type),dt);
+    }
+    const stillBroken=/\{\{[\/#]|\{\{each/.test(preview);
     h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
         <h4 style="margin:0 8px 0 0">${o.type} ${o.n>1?`×${o.n}`:''}</h4>
         <button class="small" onclick="previewDoc(${docI},${idx})">预览</button>
         <button class="small" onclick="downloadDoc(${docI},${idx})">下载</button></div>
+      ${stillBroken?'<p style="color:red;font-size:12px;margin:2px 0">⚠ 模板渲染异常（残留未处理的模板标签）。请到「设置→模板管理」重置该模板，或检查数据完整性。</p>':''}
       <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px;background:#fff;color:#111;font-size:11px">${preview}</div></div>`;
   });
   h+=`<p class="seq">日期前后逻辑：国内采购合同(${dt.dates.purchase}) &lt; 销售合同(${dt.dates.sales}) ≤ 发票/装箱单(${dt.dates.invoice}) &lt; 报关单申报(${dt.dates.customs})。各模板日期字段按此序由草单申报日推导。</p>`;
@@ -971,20 +985,29 @@ function renderOut(){
   updRail();
 }
 let _cur={doc:0,idx:0};
+/* 安全渲染：模板渲染后检测残留标签，自定义模板失败时自动降级内置版 */
+function safeRender(type,data,extraData){
+  const tpl=DB.templates[type]||builtin(type);
+  let html=renderTpl(tpl,data);
+  if(/\{\{[\/#]|\{\{each/.test(html)&&DB.templates[type]){
+    html=renderTpl(builtin(type),data);
+  }
+  return extraData?renderTpl(html,extraData):html;
+}
 function previewDoc(docI,idx){_cur={doc:docI,idx};const doc=DB.docs[docI];const o=doc.out[idx];
-  const data=buildData(doc);const tplHtml=DB.templates[o.type]||builtin(o.type);
+  const data=buildData(doc);
   document.getElementById('prevTitle').textContent=o.type+' 预览';
-  document.getElementById('prevFrame').srcdoc=renderTpl(tplHtml,data);
+  document.getElementById('prevFrame').srcdoc=safeRender(o.type,data);
   document.getElementById('prevModal').classList.add('open');}
 function closePrev(){document.getElementById('prevModal').classList.remove('open');}
 function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];const data=buildData(doc);
-  if(o.type==='国内采购合同'){data.contracts.forEach(c=>{const one=renderTpl(DB.templates[o.type]||builtin(o.type),Object.assign({},data,{contracts:[c]}));dl('采购合同_'+c.supplier,one);});return;}
-  dl(o.type,renderTpl(DB.templates[o.type]||builtin(o.type),data));}
+  if(o.type==='国内采购合同'){data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});dl('采购合同_'+c.supplier,one);});return;}
+  dl(o.type,safeRender(o.type,data));}
 function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
 function dl(name,html){const blob=new Blob(['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+name+'</title></head><body>'+html+'</body></html>'],{type:'text/html;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name+'.html';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500);}
 function downloadAll(){const doc=DB.docs[DB.docs.length-1];doc.out.forEach((o,i)=>downloadDoc(DB.docs.length-1,i));}
-function printAll(){const doc=DB.docs[DB.docs.length-1];let all='';doc.out.forEach(o=>{all+=renderTpl(DB.templates[o.type]||builtin(o.type),buildData(doc));});
+function printAll(){const doc=DB.docs[DB.docs.length-1];let all='';doc.out.forEach(o=>{all+=safeRender(o.type,buildData(doc));});
   const w=window.open('');w.document.write('<html lang="zh-CN"><head><meta charset="UTF-8"><title>整套单据</title></head><body>'+all+'</body></html>');w.document.close();setTimeout(()=>w.print(),400);}
 
 /* ============== 设置中心 ============== */
