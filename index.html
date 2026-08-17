@@ -139,7 +139,7 @@
       <!-- 阶段1 上传装箱单 -->
       <div class="flow-stage show" data-stage="1">
         <div class="stage">
-          <div class="hd"><span class="num">1</span><h2>上传装箱单 → 形成装箱单记录</h2><span class="tag" id="recCount">0 条记录</span></div>
+          <div class="hd"><span class="num">1</span><h2>上传装箱单 → 形成装箱单记录</h2><span class="tag" id="recCount">0 条记录</span><button class="ghost small" style="margin-left:auto" onclick="purgeNow()" title="清除失去上游来源的孤儿订单/草单/单证">清理残留</button></div>
           <div class="bd">
             <div class="upload" id="drop" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="onDrop(event)">
               <div class="big">拖拽 .csv / .xlsx 装箱单到这里，或</div>
@@ -314,8 +314,35 @@ function defaultDB(){
 }
 let DB;
 function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};return d;}}catch(e){}return null;}
-function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败：'+e.message);}}
+function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
+/* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
+   任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
+function purgeOrphans(){
+  if(!DB) return 0;
+  DB.records=DB.records||[];DB.orders=DB.orders||[];DB.drafts=DB.drafts||[];DB.docs=DB.docs||[];
+  let n=0;
+  const recIds=new Set(DB.records.map(r=>r.id));
+  const b1=DB.orders.length;DB.orders=DB.orders.filter(o=>recIds.has(o.recId));n+=b1-DB.orders.length;
+  const ordIds=new Set(DB.orders.map(o=>o.id));
+  const b2=DB.drafts.length;DB.drafts=DB.drafts.filter(d=>ordIds.has(d.ordId));n+=b2-DB.drafts.length;
+  const dftIds=new Set(DB.drafts.map(d=>d.id));
+  const b3=DB.docs.length;DB.docs=DB.docs.filter(c=>dftIds.has(c.dftId));n+=b3-DB.docs.length;
+  DB.sel=DB.sel||{};
+  if(DB.sel.rec&&!recIds.has(DB.sel.rec))DB.sel.rec=null;
+  if(DB.sel.ord&&!ordIds.has(DB.sel.ord))DB.sel.ord=null;
+  if(DB.sel.dft&&!dftIds.has(DB.sel.dft))DB.sel.dft=null;
+  return n;
+}
+/* 手动清理入口：用户看到残留时可一键收敛 */
+function purgeNow(){
+  const n=purgeOrphans();
+  save();
+  if(typeof renderAll==='function')renderAll();
+  alert(n?('已清理 '+n+' 条孤儿数据（失去上游来源的订单/草单/单证）。'):'未发现孤儿数据，各层级已一致。');
+}
 DB=load()||defaultDB();
+/* 启动自愈：清掉历史遗留的孤儿数据（旧版删除未级联导致的"删了还在"残留） */
+(function(){try{const n=purgeOrphans();if(n){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){}console.warn('[V3] 启动自愈：已清理孤儿数据 '+n+' 条');}}catch(e){}})();
 /* 商品库 = 大批量源数据(商品库数据.js, 不持久化) + 用户覆盖层(skuOverride, 持久化, 体积小)。
    getSku 优先取批量源，再用覆盖层合并，避免把 13019 行塞进 localStorage 撑爆配额。 */
 function getSku(s){
@@ -628,7 +655,18 @@ function renderRecords(){
   updRail();
 }
 function pickRec(id){DB.sel.rec=DB.sel.rec===id?null:id;save();renderRecords();}
-function delRec(id){DB.records=DB.records.filter(r=>r.id!==id);if(DB.sel.rec===id)DB.sel.rec=null;save();renderRecords();}
+function delRec(id){
+  const ords=DB.orders.filter(o=>o.recId===id);
+  const oids=new Set(ords.map(o=>o.id));
+  const dfts=DB.drafts.filter(d=>oids.has(d.ordId));
+  const dids=new Set(dfts.map(d=>d.id));
+  const dcs=DB.docs.filter(c=>dids.has(c.dftId));
+  const tot=ords.length+dfts.length+dcs.length;
+  if(tot&&!confirm('该装箱记录下游已有：'+ords.length+' 个订单 / '+dfts.length+' 张草单 / '+dcs.length+' 套单证，删除记录将一并删除。确认？'))return;
+  DB.records=DB.records.filter(r=>r.id!==id);
+  if(DB.sel.rec===id)DB.sel.rec=null;
+  purgeOrphans();save();renderAll();
+}
 
 /* ============== 阶段2 订单 ============== */
 function genOrder(recId){
@@ -656,7 +694,16 @@ function renderOrders(){
   updRail();
 }
 function pickOrd(id){DB.sel.ord=DB.sel.ord===id?null:id;save();renderOrders();}
-function delOrd(id){const linked=DB.drafts.filter(d=>d.ordId===id);if(linked.length&&!confirm('该订单已生成 '+linked.length+' 张草单，删除订单将一并删除这些草单。确认？'))return;DB.orders=DB.orders.filter(o=>o.id!==id);if(linked.length)DB.drafts=DB.drafts.filter(d=>d.ordId!==id);if(DB.sel.ord===id)DB.sel.ord=null;if(linked.some(d=>DB.sel.dft===d.id))DB.sel.dft=null;try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}renderAll();}
+function delOrd(id){
+  const dfts=DB.drafts.filter(d=>d.ordId===id);
+  const dids=new Set(dfts.map(d=>d.id));
+  const dcs=DB.docs.filter(c=>dids.has(c.dftId));
+  const tot=dfts.length+dcs.length;
+  if(tot&&!confirm('该订单下游已有：'+dfts.length+' 张草单 / '+dcs.length+' 套单证，删除订单将一并删除。确认？'))return;
+  DB.orders=DB.orders.filter(o=>o.id!==id);
+  if(DB.sel.ord===id)DB.sel.ord=null;
+  purgeOrphans();save();renderAll();
+}
 function setOrd(id,k,v){const o=DB.orders.find(x=>x.id===id);if(o){o[k]=v;save();renderOrders();}}
 
 /* ============== 阶段3 草单 ============== */
@@ -751,7 +798,13 @@ function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d
 function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
   if(d.rawLines&&d.lines[i]._keys){d.rawLines.forEach(r=>{if(d.lines[i]._keys.indexOf(r.sku)>=0)r[k]=v;});}
   save();renderDrafts();}
-function delDraft(id){DB.drafts=DB.drafts.filter(d=>d.id!==id);if(DB.sel.dft===id)DB.sel.dft=null;save();renderDrafts();}
+function delDraft(id){
+  const dcs=DB.docs.filter(c=>c.dftId===id);
+  if(dcs.length&&!confirm('该草单已输出 '+dcs.length+' 套单证，删除草单将一并删除。确认？'))return;
+  DB.drafts=DB.drafts.filter(d=>d.id!==id);
+  if(DB.sel.dft===id)DB.sel.dft=null;
+  purgeOrphans();save();renderAll();
+}
 
 function setMerge(did,mode){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.mergeMode=mode;d.lines=mergeLines(d.rawLines,d.mergeMode,d.mergeSup);save();renderDrafts();}
 function setMergeSup(did,chk){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.mergeSup=!!chk;d.lines=mergeLines(d.rawLines,d.mergeMode,d.mergeSup);save();renderDrafts();}
