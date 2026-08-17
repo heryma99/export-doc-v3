@@ -656,7 +656,7 @@ function renderOrders(){
   updRail();
 }
 function pickOrd(id){DB.sel.ord=DB.sel.ord===id?null:id;save();renderOrders();}
-function delOrd(id){DB.orders=DB.orders.filter(o=>o.id!==id);if(DB.sel.ord===id)DB.sel.ord=null;save();renderOrders();}
+function delOrd(id){const linked=DB.drafts.filter(d=>d.ordId===id);if(linked.length&&!confirm('该订单已生成 '+linked.length+' 张草单，删除订单将一并删除这些草单。确认？'))return;DB.orders=DB.orders.filter(o=>o.id!==id);if(linked.length)DB.drafts=DB.drafts.filter(d=>d.ordId!==id);if(DB.sel.ord===id)DB.sel.ord=null;if(linked.some(d=>DB.sel.dft===d.id))DB.sel.dft=null;try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}renderAll();}
 function setOrd(id,k,v){const o=DB.orders.find(x=>x.id===id);if(o){o[k]=v;save();renderOrders();}}
 
 /* ============== 阶段3 草单 ============== */
