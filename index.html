@@ -286,9 +286,13 @@ function buildSpec(l){
 function mergeLines(lines,mode,sup){
   if(mode==='M0'||!lines.length) return lines.map(x=>Object.assign({},x));
   const m=MODES.find(x=>x.id===mode)||MODES[0];
+  // 降级保护：M4/M5 的"款式"维度依赖商品库独立款式(SPU/SKC)；当前数据集无独立款式(SPU!=SKU)时
+  // 退化为按 SKU 分行，杜绝同 HS+品名+材质的不同款被误合并（用户 2026-08-18 反馈）
+  const hasStyle=lines.some(l=>l.style&&l.style!==l.sku);
+  const keys=(mode==='M4'||mode==='M5')&&!hasStyle?['sku']:m.keys.slice();
   const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:(l.style&&l.style!==l.sku?l.style:''),mat:l.mat})[kk];
   const groups={};
-  lines.forEach(l=>{const key=m.keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+(l.supplier||'')):'');(groups[key]=groups[key]||[]).push(l);});
+  lines.forEach(l=>{const key=keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+(l.supplier||'')):'');(groups[key]=groups[key]||[]).push(l);});
   return Object.keys(groups).map(k=>{const g=groups[k],rep=Object.assign({},g[0]);
     rep.sku=[...new Set(g.map(x=>x.sku))].join(',');
     rep.style=[...new Set(g.map(x=>x.style))].filter(Boolean).join(',');
@@ -778,7 +782,7 @@ function renderDrafts(){
   let maxLen0=0,total0=0;
   d.lines.forEach(l=>{const sp=buildSpec(l);if(sp.length>maxLen0)maxLen0=sp.length;total0+=(+l.decl)*(+l.qty);});
   const hasStyle=(d.rawLines||[]).some(x=>x.style&&x.style!==x.sku);
-  const noStyleHint=(!hasStyle&&(d.mergeMode==='M4'||d.mergeMode==='M5'))?'<div style="font-size:11px;color:#ffd479;margin-top:4px">⚠ 当前商品库无独立款式(SPU/SKC)列值，M4/M5 按 HS+品名归并；在设置中心商品库维护「款式编码/SPU/SKC」列后重新生成草单即生效</div>':'';
+  const noStyleHint=(!hasStyle&&(d.mergeMode==='M4'||d.mergeMode==='M5'))?'<div style="font-size:11px;color:#ffd479;margin-top:4px">⚠ 当前商品库无独立款式(SPU/SKC)列值，M4/M5 已按 SKU 分行（不合并），避免不同款误合并；在设置中心商品库维护「款式编码/SPU/SKC」列后重新生成草单即生效</div>':'';
   const panel=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:12px;background:var(--panel2)">
     <div style="font-size:12px;color:var(--mut);margin-bottom:6px">归并模式（任选其一，可叠加供应商分行）</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
