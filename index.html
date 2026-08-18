@@ -1066,16 +1066,34 @@ function renderOut(){
   const docI=DB.docs.length-1, doc=DB.docs[docI];
   if(!doc){document.getElementById('outArea').innerHTML='<p class="muted">确认草单后在此一次性输出整套单据。</p>';return;}
   const dt=buildData(doc);
-  let h=`<div class="ctx-bar"><span class="ctx-label">输出基于：</span><span class="ctx-val">草单 ${doc.dftId}</span><span class="ctx-extra">· 共 ${doc.out.reduce((a,b)=>a+b.n,0)} 份单据${doc.contractCount||dt.contractCount?' · '+doc.contractCount??dt.contractCount+' 个供应商':''}</span></div>`;
+  const supNames=(doc.suppliers||dt.contracts.map(c=>c.supplier)).filter(Boolean).join('、');
+  let h=`<div class="ctx-bar"><span class="ctx-label">输出基于：</span><span class="ctx-val">草单 ${doc.dftId}</span><span class="ctx-extra">· 共 ${doc.out.reduce((a,b)=>a+b.n,0)} 份单据${supNames?' · 供应商：'+supNames:''}</span></div>`;
   doc.out.forEach((o,idx)=>{
     const tplHtml=DB.templates[o.type]||builtin(o.type);
-    let preview=renderTpl(tplHtml,dt);
-    /* 防护：检测残留模板标签（说明渲染不完整），自动降级到内置模板重试 */
-    const broken=/\{\{[\/#]|\{\{each/.test(preview);
-    if(broken && DB.templates[o.type]){
-      preview=renderTpl(builtin(o.type),dt);
+    const isBroken=html=>/\{\{[\/#]|\{\{each/.test(html);
+    const renderOne=extra=>{
+      let p=renderTpl(tplHtml,extra||dt);
+      if(isBroken(p)&&DB.templates[o.type]) p=renderTpl(builtin(o.type),extra||dt);
+      return p;
+    };
+    /* 国内采购合同：多供应商=多份，逐份卡片展示 */
+    if(o.type==='国内采购合同'){
+      h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
+        <h4 style="margin:0 8px 0 0">国内采购合同 ×${dt.contracts.length}</h4>
+        <button class="small" onclick="previewDoc(${docI},${idx})">预览全部</button>
+        <button class="small" onclick="downloadDoc(${docI},${idx})">下载全部</button>
+        <button class="small xbtn" onclick="downloadDocXlsx(${docI},${idx})">下载EXCEL(工作簿)</button></div>`;
+      dt.contracts.forEach((c,ci)=>{
+        const one=renderOne(Object.assign({},dt,{contracts:[c]}));
+        h+=`<div style="border:1px dashed var(--line);border-radius:6px;padding:8px;margin:6px 0">
+          <div class="toolbar" style="margin:0 0 4px"><b>第${ci+1}份 · ${c.supplier}</b><span style="color:var(--mut);font-size:11px">${c.count}项 · 采购金额 ${c.amount}</span></div>
+          <div style="max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:4px;padding:6px;background:#fff;color:#111;font-size:11px">${one}</div></div>`;
+      });
+      h+='</div>';
+      return;
     }
-    const stillBroken=/\{\{[\/#]|\{\{each/.test(preview);
+    const preview=renderOne();
+    const stillBroken=isBroken(preview);
     h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
         <h4 style="margin:0 8px 0 0">${o.type} ${o.n>1?`×${o.n}`:''}</h4>
         <button class="small" onclick="previewDoc(${docI},${idx})">预览</button>
@@ -1230,23 +1248,30 @@ function xlsWorkbookForDoc(doc){
   return added?wb:null;
 }
 function xlsDownload(name,wb){
-  const blob=XLSX.write(wb,{type:'blob',bookType:'xlsx'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.xlsx'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  try{
+    const buf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.xlsx'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }catch(e){ alert('EXCEL 生成失败：'+e.message); console.error(e); }
 }
 function downloadDocXlsx(docI,idx){
   ensureXLSX(function(){
-    const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
-    const wb=XLSX.utils.book_new();
-    if(o.type==='国内采购合同'){ d.contracts.forEach(c=>XLSX.utils.book_append_sheet(wb,xlsContract(c,d),sheetName('采购合同_'+c.supplier))); }
-    else { XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(o.type)); }
-    xlsDownload(o.type==='国内采购合同'?'国内采购合同':o.type,wb);
+    try{
+      const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
+      const wb=XLSX.utils.book_new();
+      if(o.type==='国内采购合同'){ d.contracts.forEach(c=>XLSX.utils.book_append_sheet(wb,xlsContract(c,d),sheetName('采购合同_'+c.supplier))); }
+      else { XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(o.type)); }
+      xlsDownload(o.type==='国内采购合同'?'国内采购合同':o.type,wb);
+    }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
 }
 function downloadAllXlsx(){
   ensureXLSX(function(){
-    const doc=DB.docs[DB.docs.length-1]; const wb=xlsWorkbookForDoc(doc);
-    if(!wb){alert('暂无可导出的单据');return;}
-    xlsDownload('整套出口单证',wb);
+    try{
+      const doc=DB.docs[DB.docs.length-1]; const wb=xlsWorkbookForDoc(doc);
+      if(!wb){alert('暂无可导出的单据');return;}
+      xlsDownload('整套出口单证',wb);
+    }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
 }
 
