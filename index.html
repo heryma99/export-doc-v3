@@ -91,6 +91,10 @@
   .docset-tbl tbody tr:hover{background:var(--panel2)}
   .docset-tbl tbody tr.current{background:rgba(127,240,176,.08)}
   .docset-tbl .badge-on{font-size:10px;color:var(--acc);border:1px solid var(--acc);padding:0 6px;border-radius:8px;margin-left:4px;display:inline-block;line-height:1.5}
+  /* 左栏浮动批量条 */
+  .rail-batch-bar{margin-top:8px;padding:8px;border:1px solid var(--acc);border-radius:8px;background:rgba(127,240,176,.05)}
+  .rail-batch-info{font-size:11px;color:var(--fg);margin-bottom:6px}
+  .rail-batch-bar .small{font-size:10px;padding:3px 6px;margin-right:2px;margin-bottom:2px}
   /* 左栏步骤导航 + 单阶段工作区（2026-08-09 改造：替代垂直堆叠） */
   .layout{display:flex;align-items:stretch;min-height:560px}
   .rail{width:228px;flex:0 0 228px;background:var(--panel);border:1px solid var(--line);border-radius:10px 0 0 10px;border-right:none;padding:14px 10px;display:flex;flex-direction:column;gap:4px}
@@ -147,6 +151,13 @@
       <div class="step" data-step="3" onclick="gotoStage(3)"><div class="dot">3</div><div><div class="t">报关草单</div><div class="s" id="railSub3">表头 + 归类</div></div></div>
       <div class="sublist" id="railList3"></div>
       <div class="step" data-step="4" onclick="gotoStage(4)"><div class="dot">4</div><div><div class="t">输出整套单据</div><div class="s" id="railSub4">未开始</div></div></div>
+      <div class="sublist" id="railList4"></div>
+      <div class="rail-batch-bar" id="railBatchBar" style="display:none">
+        <div class="rail-batch-info">已选 <b id="railSelCount">0</b> 份草单</div>
+        <button class="small" onclick="batchDownloadHTML()">批量HTML</button>
+        <button class="small xbtn" onclick="batchDownloadXlsx()">批量EXCEL</button>
+        <button class="small xbtn" onclick="batchDownloadMergedXlsx()">合并EXCEL</button>
+      </div>
     </div>
     <div class="content">
       <!-- 阶段1 上传装箱单 -->
@@ -333,11 +344,11 @@ function defaultDB(){
     templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null},
     records:[],orders:[],drafts:[],docs:[],
     skuOverride:{},
-    sel:{rec:null,ord:null,dft:null,doc:null,docsSet:[]}
+    sel:{rec:null,ord:null,dft:null,doc:null,docsSet:[],draftsSet:[]}
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -1345,15 +1356,38 @@ function toggleSel(idx,checked){
   const s=getSelDocs();
   if(checked){ if(s.indexOf(idx)<0) s.push(idx); }
   else { const j=s.indexOf(idx); if(j>=0) s.splice(j,1); }
-  save(); renderOut();
+  save(); updRail(); renderOut();
 }
 function toggleSelAll(checked){
   DB.sel.docsSet = checked ? DB.docs.map(function(_,i){return i;}) : [];
-  save(); renderOut();
+  save(); updRail(); renderOut();
 }
 function setBrowser(idx){
   DB.sel.doc = idx;
   save(); renderOut();
+}
+function setBrowserAndNav(idx){
+  DB.sel.doc = idx;
+  curStage = 4;
+  save(); renderOut(); updRail();
+}
+/* 左栏「报关草单」复选：勾选 draft → 同步映射到 docsSet（仅 confirmed）*/
+function syncDraftsToDocs(){
+  if(!Array.isArray(DB.sel.draftsSet)) DB.sel.draftsSet = [];
+  const newDocs = [];
+  DB.sel.draftsSet.forEach(function(draftI){
+    const d = DB.drafts[draftI]; if(!d||!d.confirmed) return;
+    const docI = DB.docs.findIndex(function(x){ return x.dftId === d.id; });
+    if(docI>=0 && newDocs.indexOf(docI)<0) newDocs.push(docI);
+  });
+  DB.sel.docsSet = newDocs;
+}
+function toggleDraftSel(idx,checked){
+  if(!Array.isArray(DB.sel.draftsSet)) DB.sel.draftsSet = [];
+  if(checked){ if(DB.sel.draftsSet.indexOf(idx)<0) DB.sel.draftsSet.push(idx); }
+  else { const j=DB.sel.draftsSet.indexOf(idx); if(j>=0) DB.sel.draftsSet.splice(j,1); }
+  syncDraftsToDocs();
+  save(); updRail(); renderOut();
 }
 function batchDownloadHTML(){
   const sels=getSelDocs();
@@ -1582,11 +1616,11 @@ function switchOrd(id){DB.sel.ord=id;save();renderOrders();}
 function gotoStage(n){curStage=n;updRail();}
 function updRail(){
   const rc=(DB.records||[]).length, oc=(DB.orders||[]).length, dc=(DB.drafts||[]).length;
-  const locked=(DB.drafts||[]).some(d=>d.locked);
-  const subs={1:rc>0?rc+' 条记录':'形成装箱单记录',2:oc>0?oc+' 个订单':'补双红线',3:dc>0?dc+' 张草单':'表头 + 归类',4:locked?'已输出':'未开始'};
+  const docCount=(DB.docs||[]).length;
+  const subs={1:rc>0?rc+' 条记录':'形成装箱单记录',2:oc>0?oc+' 个订单':'补双红线',3:dc>0?dc+' 张草单':'表头 + 归类',4:docCount>0?docCount+' 份整套':'未开始'};
   document.querySelectorAll('.rail .step').forEach(function(s){
     const i=+s.dataset.step;
-    const done=[rc>0,oc>0,dc>0,locked][i-1];
+    const done=[rc>0,oc>0,dc>0,docCount>0][i-1];
     s.classList.toggle('on', i===curStage);
     s.classList.toggle('done', done && i!==curStage);
     const sub=document.getElementById('railSub'+i); if(sub) sub.textContent=subs[i];
@@ -1596,9 +1630,44 @@ function updRail(){
   /* 订单列表 */
   const rl2=document.getElementById('railList2');
   if(rl2){rl2.innerHTML=DB.orders.map(o=>{const ext=o.no&&o.no!==o.id?o.no:'';return `<div class="subitem${DB.sel.ord===o.id?' on':''}" onclick="event.stopPropagation();switchOrd('${o.id}')"><span class="subid">${ext||o.id}</span><span>${o.destCountry||'?'}/${o.currency||''}${ext?' · '+o.id:''}</span></div>`;}).join('')||(oc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
-  /* 草单列表 */
+  /* 草单列表（带复选框） */
   const rl3=document.getElementById('railList3');
-  if(rl3){rl3.innerHTML=DB.drafts.map(d=>{const ord=DB.orders.find(o=>o.id===d.ordId);const ext=d.header.no||(ord&&ord.no&&ord.no!==d.id?ord.no:'');return `<div class="subitem${DB.sel.dft===d.id?' on':''}" onclick="event.stopPropagation();switchDraft('${d.id}')"><span class="subid">${ext||d.id}</span><span>${d.lines.length}项${d.mergeMode||'M0'}${d.locked?' 🔒':''}${ext?' · '+d.id:''}</span></div>`;}).join('')||(dc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
+  if(rl3){
+    rl3.innerHTML=DB.drafts.map(function(d,idx){
+      const ord=DB.orders.find(o=>o.id===d.ordId);
+      const ext=d.header.no||(ord&&ord.no&&ord.no!==d.id?ord.no:'');
+      const checked=DB.sel.draftsSet&&DB.sel.draftsSet.indexOf(idx)>=0?'checked':'';
+      const confirmed=d.confirmed?' ✓':'';
+      return `<div class="subitem${DB.sel.dft===d.id?' on':''}" onclick="event.stopPropagation();switchDraft('${d.id}')">
+        <input type="checkbox" ${checked} onchange="toggleDraftSel(${idx},this.checked)" onclick="event.stopPropagation()" style="margin-right:5px;vertical-align:middle">
+        <span class="subid">${ext||d.id}</span>
+        <span>${d.lines.length}项${d.mergeMode||'M0'}${confirmed}${ext?' · '+d.id:''}</span>
+      </div>`;
+    }).join('')||(dc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');
+  }
+  /* 整套单据列表（带复选框） */
+  const rl4=document.getElementById('railList4');
+  if(rl4){
+    const docsSel=Array.isArray(DB.sel.docsSet)?DB.sel.docsSet:[];
+    rl4.innerHTML=DB.docs.map(function(doc,idx){
+      const checked=docsSel.indexOf(idx)>=0?'checked':'';
+      const current=idx===DB.sel.doc;
+      const supNames=(doc.suppliers&&doc.suppliers.length)?doc.suppliers.join('、'):'未匹配';
+      const fileCount=doc.out.reduce(function(a,o){return a+o.n;},0);
+      return `<div class="subitem${current?' on':''}" onclick="event.stopPropagation();setBrowserAndNav(${idx})">
+        <input type="checkbox" ${checked} onchange="toggleSel(${idx},this.checked)" onclick="event.stopPropagation()" style="margin-right:5px;vertical-align:middle">
+        <span class="subid">${doc.dftId}</span>
+        <span>${fileCount}份 · ${supNames}${current?' 🔍':''}</span>
+      </div>`;
+    }).join('')||'<div class="subitem" style="cursor:default;color:var(--mut)">暂无整套</div>';
+  }
+  /* 浮动批量条：勾选 ≥1 张草单时显示 */
+  const rbb=document.getElementById('railBatchBar');
+  if(rbb){
+    const n=DB.sel.draftsSet&&DB.sel.draftsSet.length||0;
+    rbb.style.display=n>0?'':'none';
+    const cnt=document.getElementById('railSelCount'); if(cnt) cnt.textContent=n;
+  }
 }
 
 /* ============== 初始化 ============== */
