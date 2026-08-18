@@ -80,6 +80,17 @@
   .small{font-size:11px;padding:4px 8px}
   .xbtn{background:#13402a!important;color:#7ff0b0!important;border:1px solid #1f6b46!important}
   .row .primary.xbtn{background:#13402a!important;color:#7ff0b0!important;border:1px solid #1f6b46!important}
+  /* 多整套单据：批量工具栏 + 紧凑表格 */
+  .batch-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;flex-wrap:wrap}
+  .batch-bar label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px}
+  .docset-wrap{max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-bottom:10px}
+  .docset-tbl{width:100%;border-collapse:collapse;font-size:12px}
+  .docset-tbl thead th{position:sticky;top:0;background:var(--panel);padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);font-weight:500;color:var(--mut);z-index:1}
+  .docset-tbl tbody td{padding:6px 8px;border-bottom:1px solid var(--line);color:var(--fg)}
+  .docset-tbl tbody tr{cursor:pointer;transition:background .12s}
+  .docset-tbl tbody tr:hover{background:var(--panel2)}
+  .docset-tbl tbody tr.current{background:rgba(127,240,176,.08)}
+  .docset-tbl .badge-on{font-size:10px;color:var(--acc);border:1px solid var(--acc);padding:0 6px;border-radius:8px;margin-left:4px;display:inline-block;line-height:1.5}
   /* 左栏步骤导航 + 单阶段工作区（2026-08-09 改造：替代垂直堆叠） */
   .layout{display:flex;align-items:stretch;min-height:560px}
   .rail{width:228px;flex:0 0 228px;background:var(--panel);border:1px solid var(--line);border-radius:10px 0 0 10px;border-right:none;padding:14px 10px;display:flex;flex-direction:column;gap:4px}
@@ -322,11 +333,11 @@ function defaultDB(){
     templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null},
     records:[],orders:[],drafts:[],docs:[],
     skuOverride:{},
-    sel:{rec:null,ord:null,dft:null}
+    sel:{rec:null,ord:null,dft:null,doc:null,docsSet:[]}
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -945,6 +956,8 @@ function confirmDraft(did){
     {type:'国内采购合同',n:suppliers.length,suppliers}
   ];
   DB.docs.push({id:uid('DOC'),dftId:did,out,suppliers,at:new Date().toLocaleString()});
+  DB.sel.doc=DB.docs.length-1;
+  DB.sel.docsSet=DB.docs.map((_,i)=>i);
   save();renderOut();
 }
 function buildData(doc){
@@ -1063,11 +1076,56 @@ function builtin(name){
   return '<p>未知模板</p>';
 }
 function renderOut(){
-  const docI=DB.docs.length-1, doc=DB.docs[docI];
-  if(!doc){document.getElementById('outArea').innerHTML='<p class="muted">确认草单后在此一次性输出整套单据。</p>';return;}
-  const dt=buildData(doc);
-  const supNames=(doc.suppliers||dt.contracts.map(c=>c.supplier)).filter(Boolean).join('、');
-  let h=`<div class="ctx-bar"><span class="ctx-label">输出基于：</span><span class="ctx-val">草单 ${doc.dftId}</span><span class="ctx-extra">· 共 ${doc.out.reduce((a,b)=>a+b.n,0)} 份单据${supNames?' · 供应商：'+supNames:''}</span></div>`;
+  if(!DB.docs.length){
+    document.getElementById('outArea').innerHTML='<p class="muted">确认草单后在此一次性输出整套单据。</p>';
+    document.getElementById('outArea')&&updRail(); return;
+  }
+  /* 兜底：旧 localStorage 缺 sel.doc/docsSet */
+  if(DB.sel.doc==null||DB.sel.doc<0||DB.sel.doc>=DB.docs.length) DB.sel.doc=DB.docs.length-1;
+  if(!Array.isArray(DB.sel.docsSet)) DB.sel.docsSet=DB.docs.map((_,i)=>i);
+  const sels=getSelDocs();
+  const totalSets=DB.docs.length, selCount=sels.length, allChecked=selCount===totalSets;
+  const totalFiles=DB.docs.reduce((a,d)=>a+d.out.reduce((x,o)=>x+o.n,0),0);
+
+  /* ── 1. 批量操作工具栏 ── */
+  let h=`<div class="batch-bar">
+    <label><input type="checkbox" ${allChecked?'checked':''} onchange="toggleSelAll(this.checked)"> 全选 (${selCount}/${totalSets} 份整套)</label>
+    <span style="flex:1"></span>
+    <button class="small" onclick="batchDownloadHTML()">批量下载HTML(逐份)</button>
+    <button class="small xbtn" onclick="batchDownloadXlsx()">批量下载EXCEL(逐份)</button>
+    <button class="small xbtn" onclick="batchDownloadMergedXlsx()">下载合并EXCEL(1文件)</button>
+  </div>`;
+
+  /* ── 2. 紧凑文档集列表（可滚动，10/100 份不溢出）── */
+  h+=`<div class="ctx-bar"><span class="ctx-label">已确认整套单据</span><span class="ctx-extra">· 共 ${totalSets} 份整套 · 合计 ${totalFiles} 单据</span></div>`;
+  h+=`<div class="docset-wrap"><table class="docset-tbl"><thead><tr>
+    <th style="width:32px"><input type="checkbox" ${allChecked?'checked':''} onchange="toggleSelAll(this.checked)"></th>
+    <th style="width:150px">草单</th>
+    <th style="width:90px">单据份数</th>
+    <th>供应商</th>
+    <th style="width:150px">确认时间</th>
+    <th style="width:90px">操作</th>
+  </tr></thead><tbody>`;
+  DB.docs.forEach((doc,idx)=>{
+    const checked=sels.indexOf(idx)>=0?'checked':'';
+    const current=idx===DB.sel.doc;
+    const supNames=(doc.suppliers&&doc.suppliers.length)?doc.suppliers.join('、'):'-';
+    const fileCount=doc.out.reduce((a,o)=>a+o.n,0);
+    h+=`<tr class="${current?'current':''}" onclick="setBrowser(${idx})">`;
+    h+=`<td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleSel(${idx},this.checked)"></td>`;
+    h+=`<td>${doc.dftId}${current?' <span class="badge-on">正在浏览</span>':''}</td>`;
+    h+=`<td>${fileCount} 份</td>`;
+    h+=`<td>${supNames}</td>`;
+    h+=`<td>${doc.at||''}</td>`;
+    h+=`<td onclick="event.stopPropagation()"><button class="small" onclick="setBrowser(${idx})">${current?'浏览中':'浏览'}</button></td>`;
+    h+=`</tr>`;
+  });
+  h+=`</tbody></table></div>`;
+
+  /* ── 3. 浏览区：当前整套的 5 类单据 ── */
+  const docI=DB.sel.doc, doc=DB.docs[docI], dt=buildData(doc);
+  const supNamesNow=(doc.suppliers&&doc.suppliers.length)?doc.suppliers.join('、'):'未匹配';
+  h+=`<div class="ctx-bar"><span class="ctx-label">正在浏览：</span><span class="ctx-val">草单 ${doc.dftId}</span><span class="ctx-extra">· ${doc.out.reduce((a,b)=>a+b.n,0)} 份单据 · 供应商：${supNamesNow}</span></div>`;
   doc.out.forEach((o,idx)=>{
     const tplHtml=DB.templates[o.type]||builtin(o.type);
     const isBroken=html=>/\{\{[\/#]|\{\{each/.test(html);
@@ -1076,7 +1134,6 @@ function renderOut(){
       if(isBroken(p)&&DB.templates[o.type]) p=renderTpl(builtin(o.type),extra||dt);
       return p;
     };
-    /* 国内采购合同：多供应商=多份，逐份卡片展示 */
     if(o.type==='国内采购合同'){
       h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
         <h4 style="margin:0 8px 0 0">国内采购合同 ×${dt.contracts.length}</h4>
@@ -1102,10 +1159,13 @@ function renderOut(){
       ${stillBroken?'<p style="color:red;font-size:12px;margin:2px 0">⚠ 模板渲染异常（残留未处理的模板标签）。请到「设置→模板管理」重置该模板，或检查数据完整性。</p>':''}
       <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px;background:#fff;color:#111;font-size:11px">${preview}</div></div>`;
   });
-  h+=`<p class="seq">日期前后逻辑：国内采购合同(${dt.dates.purchase}) &lt; 销售合同(${dt.dates.sales}) ≤ 发票/装箱单(${dt.dates.invoice}) &lt; 报关单申报(${dt.dates.customs})。各模板日期字段按此序由草单申报日推导。</p>`;
-  h+=`<div class="row" style="margin-top:10px"><button class="primary" onclick="downloadAll()">打包下载整套单据</button>
-      <button class="primary xbtn" onclick="downloadAllXlsx()">打包下载整套EXCEL</button>
-      <button class="ghost" onclick="printAll()">打印全部</button></div>`;
+
+  /* ── 4. 当前整套快捷操作（单套，非批量）── */
+  h+=`<p class="seq">日期前后逻辑：国内采购合同(${dt.dates.purchase}) &lt; 销售合同(${dt.dates.sales}) ≤ 发票/装箱单(${dt.dates.invoice}) &lt; 报关单申报(${dt.dates.customs})。</p>`;
+  h+=`<div class="row" style="margin-top:10px"><button class="primary" onclick="downloadAll()">下载当前整套(单据)</button>
+      <button class="primary xbtn" onclick="downloadAllXlsx()">下载当前整套EXCEL(工作簿)</button>
+      <button class="ghost" onclick="printAll()">打印当前整套</button></div>`;
+
   document.getElementById('outArea').innerHTML=h;
   updRail();
 }
@@ -1131,8 +1191,8 @@ function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];cons
 function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
 function dl(name,html){const blob=new Blob(['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+name+'</title></head><body>'+html+'</body></html>'],{type:'text/html;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name+'.html';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500);}
-function downloadAll(){const doc=DB.docs[DB.docs.length-1];doc.out.forEach((o,i)=>downloadDoc(DB.docs.length-1,i));}
-function printAll(){const doc=DB.docs[DB.docs.length-1];let all='';doc.out.forEach(o=>{all+=safeRender(o.type,buildData(doc));});
+function downloadAll(){const i=DB.sel.doc;const doc=DB.docs[i];doc.out.forEach((o,idx)=>downloadDoc(i,idx));}
+function printAll(){const doc=DB.docs[DB.sel.doc];let all='';doc.out.forEach(o=>{all+=safeRender(o.type,buildData(doc));});
   const w=window.open('');w.document.write('<html lang="zh-CN"><head><meta charset="UTF-8"><title>整套单据</title></head><body>'+all+'</body></html>');w.document.close();setTimeout(()=>w.print(),400);}
 
 /* ===================== EXCEL 导出（结构化重建，原生 .xlsx） ===================== */
@@ -1268,10 +1328,96 @@ function downloadDocXlsx(docI,idx){
 function downloadAllXlsx(){
   ensureXLSX(function(){
     try{
-      const doc=DB.docs[DB.docs.length-1]; const wb=xlsWorkbookForDoc(doc);
+      const doc=DB.docs[DB.sel.doc]; const wb=xlsWorkbookForDoc(doc);
       if(!wb){alert('暂无可导出的单据');return;}
       xlsDownload('整套出口单证',wb);
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
+  });
+}
+
+/* ============== 多整套单据选择/浏览/批量下载 ============== */
+function getSelDocs(){
+  if(!DB.sel.docsSet || !Array.isArray(DB.sel.docsSet)) DB.sel.docsSet=DB.docs.map((_,i)=>i);
+  DB.sel.docsSet=DB.sel.docsSet.filter(function(i){return i>=0&&i<DB.docs.length;});
+  return DB.sel.docsSet;
+}
+function toggleSel(idx,checked){
+  const s=getSelDocs();
+  if(checked){ if(s.indexOf(idx)<0) s.push(idx); }
+  else { const j=s.indexOf(idx); if(j>=0) s.splice(j,1); }
+  save(); renderOut();
+}
+function toggleSelAll(checked){
+  DB.sel.docsSet = checked ? DB.docs.map(function(_,i){return i;}) : [];
+  save(); renderOut();
+}
+function setBrowser(idx){
+  DB.sel.doc = idx;
+  save(); renderOut();
+}
+function batchDownloadHTML(){
+  const sels=getSelDocs();
+  if(!sels.length){ alert('请先勾选要下载的整套单据'); return; }
+  sels.forEach(function(docI,i){
+    setTimeout(function(){
+      try{
+        const doc=DB.docs[docI]; if(!doc) return;
+        const d=buildData(doc);
+        doc.out.forEach(function(o){
+          if(o.type==='国内采购合同'){
+            d.contracts.forEach(function(c){
+              const one=safeRender(o.type,d,{contracts:[c]});
+              dl('采购合同_'+c.supplier,one);
+            });
+          } else {
+            dl(o.type,safeRender(o.type,d));
+          }
+        });
+      }catch(e){ alert('批量 HTML 下载出错：'+e.message); }
+    }, i*400);
+  });
+}
+function batchDownloadXlsx(){
+  ensureXLSX(function(){
+    try{
+      const sels=getSelDocs();
+      if(!sels.length){ alert('请先勾选要下载的整套单据'); return; }
+      sels.forEach(function(docI,i){
+        setTimeout(function(){
+          try{
+            const doc=DB.docs[docI]; if(!doc) return;
+            const wb=xlsWorkbookForDoc(doc); if(!wb){ console.warn('空 doc',docI); return; }
+            xlsDownload('整套_'+(doc.dftId||('set'+(i+1))), wb);
+          }catch(e){ alert('批量 EXCEL 下载出错：'+e.message); }
+        }, i*600);
+      });
+    }catch(e){ alert('批量 EXCEL 出错：'+e.message); }
+  });
+}
+function batchDownloadMergedXlsx(){
+  ensureXLSX(function(){
+    try{
+      const sels=getSelDocs();
+      if(!sels.length){ alert('请先勾选要下载的整套单据'); return; }
+      const wb=XLSX.utils.book_new(); let added=false;
+      sels.forEach(function(docI,idx){
+        const doc=DB.docs[docI]; if(!doc) return;
+        const d=buildData(doc);
+        const prefix='set'+(idx+1)+'_';
+        doc.out.forEach(function(o){
+          if(o.type==='国内采购合同'){
+            d.contracts.forEach(function(c){
+              XLSX.utils.book_append_sheet(wb, xlsContract(c,d), sheetName(prefix+'采购合同_'+c.supplier));
+              added=true;
+            });
+          } else {
+            const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(wb, ws, sheetName(prefix+o.type)); added=true; }
+          }
+        });
+      });
+      if(!added){ alert('所选无内容'); return; }
+      xlsDownload('合并整套单证', wb);
+    }catch(e){ alert('合并 EXCEL 出错：'+e.message); console.error(e); }
   });
 }
 
