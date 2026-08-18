@@ -273,11 +273,19 @@ const MODES=[
 ];
 function mergedHsLib(){return Object.assign({},HS_LIB,DB.hsLibOverride||{});}
 /* 规格型号 = 品牌类型 | 出口享惠<X> | <要素序列按 HS_LIB.seq 拼装，缺码显示待填> */
+/* 取归并/型号用的真款式(SPU/SKC)：① 商品库有独立款式编码列(style≠sku)优先；
+   ② 否则从SKU去掉末尾尺码/色码推导真SPU（JH30314-1→JH30314），用户 2026-08-18 确认的路径② */
+function getSpu(l){
+  if(l.style&&l.style!==l.sku) return l.style;
+  const s=l.sku||'';
+  const m=/^(.*)-[A-Za-z0-9]+$/.exec(s);
+  return m?m[1]:'';
+}
 function buildSpec(l){
   const lib=mergedHsLib();
   const entry=lib[(l.hs||'').trim()];
   if(!entry) return '⚠ 要素序列待填('+(l.hs||'?')+')';
-  const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:(l.style&&l.style!==l.sku?l.style:''),
+  const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),
     weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
   const seqStr=entry.seq.map(k=>map[k]).filter(v=>v!=null&&String(v).trim()!=='').join(';');
   return [l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | ');
@@ -286,16 +294,15 @@ function buildSpec(l){
 function mergeLines(lines,mode,sup){
   if(mode==='M0'||!lines.length) return lines.map(x=>Object.assign({},x));
   const m=MODES.find(x=>x.id===mode)||MODES[0];
-  // 降级保护：M4/M5 的"款式"维度依赖商品库独立款式(SPU/SKC)；当前数据集无独立款式(SPU!=SKU)时
-  // 退化为按 SKU 分行，杜绝同 HS+品名+材质的不同款被误合并（用户 2026-08-18 反馈）
-  const hasStyle=lines.some(l=>l.style&&l.style!==l.sku);
+  // 降级保护：M4/M5 的"款式"维度依赖真SPU；取不到(显式列无值且SKU无法推导)时退化为按SKU分行
+  const hasStyle=lines.some(l=>getSpu(l));
   const keys=(mode==='M4'||mode==='M5')&&!hasStyle?['sku']:m.keys.slice();
-  const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:(l.style&&l.style!==l.sku?l.style:''),mat:l.mat})[kk];
+  const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:getSpu(l),mat:l.mat})[kk];
   const groups={};
   lines.forEach(l=>{const key=keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+(l.supplier||'')):'');(groups[key]=groups[key]||[]).push(l);});
   return Object.keys(groups).map(k=>{const g=groups[k],rep=Object.assign({},g[0]);
     rep.sku=[...new Set(g.map(x=>x.sku))].join(',');
-    rep.style=[...new Set(g.map(x=>x.style))].filter(Boolean).join(',');
+    rep.style=[...new Set(g.map(x=>getSpu(x)))].filter(Boolean).join(',');
     rep.qty=g.reduce((a,x)=>a+(+x.qty||0),0);
     rep.gw=g.reduce((a,x)=>a+(+x.gw||0),0);
     rep.nw=g.reduce((a,x)=>a+(+x.nw||0),0);
@@ -781,15 +788,17 @@ function renderDrafts(){
   const rawCount=d.rawLines?d.rawLines.length:d.lines.length;
   let maxLen0=0,total0=0;
   d.lines.forEach(l=>{const sp=buildSpec(l);if(sp.length>maxLen0)maxLen0=sp.length;total0+=(+l.decl)*(+l.qty);});
-  const hasStyle=(d.rawLines||[]).some(x=>x.style&&x.style!==x.sku);
-  const noStyleHint=(!hasStyle&&(d.mergeMode==='M4'||d.mergeMode==='M5'))?'<div style="font-size:11px;color:#ffd479;margin-top:4px">⚠ 当前商品库无独立款式(SPU/SKC)列值，M4/M5 已按 SKU 分行（不合并），避免不同款误合并；在设置中心商品库维护「款式编码/SPU/SKC」列后重新生成草单即生效</div>':'';
+  const hasSpu=(d.rawLines||[]).some(x=>getSpu(x));
+  const spuHint=(d.mergeMode==='M4'||d.mergeMode==='M5')?(hasSpu
+    ? '<div style="font-size:11px;color:var(--ok);margin-top:4px">M4/M5 按「款式=从款号推导的SPU（去末尾尺码，如 JH30314-1→JH30314）」归并；若商品库有独立「款式编码/SPU/SKC」列则优先用列值</div>'
+    : '<div style="font-size:11px;color:#ffd479;margin-top:4px">⚠ 当前SKU无法推导款式(SPU)，M4/M5 已按 SKU 分行（不合并）避免误并</div>'):'';
   const panel=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:12px;background:var(--panel2)">
     <div style="font-size:12px;color:var(--mut);margin-bottom:6px">归并模式（任选其一，可叠加供应商分行）</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       ${MODES.map(m=>`<button class="small ${d.mergeMode===m.id?'primary':''}" onclick="setMerge('${d.id}','${m.id}')">${m.id} ${m.lb}</button>`).join('')}
       <label style="font-size:12px;display:flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" ${d.mergeSup?'checked':''} onchange="setMergeSup('${d.id}',this.checked)"> 按供应商分行</label>
     </div>
-    <div class="muted" style="font-size:11px;margin-top:6px">归并后 <b>${d.lines.length}</b> 项（原 ${rawCount} 行）· 规格型号最长 <b style="color:${maxLen0>250?'var(--bad)':'var(--ok)'}">${maxLen0}</b> 字${maxLen0>250?' ⚠超限(≤250)':''} · 合计金额 ¥${total0.toFixed(2)} 恒等</div>${noStyleHint}
+    <div class="muted" style="font-size:11px;margin-top:6px">归并后 <b>${d.lines.length}</b> 项（原 ${rawCount} 行）· 规格型号最长 <b style="color:${maxLen0>250?'var(--bad)':'var(--ok)'}">${maxLen0}</b> 字${maxLen0>250?' ⚠超限(≤250)':''} · 合计金额 ¥${total0.toFixed(2)} 恒等</div>${spuHint}
     <button class="small ghost" style="margin-top:6px" onclick="openHsLib()">HS 要素库维护</button>
   </div>`;
   document.getElementById('dftArea').innerHTML=tabs+panel+`<div class="stage"><div class="bd">${h}${t}
