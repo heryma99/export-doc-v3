@@ -277,7 +277,7 @@ function buildSpec(l){
   const lib=mergedHsLib();
   const entry=lib[(l.hs||'').trim()];
   if(!entry) return '⚠ 要素序列待填('+(l.hs||'?')+')';
-  const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:l.style||l.sku,
+  const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:(l.style&&l.style!==l.sku?l.style:''),
     weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
   const seqStr=entry.seq.map(k=>map[k]).filter(v=>v!=null&&String(v).trim()!=='').join(';');
   return [l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | ');
@@ -286,7 +286,7 @@ function buildSpec(l){
 function mergeLines(lines,mode,sup){
   if(mode==='M0'||!lines.length) return lines.map(x=>Object.assign({},x));
   const m=MODES.find(x=>x.id===mode)||MODES[0];
-  const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:l.style||l.sku,mat:l.mat})[kk];
+  const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:(l.style&&l.style!==l.sku?l.style:''),mat:l.mat})[kk];
   const groups={};
   lines.forEach(l=>{const key=m.keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+(l.supplier||'')):'');(groups[key]=groups[key]||[]).push(l);});
   return Object.keys(groups).map(k=>{const g=groups[k],rep=Object.assign({},g[0]);
@@ -777,13 +777,15 @@ function renderDrafts(){
   const rawCount=d.rawLines?d.rawLines.length:d.lines.length;
   let maxLen0=0,total0=0;
   d.lines.forEach(l=>{const sp=buildSpec(l);if(sp.length>maxLen0)maxLen0=sp.length;total0+=(+l.decl)*(+l.qty);});
+  const hasStyle=(d.rawLines||[]).some(x=>x.style&&x.style!==x.sku);
+  const noStyleHint=(!hasStyle&&(d.mergeMode==='M4'||d.mergeMode==='M5'))?'<div style="font-size:11px;color:#ffd479;margin-top:4px">⚠ 当前商品库无独立款式(SPU/SKC)列值，M4/M5 按 HS+品名归并；在设置中心商品库维护「款式编码/SPU/SKC」列后重新生成草单即生效</div>':'';
   const panel=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:12px;background:var(--panel2)">
     <div style="font-size:12px;color:var(--mut);margin-bottom:6px">归并模式（任选其一，可叠加供应商分行）</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       ${MODES.map(m=>`<button class="small ${d.mergeMode===m.id?'primary':''}" onclick="setMerge('${d.id}','${m.id}')">${m.id} ${m.lb}</button>`).join('')}
       <label style="font-size:12px;display:flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" ${d.mergeSup?'checked':''} onchange="setMergeSup('${d.id}',this.checked)"> 按供应商分行</label>
     </div>
-    <div class="muted" style="font-size:11px;margin-top:6px">归并后 <b>${d.lines.length}</b> 项（原 ${rawCount} 行）· 规格型号最长 <b style="color:${maxLen0>250?'var(--bad)':'var(--ok)'}">${maxLen0}</b> 字${maxLen0>250?' ⚠超限(≤250)':''} · 合计金额 ¥${total0.toFixed(2)} 恒等</div>
+    <div class="muted" style="font-size:11px;margin-top:6px">归并后 <b>${d.lines.length}</b> 项（原 ${rawCount} 行）· 规格型号最长 <b style="color:${maxLen0>250?'var(--bad)':'var(--ok)'}">${maxLen0}</b> 字${maxLen0>250?' ⚠超限(≤250)':''} · 合计金额 ¥${total0.toFixed(2)} 恒等</div>${noStyleHint}
     <button class="small ghost" style="margin-top:6px" onclick="openHsLib()">HS 要素库维护</button>
   </div>`;
   document.getElementById('dftArea').innerHTML=tabs+panel+`<div class="stage"><div class="bd">${h}${t}
@@ -1108,7 +1110,7 @@ function normBulk(arr){
   const norm=v=>v==null?'':String(v).trim();
   return arr.map(r=>{const img=r._img_file;return {
     sku:norm(pick(r,'商品编码'))||norm(pick(r,'款式编码'))||norm(pick(r,'SKU')),
-    style:norm(pick(r,'款式编码')),prodCode:norm(pick(r,'商品编码')),
+    style:norm(pick(r,'款式编码'))||norm(pick(r,'SPU'))||norm(pick(r,'SKC'))||norm(pick(r,'style')),prodCode:norm(pick(r,'商品编码')),
     nameFull:norm(pick(r,'商品名称')),nameShort:norm(pick(r,'商品简称')),
     cn:norm(pick(r,'中文品名')),en:norm(pick(r,'英文品名')),
     usd:norm(pick(r,'销售单价')),noTax:norm(pick(r,'不含税'))||norm(pick(r,'采购单价')),
@@ -1226,7 +1228,7 @@ function onSkuFile(e){const f=e.target.files[0];if(!f)return;const name=f.name.t
     // 通用映射：按列名包含
     const head=txt.trim().split(/\r?\n/)[0].split(',');
     const ci=k=>head.findIndex(h=>h.trim().includes(k));
-    const m={style:ci('款号'),sku:ci('sku'),cn:ci('中文'),en:ci('英文'),noTax:ci('不含税'),tax:ci('含税'),factory:ci('工厂'),hs:ci('hs'),mat:ci('材质'),brandType:ci('品牌'),enjoys:ci('出口享惠')};
+    const m={style:(ci('款式编码')>=0?ci('款式编码'):(ci('SKC')>=0?ci('SKC'):(ci('SPU')>=0?ci('SPU'):-1))),sku:ci('sku'),cn:ci('中文'),en:ci('英文'),noTax:ci('不含税'),tax:ci('含税'),factory:ci('工厂'),hs:ci('hs'),mat:ci('材质'),brandType:ci('品牌'),enjoys:ci('出口享惠')};
     const conv=rows.map(r=>{const g=k=>{const i=m[k];return i>=0?r[i]:'';};
       return {sku:g('sku'),style:g('style'),cn:g('cn'),en:g('en'),noTax:+g('noTax')||0,tax:+g('tax')||0,factory:g('factory'),hs:g('hs'),mat:g('mat'),brandType:g('brandType')||'境内自主品牌',enjoys:g('enjoys')||'0'};}).filter(r=>r.sku);
     if(!conv.length){alert('未解析到 SKU 行');return;}
