@@ -313,6 +313,13 @@ function buildSpec(l){
   return [resolveBrandType(l),l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | ');
 }
 /* 归并：按模式 keys 构建归并键；供应商开关在键尾追加 §SUP:<供应商>。同组合并，款号聚合。 */
+/* 供应商归集：二级工厂 → 一级签约主体；无映射则原样返回。 */
+function consolidatedSupplier(s){
+  const v=s==null?'':String(s).trim();
+  if(!v||!DB||!DB.supplierMap) return v;
+  const t=DB.supplierMap[v];
+  return t?String(t).trim()||v:v;
+}
 function mergeLines(lines,mode,sup){
   if(mode==='M0'||!lines.length) return lines.map(x=>Object.assign({},x));
   const m=MODES.find(x=>x.id===mode)||MODES[0];
@@ -321,7 +328,7 @@ function mergeLines(lines,mode,sup){
   const keys=(mode==='M4'||mode==='M5')&&!hasStyle?['sku']:m.keys.slice();
   const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:getSpu(l),mat:l.mat})[kk];
   const groups={};
-  lines.forEach(l=>{const key=keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+(l.supplier||'')):'');(groups[key]=groups[key]||[]).push(l);});
+  lines.forEach(l=>{const key=keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+consolidatedSupplier(l.supplier||'')):'');(groups[key]=groups[key]||[]).push(l);});
   return Object.keys(groups).map(k=>{const g=groups[k],rep=Object.assign({},g[0]);
     rep.sku=[...new Set(g.map(x=>x.sku))].join(',');
     rep.style=[...new Set(g.map(x=>getSpu(x)))].filter(Boolean).join(',');
@@ -329,11 +336,18 @@ function mergeLines(lines,mode,sup){
     rep.gw=g.reduce((a,x)=>a+(+x.gw||0),0);
     rep.nw=g.reduce((a,x)=>a+(+x.nw||0),0);
     rep._merged=g.length>1; rep._cnt=g.length; rep._keys=g.map(x=>x.sku);
+    /* 组内全部二级供应商(去重)，供合同「供货工厂(原)」列完整显示 */
+    rep._supers=[...new Set(g.map(x=>x.supplier).filter(Boolean))].join(';');
     return rep;});
 }
 function defaultDB(){
   return {
-    parties:{shippers:['广州革瓦拉贸易有限公司'], consignees:['Leading Trade One Limited'], currencyList:['USD 美元','CNY 人民币','EUR 欧元'], codes:{}},
+    parties:{shippers:['井太兰(东莞)贸易有限公司'], consignees:['Leading Trade One Limited'], currencyList:['USD 美元','CNY 人民币','EUR 欧元'], codes:{}},
+    /* 采购主体：采购合同「采购方」。未来可多个，默认=出口公司(发货人) */
+    buyerParties:['井太兰(东莞)贸易有限公司'],
+    /* 供应商归集：二级供应商(生产工厂/商品库supplier) → 一级供应商(签约主体/合同抬头)。
+       归集后按一级分行、按一级出采购合同；明细行仍保留二级原工厂供对账。 */
+    supplierMap:{},
     sku:[
       {sku:'BAG-001',style:'1C131-33',cn:'磁性扣手拿包',en:'Magnetic Clutch Bag',noTax:102.9,tax:116.28,factory:'利景工厂',hs:'4202220000',mat:'PU',brandType:'境内自主品牌',enjoys:'0'},
       {sku:'BAG-002',style:'2T03-1',cn:'牛皮手拿包',en:'Leather Clutch Bag',noTax:160.0,tax:180.80,factory:'璞景工厂',hs:'4202220000',mat:'牛皮',brandType:'境内自主品牌',enjoys:'0'}
@@ -348,7 +362,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -822,7 +836,7 @@ function genDraft(ordId){
       supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
   const dft={id:uid('D'),ordId,locked,
-    header:{no:o.no||'',shipper:DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
+    header:{no:o.no||'',shipper:DB.parties.shippers[0],buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
       tradeMode:'0110 一般贸易',transMode:'2 水路运输',tradeTerm:'FOB',port:'',levy:'1 照章征税',
       currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today(),
       /* 报关草单扩展字段（草单可留空，打印前补全） */
@@ -848,6 +862,7 @@ function renderDrafts(){
   const H=d.header;
   const h=`<div class="row" style="margin-bottom:10px">
     <div class="field"><label>境内发货人</label><select onchange="setHeader('${d.id}','shipper',this.value)">${optStr(DB.parties.shippers,H.shipper)}</select></div>
+    <div class="field"><label>采购主体(采购合同采购方)</label><select onchange="setHeader('${d.id}','buyer',this.value)">${optStr((DB.buyerParties&&DB.buyerParties.length?DB.buyerParties:[H.buyer||H.shipper]),H.buyer||H.shipper)}</select></div>
     <div class="field"><label>境外收货人</label><select onchange="setHeader('${d.id}','consignee',this.value)">${optStr(DB.parties.consignees,H.consignee)}</select></div>
     <div class="field"><label>生产销售单位(=发货人)</label><input value="${H.prodUnit}" disabled style="color:var(--mut)"></div>
     <div class="field"><label>贸易方式</label><select onchange="setHeader('${d.id}','tradeMode',this.value)">${opt(CODE.tradeMode,H.tradeMode.split(' ')[0])}</select></div>
@@ -1064,7 +1079,8 @@ function confirmDraft(did){
   const d=DB.drafts.find(x=>x.id===did);if(!d)return;
   if(d.monitor&&d.monitor.block){alert('存在阻断项，先修复再锁定');return;}
   d.confirmed=true;
-  const suppliers=[...new Set(d.lines.map(l=>l.supplier))];
+  /* 采购合同按一级供应商(归集后签约主体)出；明细保留二级原工厂 */
+  const suppliers=[...new Set(d.lines.map(l=>consolidatedSupplier(l.supplier)))];
   const out=[
     {type:'报关草单',n:1},
     {type:'Invoice发票',n:1},
@@ -1093,7 +1109,8 @@ function buildData(doc){
     const spec=parts.join('|')||('⚠ 要素序列待填('+(l.hs||'?')+')');
     return {...l,spec,en:l.en||'',unit:l.unit||'',amount:((+l.decl)*(+l.qty)).toFixed(2)};});
   const base=d.header.declDate||today();
-  const contracts=[...new Set(lines.map(l=>l.supplier))].map(s=>{const items=lines.filter(l=>l.supplier===s);
+  /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
+  const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map(s=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s);
     return {supplier:s,items,amount:items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0).toFixed(2),count:items.length};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
@@ -1564,16 +1581,16 @@ function xlsTable(type,d){
   totalCells();
   return xwsFrom(R,MG,cols.map(c=>({wch:c[1]})));
 }
-/* 国内采购合同：每个供应商一页 */
+/* 国内采购合同：每个一级供应商(归集后签约主体)一页；明细保留二级原工厂 */
 function xlsContract(c,d){
   const H=d.header; const R=[]; const MG=[]; let r=0;
-  putCell(R,r,0,'国内采购合同'); addMerge(MG,r,0,5); r++;
-  putCell(R,r,0,'采购方：'+H.shipper+'    供货工厂：'+c.supplier); addMerge(MG,r,0,5); r++;
-  putCell(R,r,0,'合同日期：'+d.dates.purchase+'  （早于销售/报关）'); addMerge(MG,r,0,5); r++;
-  ['款号/SKU','品名','HS','数量','不含税单价','采购金额'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  c.items.forEach(l=>{ [l.sku,l.name,l.hs,l.qty,l.cost,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
-  putCell(R,r,0,'本厂采购金额合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.amount); r++;
-  return xwsFrom(R,MG,[{wch:16},{wch:28},{wch:14},{wch:10},{wch:14},{wch:14}]);
+  putCell(R,r,0,'国内采购合同'); addMerge(MG,r,0,6); r++;
+  putCell(R,r,0,'采购方：'+(H.buyer||H.shipper)+'    供货工厂：'+c.supplier); addMerge(MG,r,0,6); r++;
+  putCell(R,r,0,'合同日期：'+d.dates.purchase+'  （早于销售/报关）'); addMerge(MG,r,0,6); r++;
+  ['款号/SKU','品名','HS','数量','不含税单价','供货工厂(原)','采购金额'].forEach((h,i)=>putCell(R,r,i,h)); r++;
+  c.items.forEach(l=>{ [l.sku,l.name,l.hs,l.qty,l.cost,l._supers||l.supplier,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  putCell(R,r,0,'本厂采购金额合计'); addMerge(MG,r,0,5); putCell(R,r,6,c.amount); r++;
+  return xwsFrom(R,MG,[{wch:16},{wch:28},{wch:14},{wch:10},{wch:14},{wch:22},{wch:14}]);
 }
 function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; return xlsTable(type,d); }
 /* 单工作簿：含整套单据（国内采购合同→每个供应商一页） */
@@ -1723,7 +1740,7 @@ function batchDownloadMergedXlsx(){
 }
 
 /* ============== 设置中心 ============== */
-const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'},{k:'brand',n:'品牌类型映射'},{k:'pref',n:'享惠国别配置'},{k:'price',n:'售价公式'},{k:'mon',n:'监控规则'},{k:'tmpl',n:'模板管理'}];
+const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'},{k:'supmap',n:'供应商归集'},{k:'brand',n:'品牌类型映射'},{k:'pref',n:'享惠国别配置'},{k:'price',n:'售价公式'},{k:'mon',n:'监控规则'},{k:'tmpl',n:'模板管理'}];
 let curTab='party';
 let skuPage=1, skuSize=200, skuQ='';
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -1760,6 +1777,12 @@ function openDrawer(){document.getElementById('drawer').classList.add('open');do
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('mask').classList.remove('open');}
 function renderTabs(){document.getElementById('setTabs').innerHTML=TABS.map(t=>`<button class="${curTab===t.k?'on':''}" onclick="curTab='${t.k}';renderTabs()">${t.n}</button>`).join('');renderSetBody();}
 function addParty(t){(t==='shipper'?DB.parties.shippers:DB.parties.consignees).push('');save();renderSetBody();}
+/* 采购主体维护：采购合同「采购方」(默认=出口公司，可多个) */
+function addBuyer(){if(!DB.buyerParties)DB.buyerParties=[];DB.buyerParties.push('');save();renderSetBody();}
+function updBuyer(i,v){if(!DB.buyerParties)DB.buyerParties=[];DB.buyerParties[i]=v;save();}
+function delBuyer(i){if(DB.buyerParties&&DB.buyerParties.length>1)DB.buyerParties.splice(i,1);save();renderSetBody();}
+/* 供应商归集：二级工厂 → 一级签约主体(留空=不归集，自为一级) */
+function setSupplierMap(sec,prim){if(!DB.supplierMap)DB.supplierMap={};const v=(prim||'').trim();if(v)DB.supplierMap[sec]=v;else delete DB.supplierMap[sec];save();renderSetBody();}
 function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length>1)a.splice(i,1);save();renderSetBody();}
 function updParty(t,i,v){(t==='shipper'?DB.parties.shippers:DB.parties.consignees)[i]=v;save();}
 function updCode(i,f,v){const s=DB.parties.shippers[i];if(!s)return;if(!DB.parties.codes)DB.parties.codes={};if(!DB.parties.codes[s])DB.parties.codes[s]={};DB.parties.codes[s][f]=v;save();}
@@ -1768,6 +1791,17 @@ function expParty(){
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='出口单证_主体信息_'+new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')+'.json';
+  a.click();URL.revokeObjectURL(a.href);
+}
+/* 导出共享配置(全员共享那份)：维护人导出后交 WorkBuddy 推 GitHub config.json，其他人打开自动拉取 */
+function expSharedConfig(){
+  const data={_v:'export-doc-v3-config',_at:new Date().toISOString(),
+    parties:{shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,codes:DB.parties.codes||{}},
+    buyerParties:DB.buyerParties||[],supplierMap:DB.supplierMap||{},brandTypeMap:DB.brandTypeMap||{},
+    price:DB.price||{},hsLibOverride:DB.hsLibOverride||{}};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='export-doc-v3_config.json';
   a.click();URL.revokeObjectURL(a.href);
 }
 function impParty(ev){
@@ -1792,6 +1826,9 @@ function renderSetBody(){
     h=`<div style="font-weight:600;margin-bottom:6px">境内发货人（可维护，做草单时下拉选）</div>
       ${DB.parties.shippers.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('shipper',${i},this.value)" style="flex:1"> <button onclick="delParty('shipper',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
       <button onclick="addParty('shipper')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境内发货人</button>
+      <div style="font-weight:600;margin:14px 0 6px">采购主体（采购合同「采购方」，草单时下拉选；默认=出口公司）</div>
+      ${(DB.buyerParties||[]).map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updBuyer(${i},this.value)" style="flex:1"> <button onclick="delBuyer(${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
+      <button onclick="addBuyer()" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增采购主体</button>
       <div style="font-weight:600;margin:14px 0 6px">境外收货人（可维护，做草单时下拉选）</div>
       ${DB.parties.consignees.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('consignee',${i},this.value)" style="flex:1"> <button onclick="delParty('consignee',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
       <button onclick="addParty('consignee')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境外收货人</button>
@@ -1802,8 +1839,9 @@ function renderSetBody(){
         <label style="background:#2a1a3a;color:#c9b;border:1px solid #5a3a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📤 导入主体信息(JSON)
           <input type="file" accept=".json" onchange="impParty(event)" style="display:none">
         </label>
+        <button onclick="expSharedConfig()" style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 12px;cursor:pointer">⬆ 导出共享配置(JSON)</button>
       </div>
-      <div class="note">数据保存在浏览器本地（localStorage）。<b>导出</b>可备份为 JSON 文件发给同事，对方在「设置中心→主体信息维护」点<b>导入</b>即可加载。导出包含：境内发货人列表、境外收货人列表、币种列表。</div>`;
+      <div class="note">数据保存在浏览器本地（localStorage）。<b>导出</b>可备份为 JSON 文件发给同事，对方在「设置中心→主体信息维护」点<b>导入</b>即可加载。导出包含：境内发货人列表、境外收货人列表、币种列表。<b>「导出共享配置」</b> = 全员共享的那份配置(发货人/采购主体/供应商归集/品牌映射/售价/HS库)，交维护人推送到云端即可全员生效，其他人打开系统自动拉取。</div>`;
   } else if(curTab==='sku'){
     const allList=skuList();
     /* SKU 搜索：匹配 款号/SKU/品名/HS/品牌 等字段 */
@@ -1836,6 +1874,20 @@ function renderSetBody(){
       <td><input style="width:80px" value="${esc(m.supplier||m.factory)}" onchange="setSkuOv('${esc(m.sku)}','supplier',this.value)"></td>
       <td><input style="width:90px" value="${esc(m.brandType)}" onchange="setSkuOv('${esc(m.sku)}','brandType',this.value)"></td></tr>`;});
     h+='</tbody></table><div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
+  } else if(curTab==='supmap'){
+    /* 列出商品库已出现的二级工厂(去重) + 归集映射 */
+    const secs=[];const seen=new Set();
+    skuList().forEach(s=>{const v=(s.supplier||s.factory||'').trim();if(v&&!seen.has(v)&&!/未匹配|None|test|⚠/.test(v)){seen.add(v);secs.push(v);}});
+    secs.sort();
+    const sm=DB.supplierMap||{};
+    /* 收集所有一级(映射目标 + 采购主体)，用于输入建议 */
+    const tier1s=[...new Set(Object.values(sm).filter(Boolean))];
+    h=`<p class="muted">供应商归集：商品库 supplier 记的是<b>二级供应商(生产工厂)</b>；此处将多个二级归集到一个<b>一级供应商(签约主体)</b>。归集后：①草单「按供应商分行」按一级分组 ②国内采购合同按一级出(抬头=一级)，明细保留二级原工厂。留空=不归集(该二级自为一级)。</p>
+      <div style="font-weight:600;margin:8px 0 6px">二级供应商(生产工厂) → 一级供应商(签约主体)</div>
+      ${secs.map(sec=>`<div style="display:flex;gap:8px;margin:4px 0;align-items:center"><span style="flex:1.4;color:var(--fg)">${esc(sec)}</span>
+        <input list="tier1List" data-sec="${esc(sec)}" value="${esc(sm[sec]||'')}" placeholder="留空=不归集" onchange="setSupplierMap(this.dataset.sec,this.value)" style="flex:1"></div>`).join('')}
+      <datalist id="tier1List">${tier1s.map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
+      <div class="note">已有归集：${Object.keys(sm).length?Object.keys(sm).map(k=>k+' → '+sm[k]).join('；'):'无'}。一级供应商自动从归集目标收集(可在输入框直接输新主体)。</div>`;
   } else if(curTab==='brand'){
     const btOpts=[['0','无品牌'],['1','境内自主品牌'],['2','境内收购品牌'],['3','境外品牌(贴牌生产)'],['4','境外品牌(其它)']];
     const bm=DB.brandTypeMap||{};
@@ -1963,7 +2015,24 @@ function updRail(){
 
 /* ============== 初始化 ============== */
 function renderAll(){renderRecords();renderOrders();renderDrafts();renderOut();updRail();}
+/* 共享配置：从 GitHub 仓库 config.json 拉取(一人维护全员共享)。合并策略：parties/buyerParties/supplierMap 以云端为准，map 类合并。 */
+function fetchSharedConfig(){
+  fetch('https://raw.githubusercontent.com/heryma99/export-doc-v3/main/config.json',{cache:'no-store'})
+    .then(r=>r.ok?r.json():null)
+    .then(cfg=>{
+      if(!cfg||!cfg._v) return;
+      if(cfg.parties&&cfg.parties.shippers)DB.parties=Object.assign({},DB.parties,cfg.parties);
+      if(Array.isArray(cfg.buyerParties)&&cfg.buyerParties.length)DB.buyerParties=cfg.buyerParties;
+      if(cfg.supplierMap)DB.supplierMap=cfg.supplierMap;
+      if(cfg.brandTypeMap)DB.brandTypeMap=Object.assign({},cfg.brandTypeMap,DB.brandTypeMap);
+      if(cfg.price)DB.price=Object.assign({},DB.price,cfg.price);
+      if(cfg.hsLibOverride)DB.hsLibOverride=Object.assign({},cfg.hsLibOverride,DB.hsLibOverride);
+      save();renderAll();
+      console.log('[V3] 已加载共享配置 ('+(cfg._at||'')+')');
+    }).catch(()=>{});
+}
 renderAll();
+fetchSharedConfig();
 </script>
 </body>
 </html>
