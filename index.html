@@ -1870,16 +1870,27 @@ function publishConfig(){
   const cfg=buildSharedConfig();
   const content=btoa(unescape(encodeURIComponent(JSON.stringify(cfg,null,2))));
   const api='https://api.github.com/repos/heryma99/export-doc-v3/contents/config.json';
-  fetch(api,{headers:{Authorization:'Bearer '+token}})
-    .then(r=>r.json())
-    .then(meta=>{
-      const body={message:'🚀 发布共享配置 '+cfg._at,content:content,branch:'main'};
-      if(meta&&meta.sha)body.sha=meta.sha;
-      return fetch(api,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const ghGet=()=>fetch(api,{cache:'no-store',headers:{Authorization:'Bearer '+token}}).then(r=>r.json());
+  const ghPut=sha=>fetch(api,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({message:'🚀 发布共享配置 '+cfg._at,content:content,branch:'main',...(sha?{sha}:{})})});
+  ghGet()
+    .then(meta=>ghPut(meta&&meta.sha))
+    .then(r=>{
+      if(r.ok)return r.json();
+      return r.json().then(e=>{
+        const m=(e&&e.message)||'';
+        /* 409 版本冲突：云端刚被更新(如重复点击/他人已发)，自动重取最新 sha 再试一次 */
+        if(r.status===409){
+          return ghGet().then(meta2=>ghPut(meta2&&meta2.sha)).then(r2=>{
+            if(r2.ok)return r2.json();
+            return r2.json().then(e2=>{throw new Error('HTTP '+r2.status+' '+((e2&&e2.message)||''));});
+          });
+        }
+        throw new Error('HTTP '+r.status+' '+m);
+      });
     })
-    .then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error('HTTP '+r.status+' '+((e&&e.message)||''));});return r.json();})
     .then(()=>{alert('✅ 已发布到云端（'+cfg._at.slice(0,16)+'）。全公司人员下次打开/刷新系统即自动同步。');updCloudBadge();})
     .catch(e=>alert('发布失败：'+e.message));
+
 }
 function impParty(ev){
   const f=ev.target.files[0];if(!f)return;
