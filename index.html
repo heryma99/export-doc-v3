@@ -126,6 +126,7 @@
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
   <span class="spacer"></span>
+  <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
   <button class="ghost" onclick="openDrawer()">⚙ 设置中心</button>
 </header>
@@ -220,6 +221,17 @@
   <div class="bh"><h3>HS 要素库维护</h3><span style="flex:1"></span><button class="ghost" onclick="closeHsLib()">✕</button></div>
   <div class="bb"><div class="muted" style="font-size:12px;margin-bottom:8px">精确 10 位匹配；库内无此码 → 规格型号显示「⚠要素序列待填」。下方列出 bulk 有行但库内缺失的码（按行数降序）+ 已维护码（可改）。要素序列用逗号分隔，取值：nm品名/mat材质/brand品牌/sku款号(≡SKU)/spu型号/weave织造/gender性别/kind种类/upmat鞋面/solemat鞋底/use用途。</div><div id="hsLibBody"></div></div>
   <div class="bf"><button class="ghost" onclick="closeHsLib()">关闭</button></div>
+</div></div>
+
+<!-- 共享配置中心(软件级)弹窗 -->
+<div class="modal" id="sharedModal"><div class="box" style="width:600px">
+  <div class="bh"><h3>☁ 共享配置中心（软件级 · 一人维护全员共享）</h3><span style="flex:1"></span><button class="ghost" onclick="closeShared()">✕</button></div>
+  <div class="bb"><div id="sharedBody"></div></div>
+  <div class="bf">
+    <button class="ghost" onclick="closeShared()">关闭</button>
+    <button class="ghost" onclick="fetchSharedConfig();setTimeout(()=>renderSharedBody(),300);alert('已重新拉取云端配置')">↻ 重新拉取云端</button>
+    <button style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a" onclick="expSharedConfig()">⬆ 导出共享配置</button>
+  </div>
 </div></div>
 
 <!-- 模板预览弹窗 -->
@@ -1831,12 +1843,13 @@ function expParty(){
   a.download='出口单证_主体信息_'+new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')+'.json';
   a.click();URL.revokeObjectURL(a.href);
 }
-/* 导出共享配置(全员共享那份)：维护人导出后交 WorkBuddy 推 GitHub config.json，其他人打开自动拉取 */
+/* 导出共享配置(软件级全员共享那份)：维护人导出后交 WorkBuddy 推 GitHub config.json，其他人打开自动拉取 */
 function expSharedConfig(){
   const data={_v:'export-doc-v3-config',_at:new Date().toISOString(),
     parties:{shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,codes:DB.parties.codes||{}},
-    buyerParties:DB.buyerParties||[],supplierMap:DB.supplierMap||{},brandTypeMap:DB.brandTypeMap||{},
-    price:DB.price||{},hsLibOverride:DB.hsLibOverride||{}};
+    buyerParties:DB.buyerParties||[],supplierMap:DB.supplierMap||{},tier1Suppliers:DB.tier1Suppliers||[],extraSup2:DB.extraSup2||[],
+    brandTypeMap:DB.brandTypeMap||{},price:DB.price||{},hsLibOverride:DB.hsLibOverride||{},
+    templates:DB.templates||{},skuOverride:DB.skuOverride||{}};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='export-doc-v3_config.json';
@@ -1870,9 +1883,12 @@ function renderSetBody(){
         发布流程：你在下方/其他Tab维护好（发货人/采购主体/一级二级供应商/归集/品牌映射/售价）→ 点「导出共享配置」把 JSON 发管理员(WorkBuddy) → 推送到云端 → 全员自动生效。
       </div>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:12px;color:var(--mut)">云端状态：${sc.at?('更新于 '+sc.at+'（发货人'+sc.shippers+' · 一级'+sc.t1+' · 归集'+sc.sup+'）'):'尚未拉取'}${sc.at?'✅':''}</span>
+        <span style="font-size:12px;color:var(--mut)">云端状态：${sc.at?('更新于 '+sc.at+'（发货人'+sc.shippers+' · 一级'+sc.t1+' · 归集'+sc.sup+'）'):'尚未拉取'}${sc.ok?'✅':''}</span>
         <button class="small" onclick="fetchSharedConfig();alert('正在重新拉取云端共享配置…')">↻ 重新拉取</button>
         <button class="small" style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a" onclick="expSharedConfig()">⬆ 导出共享配置(发管理员发布)</button>
+        <label class="small" style="background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:3px 10px;cursor:pointer">📤 上传配置(手动导入)
+          <input type="file" accept=".json" style="display:none" onchange="impSharedConfig(event)">
+        </label>
       </div></div>
       <div style="font-weight:600;margin-bottom:6px">境内发货人（可维护，做草单时下拉选）</div>
       ${DB.parties.shippers.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('shipper',${i},this.value)" style="flex:1"> <button onclick="delParty('shipper',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
@@ -2059,27 +2075,68 @@ function updRail(){
 
 /* ============== 初始化 ============== */
 function renderAll(){renderRecords();renderOrders();renderDrafts();renderOut();updRail();}
-/* 共享配置：从 GitHub 仓库 config.json 拉取(一人维护全员共享)。合并策略：parties/buyerParties/supplierMap 以云端为准，map 类合并。 */
+/* 共享配置(软件级)：从 GitHub config.json 拉取(一人维护全员共享)。合并策略：parties/buyerParties/supplierMap/tier1Suppliers/templates 以云端为准，map 类合并。 */
+function mergeSharedCfg(cfg){
+  if(!cfg||!cfg._v) return false;
+  if(cfg.parties&&cfg.parties.shippers)DB.parties=Object.assign({},DB.parties,cfg.parties);
+  if(Array.isArray(cfg.buyerParties)&&cfg.buyerParties.length)DB.buyerParties=cfg.buyerParties;
+  if(cfg.supplierMap)DB.supplierMap=cfg.supplierMap;
+  if(Array.isArray(cfg.tier1Suppliers))DB.tier1Suppliers=cfg.tier1Suppliers;
+  if(Array.isArray(cfg.extraSup2))DB.extraSup2=cfg.extraSup2;
+  if(cfg.brandTypeMap)DB.brandTypeMap=Object.assign({},cfg.brandTypeMap,DB.brandTypeMap);
+  if(cfg.price)DB.price=Object.assign({},DB.price,cfg.price);
+  if(cfg.hsLibOverride)DB.hsLibOverride=Object.assign({},cfg.hsLibOverride,DB.hsLibOverride);
+  /* 模板(软件级共享) + 商品库覆盖层 */
+  if(cfg.templates)DB.templates=Object.assign({},DB.templates,cfg.templates);
+  if(cfg.skuOverride)DB.skuOverride=Object.assign({},cfg.skuOverride,DB.skuOverride);
+  DB._sharedCfg={at:cfg._at||'',t1:(cfg.tier1Suppliers||[]).length,sup:(cfg.supplierMap?Object.keys(cfg.supplierMap).length:0),shippers:(cfg.parties&&cfg.parties.shippers?cfg.parties.shippers.length:0),ok:true};
+  save();renderAll();
+  updCloudBadge();
+  return true;
+}
+function updCloudBadge(){
+  const b=document.getElementById('cloudBadge');if(!b)return;
+  const sc=DB._sharedCfg;
+  b.textContent=sc&&sc.ok?('✅ 配置已同步'+(sc.at?' '+sc.at.slice(11,16):'')):(DB._sharedCfgErr?'⚠ 配置拉取失败(点击重试)':'☁ 配置同步中…');
+  b.style.color=sc&&sc.ok?'var(--ok)':(DB._sharedCfgErr?'var(--warn)':'var(--mut)');
+}
 function fetchSharedConfig(){
+  const b=document.getElementById('cloudBadge');if(b)b.textContent='☁ 拉取中…';
   fetch('https://raw.githubusercontent.com/heryma99/export-doc-v3/main/config.json',{cache:'no-store'})
     .then(r=>r.ok?r.json():null)
-    .then(cfg=>{
-      if(!cfg||!cfg._v) return;
-      if(cfg.parties&&cfg.parties.shippers)DB.parties=Object.assign({},DB.parties,cfg.parties);
-      if(Array.isArray(cfg.buyerParties)&&cfg.buyerParties.length)DB.buyerParties=cfg.buyerParties;
-      if(cfg.supplierMap)DB.supplierMap=cfg.supplierMap;
-      if(Array.isArray(cfg.tier1Suppliers))DB.tier1Suppliers=cfg.tier1Suppliers;
-      if(Array.isArray(cfg.extraSup2))DB.extraSup2=cfg.extraSup2;
-      if(cfg.brandTypeMap)DB.brandTypeMap=Object.assign({},cfg.brandTypeMap,DB.brandTypeMap);
-      if(cfg.price)DB.price=Object.assign({},DB.price,cfg.price);
-      if(cfg.hsLibOverride)DB.hsLibOverride=Object.assign({},cfg.hsLibOverride,DB.hsLibOverride);
-      DB._sharedCfg={at:cfg._at||'',t1:(cfg.tier1Suppliers||[]).length,sup:(cfg.supplierMap?Object.keys(cfg.supplierMap).length:0),shippers:(cfg.parties&&cfg.parties.shippers?cfg.parties.shippers.length:0)};
-      save();renderAll();
-      console.log('[V3] 已加载共享配置 ('+(cfg._at||'')+')');
-    }).catch(()=>{});
+    .then(cfg=>{DB._sharedCfgErr=false;mergeSharedCfg(cfg);console.log('[V3] 已加载共享配置 ('+(cfg&&cfg._at||'')+')');})
+    .catch(()=>{DB._sharedCfgErr=true;updCloudBadge();});
+}
+/* 共享配置中心弹窗 */
+function openSharedPanel(){renderSharedBody();document.getElementById('sharedModal').classList.add('open');}
+function closeShared(){document.getElementById('sharedModal').classList.remove('open');}
+function renderSharedBody(){
+  const sc=DB._sharedCfg||{};const el=document.getElementById('sharedBody');if(!el)return;
+  el.innerHTML=`<div style="font-size:13px;line-height:1.8">
+    <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:150px;background:var(--panel2);border-radius:8px;padding:8px 10px"><div class="muted" style="font-size:11px">云端配置</div><div style="font-size:13px;font-weight:500">${sc.ok?'✅ 已同步':'—'}</div><div style="font-size:11px;color:var(--mut)">${sc.at?('更新于 '+sc.at):'未拉取'}</div></div>
+      <div style="flex:1;min-width:150px;background:var(--panel2);border-radius:8px;padding:8px 10px"><div class="muted" style="font-size:11px">含发货人 / 一级 / 归集</div><div style="font-size:13px;font-weight:500">${sc.shippers||0} / ${sc.t1||0} / ${sc.sup||0}</div><div style="font-size:11px;color:var(--mut)">当前生效</div></div>
+    </div>
+    <div class="muted" style="font-size:12px">共享配置 = 整个软件级：发货人/收货人/采购主体/一级二级供应商/归集/品牌类型/售价公式/HS要素库/模板/商品库覆盖。打开软件自动拉取云端最新；维护后点「导出共享配置」发管理员发布到云端。</div>
+    <div style="margin-top:10px;font-size:12px"><b style="font-weight:500">手动兜底</b>：网络拉取失败时可手动上传配置文件（管理员分发的 config.json）：
+      <label style="display:inline-block;background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:3px 10px;cursor:pointer;margin-left:6px">📤 上传配置(手动导入)
+        <input type="file" accept=".json" style="display:none" onchange="impSharedConfig(event)">
+      </label></div>
+    <div style="margin-top:8px;font-size:12px;color:var(--mut)">导出配置按钮在右下角「⬆ 导出共享配置」，把下载的 config.json 发给管理员即完成发布。</div></div>`;
+}
+/* 手动上传共享配置(兜底)：读本地 config.json 合并进本地 */
+function impSharedConfig(ev){
+  const f=ev.target.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>{try{
+    const cfg=JSON.parse(r.result);
+    if(!cfg._v){alert('不是有效的共享配置文件');return;}
+    mergeSharedCfg(cfg);
+    alert('已手动导入共享配置'+(cfg._at?('（'+cfg._at+'）'):'')+'。');
+  }catch(err){alert('解析失败：'+err.message);}};r.readAsText(f);
 }
 renderAll();
 fetchSharedConfig();
+updCloudBadge();
 </script>
 </body>
 </html>
