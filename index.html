@@ -518,7 +518,7 @@ function parseGrid(grid,forceSku,opts){
   for(let i=hr+1;i<grid.length;i++){
     const c=grid[i]||[];
     const g=function(k){const j=m[k];return (j>=0&&c[j]!=null)?String(c[j]).trim():'';};
-    const sku=g('sku');
+    const sku=g('sku').split('@')[0].trim();   /* FBA MSKU 站点后缀(如 1C56-2@us) → 只留 1C56-2 */
     if(!sku) continue;
     if(headKey&&normHead(sku)===headKey) continue;   /* 跳过重复表头行 */
     let gw=numv(g('gw'));
