@@ -2122,7 +2122,15 @@ function renderAll(){renderRecords();renderOrders();renderDrafts();renderOut();u
 /* 共享配置(软件级)：从 GitHub config.json 拉取(一人维护全员共享)。合并策略：parties/buyerParties/supplierMap/tier1Suppliers/templates 以云端为准，map 类合并。 */
 function mergeSharedCfg(cfg){
   if(!cfg||!cfg._v) return false;
-  if(cfg.parties&&cfg.parties.shippers)DB.parties=Object.assign({},DB.parties,cfg.parties);
+  if(cfg.parties&&cfg.parties.shippers){
+    const lp=DB.parties;
+    DB.parties=Object.assign({},lp,cfg.parties);
+    /* 数组类(发货人/收货人/币种)做并集去重：云端与本地新增都保留，避免拉取覆盖掉本地刚维护的项 */
+    ['shippers','consignees','currencyList'].forEach(k=>{
+      const cl=cfg.parties[k], lo=lp[k];
+      if(Array.isArray(cl)&&Array.isArray(lo))DB.parties[k]=[...new Set([...cl,...lo].map(x=>String(x).trim()).filter(Boolean))];
+    });
+  }
   if(Array.isArray(cfg.buyerParties)&&cfg.buyerParties.length)DB.buyerParties=cfg.buyerParties;
   if(cfg.supplierMap)DB.supplierMap=cfg.supplierMap;
   if(Array.isArray(cfg.tier1Suppliers))DB.tier1Suppliers=cfg.tier1Suppliers;
