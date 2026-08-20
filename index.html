@@ -1150,7 +1150,7 @@ function builtin(name){
 <td>{{header.domSrc}}</td>
 <td colspan="2">{{header.levy}}</td>
 </tr>
-<tr><td colspan="2"></td><td colspan="12">申报要素：{{spec}}</td></tr>{{/each}}
+<tr><td colspan="2"></td><td colspan="12">{{spec}}</td></tr>{{/each}}
 <tr><td colspan="8">TOTAL：{{header.currency}} {{totalAmount}}</td><td colspan="6"></td></tr>
 <tr>
 <td colspan="2">特殊关系确认：<b>{{header.special||'否'}}</b></td>
@@ -1418,7 +1418,7 @@ function xlsCur(d){
     set(r,11,H.domSrc||'');
     set(r,12,H.levy,13);
     r++;
-    set(r,2,'申报要素：'+(l.spec||''),13);
+    set(r,2,l.spec||'',13);
     r++;
   });
   /* 合计 */
