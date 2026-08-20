@@ -1,12 +1,13 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-08-20T23:15:31",
+  "_at": "2026-08-20T15:59:31.264Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
     ],
     "consignees": [
-      "Leading Trade One Limited"
+      "Leading Trade One Limited",
+      "JW PEI AP LIMITED"
     ],
     "currencyList": [
       "USD 美元",
@@ -23,6 +24,10 @@
     "广州革辉鞋业有限公司": "广州自衍空间科创有限公司",
     "广州极优尼迅捷供应链管理有限公司": "广州自衍空间科创有限公司"
   },
+  "tier1Suppliers": [
+    "广州自衍空间科创有限公司"
+  ],
+  "extraSup2": [],
   "brandTypeMap": {
     "JW PEI": "4"
   },
@@ -31,9 +36,12 @@
     "exch": 7.1
   },
   "hsLibOverride": {},
-  "tier1Suppliers": [
-    "广州自衍空间科创有限公司"
-  ],
-  "templates": {},
+  "templates": {
+    "报关草单": null,
+    "Invoice发票": null,
+    "Packing List装箱单": null,
+    "销售合同": null,
+    "国内采购合同": null
+  },
   "skuOverride": {}
 }
