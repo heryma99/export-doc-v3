@@ -460,13 +460,17 @@ function mapColumns(head){
   PL_ALIAS.forEach(function(pair){
     const key=pair[0], als=pair[1]; let idx=-1;
     for(let a=0;a<als.length&&idx<0;a++){
-      for(let j=0;j<H.length;j++){ if(!used[j]&&H[j]&&H[j]===als[a]){ idx=j; break; } }
+      for(let j=0;j<H.length;j++){ if(!used[j]&&H[j]&&H[j]===als[a]){
+        /* 防 MSKU/MerchantSKU(Amazon 子表头分组列)精确命中抢走 sku 列；FNSKU/FBA 同理 */
+        if(key==='sku'&&(H[j]==='msku'||H[j]==='merchantsku'||H[j]==='fnsku'||H[j]==='fba')) continue;
+        idx=j; break; } }
     }
     for(let a=0;a<als.length&&idx<0;a++){
       if(als[a].length<2) continue;
       for(let j=0;j<H.length;j++){
         if(!used[j]&&H[j]&&H[j].indexOf(als[a])>=0){
-          if(key==='sku'&&(H[j]==='fnsku'||H[j].indexOf('fnsku')===0||H[j].indexOf('fba')===0||H[j]==='fba')) continue;
+          /* 排除会被误抢 sku 的子表头/批次元数据列(FNSKU/FBA/MSKU/MerchantSKU) */
+          if(key==='sku'&&(H[j]==='fnsku'||H[j].indexOf('fnsku')===0||H[j].indexOf('fba')===0||H[j]==='fba'||H[j]==='msku'||H[j]==='merchantsku')) continue;
           if(key==='qty'&&(H[j]==='qtyperbox'||H[j].indexOf('每箱')===0)) continue; /* 「每箱件数」归 qtyPerBox 不归 qty */
           if(key==='gw'&&/净|包装箱|皮重/.test(H[j])) continue; /* gw 的「重量」含匹配不可抢「净重/包装箱重量/皮重」列 */
           idx=j; break;
