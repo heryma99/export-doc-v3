@@ -231,6 +231,7 @@
     <button class="ghost" onclick="closeShared()">关闭</button>
     <button class="ghost" onclick="fetchSharedConfig();setTimeout(()=>renderSharedBody(),300);alert('已重新拉取云端配置')">↻ 重新拉取云端</button>
     <button style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a" onclick="expSharedConfig()">⬆ 导出共享配置</button>
+    <button class="primary" onclick="publishConfig()">🚀 发布到云端</button>
   </div>
 </div></div>
 
@@ -1843,17 +1844,41 @@ function expParty(){
   a.download='出口单证_主体信息_'+new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')+'.json';
   a.click();URL.revokeObjectURL(a.href);
 }
-/* 导出共享配置(软件级全员共享那份)：维护人导出后交 WorkBuddy 推 GitHub config.json，其他人打开自动拉取 */
-function expSharedConfig(){
-  const data={_v:'export-doc-v3-config',_at:new Date().toISOString(),
+/* 组装共享配置对象(导出与发布共用) */
+function buildSharedConfig(){
+  return {_v:'export-doc-v3-config',_at:new Date().toISOString(),
     parties:{shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,codes:DB.parties.codes||{}},
     buyerParties:DB.buyerParties||[],supplierMap:DB.supplierMap||{},tier1Suppliers:DB.tier1Suppliers||[],extraSup2:DB.extraSup2||[],
     brandTypeMap:DB.brandTypeMap||{},price:DB.price||{},hsLibOverride:DB.hsLibOverride||{},
     templates:DB.templates||{},skuOverride:DB.skuOverride||{}};
+}
+/* 导出共享配置(软件级全员共享那份)：维护人导出后交 WorkBuddy 推 GitHub config.json，其他人打开自动拉取 */
+function expSharedConfig(){
+  const data=buildSharedConfig();
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='export-doc-v3_config.json';
   a.click();URL.revokeObjectURL(a.href);
+}
+/* GitHub 发布凭证(受限PAT，仅本仓库 contents 写)：保存到本浏览器 */
+function saveGhToken(){const v=(document.getElementById('ghToken')||{}).value||'';if(v)localStorage.setItem('v3.ghToken',v.trim());else localStorage.removeItem('v3.ghToken');alert(v?'已保存发布凭证(仅存本浏览器)':'已清除发布凭证');}
+/* 🚀 一键发布到云端：浏览器直接用 PAT 推 GitHub config.json */
+function publishConfig(){
+  const token=(localStorage.getItem('v3.ghToken')||'').trim();
+  if(!token){alert('请先在「共享配置中心」输入并保存 GitHub 发布凭证(受限 PAT)');return;}
+  const cfg=buildSharedConfig();
+  const content=btoa(unescape(encodeURIComponent(JSON.stringify(cfg,null,2))));
+  const api='https://api.github.com/repos/heryma99/export-doc-v3/contents/config.json';
+  fetch(api,{headers:{Authorization:'Bearer '+token}})
+    .then(r=>r.json())
+    .then(meta=>{
+      const body={message:'🚀 发布共享配置 '+cfg._at,content:content,branch:'main'};
+      if(meta&&meta.sha)body.sha=meta.sha;
+      return fetch(api,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    })
+    .then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error('HTTP '+r.status+' '+((e&&e.message)||''));});return r.json();})
+    .then(()=>{alert('✅ 已发布到云端（'+cfg._at.slice(0,16)+'）。全公司人员下次打开/刷新系统即自动同步。');updCloudBadge();})
+    .catch(e=>alert('发布失败：'+e.message));
 }
 function impParty(ev){
   const f=ev.target.files[0];if(!f)return;
@@ -1885,11 +1910,17 @@ function renderSetBody(){
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
         <span style="font-size:12px;color:var(--mut)">云端状态：${sc.at?('更新于 '+sc.at+'（发货人'+sc.shippers+' · 一级'+sc.t1+' · 归集'+sc.sup+'）'):'尚未拉取'}${sc.ok?'✅':''}</span>
         <button class="small" onclick="fetchSharedConfig();alert('正在重新拉取云端共享配置…')">↻ 重新拉取</button>
-        <button class="small" style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a" onclick="expSharedConfig()">⬆ 导出共享配置(发管理员发布)</button>
+        <button class="small" style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a" onclick="expSharedConfig()">⬆ 导出共享配置</button>
         <label class="small" style="background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:3px 10px;cursor:pointer">📤 上传配置(手动导入)
           <input type="file" accept=".json" style="display:none" onchange="impSharedConfig(event)">
         </label>
-      </div></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <input id="ghToken" type="password" placeholder="GitHub 发布凭证(受限PAT,可选)" value="" style="flex:1;min-width:220px">
+        <button class="small" onclick="saveGhToken()">保存凭证</button>
+        <button class="small primary" onclick="publishConfig()">🚀 发布到云端(全员同步)</button>
+      </div>
+      <div style="font-size:11px;color:var(--mut);margin-top:4px">可选：填入受限 PAT(仅授权本仓库 contents 写)后可「一键发布」，无需经管理员。凭证只存本浏览器；建议用最小权限 token。</div></div>
       <div style="font-weight:600;margin-bottom:6px">境内发货人（可维护，做草单时下拉选）</div>
       ${DB.parties.shippers.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('shipper',${i},this.value)" style="flex:1"> <button onclick="delParty('shipper',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
       <button onclick="addParty('shipper')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境内发货人</button>
@@ -2123,7 +2154,9 @@ function renderSharedBody(){
       <label style="display:inline-block;background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:3px 10px;cursor:pointer;margin-left:6px">📤 上传配置(手动导入)
         <input type="file" accept=".json" style="display:none" onchange="impSharedConfig(event)">
       </label></div>
-    <div style="margin-top:8px;font-size:12px;color:var(--mut)">导出配置按钮在右下角「⬆ 导出共享配置」，把下载的 config.json 发给管理员即完成发布。</div></div>`;
+    <div style="margin-top:8px;font-size:12px;color:var(--mut)">一键发布(可选)：填入 GitHub 受限 PAT 后可「🚀 发布到云端」，无需经管理员；凭证只存本浏览器。
+      <div style="display:flex;gap:6px;margin-top:6px;align-items:center"><input id="ghToken2" type="password" placeholder="GitHub 发布凭证(受限PAT)" value="${(localStorage.getItem('v3.ghToken')||'')?'已保存':''}" style="flex:1"><button class="small" onclick="document.getElementById('ghToken').value=document.getElementById('ghToken2').value;saveGhToken()">保存凭证</button></div>
+    </div></div>`;
 }
 /* 手动上传共享配置(兜底)：读本地 config.json 合并进本地 */
 function impSharedConfig(ev){
