@@ -275,7 +275,7 @@
 const LS_KEY='exp3_data_v1';
 const CODE={
   tradeMode:[['0110','一般贸易'],['0111','一般贸易(对口)'],['0214','来料加工'],['0615','进料对口'],['9710','跨境电商B2B'],['9711','跨境电商B2C']],
-  trans:    [['2','水路运输'],['3','航空运输'],['4','铁路运输'],['5','邮递运输'],['W','物流货物'],['Y','过境运输']],
+  trans:    [['2','水路运输'],['3','铁路运输'],['4','公路运输'],['5','航空运输'],['6','邮件运输'],['7','其他运输']],
   tradeTerm:[['FOB','船上交货'],['CIF','成本加保险费运费'],['CFR','成本加运费'],['EXW','工厂交货'],['C&F','成本加运费']],
   port:     [['5304','东莞海关'],['5141','广州机场海关'],['5300','深圳海关'],['2225','黄埔海关'],['2900','上海海关'],['0100','北京海关'],['3700','青岛海关'],['3300','宁波海关'],['5100','广州海关']],
   country:  [['CHN','中国'],['DEU','德国'],['USA','美国'],['JPN','日本'],['GBR','英国'],['FRA','法国'],['HKG','中国香港'],['NLD','荷兰'],['POL','波兰'],['AUS','澳大利亚'],
@@ -403,6 +403,8 @@ function defaultDB(){
     templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null,客户发票:null},
     /* 客户发票收款账户信息(给客户汇款用；客户发票模板底部展示) */
     bankInfo:{pay:'',account:'',bank:'',name:'',no:''},
+    /* 银行账户列表(多账户，按币种匹配)：{cur,pay,account,bank,name,no} */
+    bankAccounts:[],
     records:[],orders:[],drafts:[],docs:[],
     skuOverride:{},
     /* 品牌类型映射：申报要素首段按品牌名自动带出海关品牌类型(0-4)。JW PEI 默认 4-境外品牌(其它)。加新品牌在此加一行即可。 */
@@ -411,7 +413,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -886,6 +888,10 @@ function genDraft(ordId){
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
   const dft={id:uid('D'),ordId,locked,
     header:{no:o.no||'',shipper:DB.parties.shippers[0],buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
+      /* 销售合同(繁体)甲乙双方：随报关草单可编辑，非写死；空则 fallback 收货人/发货人 */
+      partyA:{name:'',addr:'',contact:'',email:''},
+      partyB:{name:'',addr:'',contact:'',email:''},
+      signPlace:'【東莞】',signDate:today(),deliveryDate:'',
       tradeMode:'0110 一般贸易',transMode:'2 水路运输',tradeTerm:'FOB',port:'',levy:'1 照章征税',
       currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today(),
       /* 报关草单扩展字段（草单可留空，打印前补全） */
@@ -915,8 +921,26 @@ function renderDrafts(){
     <div class="field"><label>境外收货人</label><select onchange="setHeader('${d.id}','consignee',this.value)">${optStr(DB.parties.consignees,H.consignee)}</select></div>
     <div class="field"><label>生产销售单位(=发货人)</label><input value="${H.prodUnit}" disabled style="color:var(--mut)"></div>
     <div class="field"><label>贸易方式</label><select onchange="setHeader('${d.id}','tradeMode',this.value)">${opt(CODE.tradeMode,H.tradeMode.split(' ')[0])}</select></div>
-    <div class="field"><label>运输方式</label><select onchange="setHeader('${d.id}','transMode',this.value)">${opt(CODE.trans,H.transMode.split(' ')[0])}</select></div>
+    <div class="field"><label>运输方式 ☑ ${H.transMode}</label><select onchange="setHeader('${d.id}','transMode',this.value)">${opt(CODE.trans,H.transMode.split(' ')[0])}</select></div>
     <div class="field"><label>成交方式</label><select onchange="setHeader('${d.id}','tradeTerm',this.value)">${opt(CODE.tradeTerm,H.tradeTerm)}</select></div>
+    <div class="field"><label>币种</label><input value="${H.currency}" onchange="setHeader('${d.id}','currency',this.value)" placeholder="USD 美元/CNY 人民币/EUR 欧元"></div>
+    <div class="field"><label>合同簽訂地點</label><input value="${H.signPlace||'【東莞】'}" onchange="setHeader('${d.id}','signPlace',this.value)"></div>
+    <div class="field"><label>合同簽訂日期</label><input type="date" value="${H.signDate||''}" onchange="setHeader('${d.id}','signDate',this.value)"></div>
+    <div class="field"><label>交货日期</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
+    <div class="field" style="flex:1 1 100%"><label>销售合同 甲方(买方) — 公司全稱/地址/聯絡人/郵箱(随草单可改，空则用收货人)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input style="flex:1 1 30%" placeholder="甲方公司全稱" value="${esc((H.partyA&&H.partyA.name)||'')}" onchange="setHeader('${d.id}','partyA.name',this.value)">
+        <input style="flex:1 1 40%" placeholder="甲方地址" value="${esc((H.partyA&&H.partyA.addr)||'')}" onchange="setHeader('${d.id}','partyA.addr',this.value)">
+        <input style="flex:1 1 12%" placeholder="聯絡人" value="${esc((H.partyA&&H.partyA.contact)||'')}" onchange="setHeader('${d.id}','partyA.contact',this.value)">
+        <input style="flex:1 1 18%" placeholder="郵箱" value="${esc((H.partyA&&H.partyA.email)||'')}" onchange="setHeader('${d.id}','partyA.email',this.value)">
+      </div></div>
+    <div class="field" style="flex:1 1 100%"><label>销售合同 乙方(卖方) — 公司全稱/地址/聯絡人/郵箱(随草单可改，空则用发货人)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input style="flex:1 1 30%" placeholder="乙方公司全稱" value="${esc((H.partyB&&H.partyB.name)||'')}" onchange="setHeader('${d.id}','partyB.name',this.value)">
+        <input style="flex:1 1 40%" placeholder="乙方地址" value="${esc((H.partyB&&H.partyB.addr)||'')}" onchange="setHeader('${d.id}','partyB.addr',this.value)">
+        <input style="flex:1 1 12%" placeholder="聯絡人" value="${esc((H.partyB&&H.partyB.contact)||'')}" onchange="setHeader('${d.id}','partyB.contact',this.value)">
+        <input style="flex:1 1 18%" placeholder="郵箱" value="${esc((H.partyB&&H.partyB.email)||'')}" onchange="setHeader('${d.id}','partyB.email',this.value)">
+      </div></div>
     <div class="field"><label>出口关别(报关时定)</label><select onchange="setHeader('${d.id}','port',this.value)"><option value="">选关别</option>${opt(CODE.port,H.port.split(' ')[0])}</select></div>
     <div class="field"><label>征免(照章征税)</label><input value="${H.levy}" disabled style="color:var(--mut)"></div>
     <div class="field"><label>币种</label><input value="${H.currency}"></div>
@@ -984,7 +1008,7 @@ function renderDrafts(){
     </div>${mh}</div></div>`;
   updRail();
 }
-function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}save();renderDrafts();}
+function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;const dot=f.indexOf('.');if(dot>0){const k=f.slice(0,dot),sk=f.slice(dot+1);if(!d.header[k]||typeof d.header[k]!=='object')d.header[k]={};d.header[k][sk]=v;}else{d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}}save();renderDrafts();}
 function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
   if(d.rawLines&&d.lines[i]._keys){d.rawLines.forEach(r=>{if(d.lines[i]._keys.indexOf(r.sku)>=0)r[k]=v;});}
   save();renderDrafts();}
@@ -1089,6 +1113,9 @@ function runMonitor(did){
   /* A13 商品项数上限：报关单填制规范(海关总署公告2019年第18号) 上限50项/单 */
   const a13=L.length<=50;
   add('A','A13','商品项数≤50项/单(报关单填制规范,海关总署公告2019-18号)',a13?'OK':'WARN',a13,'归并后 '+L.length+' 项，超 50 项上限，须分单申报');
+  /* A14 合同日期逻辑：交貨日期 ≥ 簽訂日期(防倒签)；三单一致(发票/装箱单/销售合同同数据源) */
+  const a14=!H.deliveryDate||!H.signDate||String(H.deliveryDate)>=String(H.signDate);
+  add('A','A14','交货日期≥签订日期(销售合同防倒签)',a14?'OK':'WARN',a14,'交货日期 '+H.deliveryDate+' 早于签订日期 '+H.signDate);
   const a5=L.every(l=>/^\d{10}$/.test(l.hs));
   add('A','A5','HS为10位商品编号',a5?'OK':'BLOCK',a5,'HS非10位');
   add('A','A6','法定计量单位与申报单位匹配','OK','OK','默认计量单位「个」，如需其他单位请人工确认');
@@ -1170,7 +1197,8 @@ function buildData(doc){
     totalNW:packSummary(lines).totalNW.toFixed(2),
     boxCount:packSummary(lines).boxCount,
     contractCount:contracts.length,
-    bankInfo:DB.bankInfo||{}};
+    bankInfo:acctFor(d.header.currency)||{},
+    bankAccounts:DB.bankAccounts||[]};
 }
 /* 模板引擎（递归计数，正确处理嵌套 each + 注入 _i 序号） */
 function getPath(o,p){return p.split('.').reduce((a,k)=>a==null?undefined:a[k],o);}
@@ -1355,12 +1383,39 @@ function builtin(name){
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{boxCnt}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
     <tr><td colspan="3">Total</td><td>{{boxCount}}</td><td>{{totalQty}}</td><td>{{totalGW}}</td><td>{{totalNW}}</td></tr></table>`;
-  if(name==='销售合同')return head+`<p>卖方(供货)：{{header.shipper}} &nbsp; 买方：{{header.consignee}}</p>
-    <p>合同号：{{header.no||order.no}} &nbsp; 日期：{{dates.sales}} &nbsp; 成交方式：{{header.tradeTerm}} &nbsp; 目的国：{{header.destCountry}}</p>
+  if(name==='销售合同')return `<h2 style="text-align:center;margin:6px 0">合&nbsp;&nbsp;同</h2>
+    <p>合約編號：{{header.no}} &nbsp; 簽訂地點：{{header.signPlace}} &nbsp; 簽訂日期：{{header.signDate}}</p>
+    <p><b>第一條 合約當事人</b></p>
+    <p>甲方（買方）：{{header.partyA.name}}&nbsp;{{header.partyA.addr}}&nbsp;聯絡人：{{header.partyA.contact}}&nbsp;郵箱：{{header.partyA.email}}</p>
+    <p>乙方（賣方）：{{header.partyB.name}}&nbsp;{{header.partyB.addr}}&nbsp;聯絡人：{{header.partyB.contact}}&nbsp;郵箱：{{header.partyB.email}}</p>
+    <p><b>第二條 合約標的及價格</b></p>
+    <p>標的貨物：全新未使用的箱包（詳見下表），無任何知識產權侵權情形。</p>
+    <p>2.1 成交價格：{{header.tradeTerm}} &nbsp; 2.2 合約貨幣：{{header.currency}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
-    <tr><th>SKU</th><th>品名</th><th>HS</th><th>数量</th><th>单价({{header.currency}})</th><th>金额</th></tr>
-    {{#each lines}}<tr><td>{{sku}}</td><td>{{name}}</td><td>{{hs}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
-    <tr><td colspan="5">合同总额</td><td>{{totalAmount}}</td></tr></table>`;
+    <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
+    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
+    <tr><td colspan="5">合計</td><td>{{totalAmount}}</td></tr></table>
+    <p><b>第三條 物流及運輸</b></p>
+    <p>1. 運輸方式：☑ {{header.transMode}}</p>
+    <p>2.1 最終目的港/收貨地：{{header.destCountry}}</p>
+    <p>2.2 交貨時間：{{header.deliveryDate}}前，賣方需及時通知買方運輸工具資訊。</p>
+    <p>3. 運輸風險轉移：按{{header.tradeTerm}}價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。</p>
+    <p>4. 運輸保險：由買方全權負責貨物投保，保險費由買方承擔。</p>
+    <p><b>第四條 履約期限及方式</b></p>
+    <p>1. 貨款：收到提單後7天內付全款。&nbsp; 2. 付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶。</p>
+    <p>銀行資訊：{{#each bankAccounts}}[{{cur}}] 開戶行：{{bank}} 戶名：{{name}} 賬號：{{no}}{{/each}}</p>
+    <p><b>第五條 質量標準及爭議解決</b></p>
+    <p>質量判定以雙方簽字蓋章封樣樣品為準；質量異議需在【3】個工作日內書面提出並附第三方檢測報告；違約責任按合同約定執行。</p>
+    <p><b>第六條 合同生效與終止</b></p>
+    <p>1. 生效：雙方加蓋公司公章後生效。&nbsp; 2. 終止：雙方履行完本合同全部權利義務後自動終止。</p>
+    <p><b>第七條 其他約定</b></p>
+    <p>1. 本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。</p>
+    <p>2. 爭議提交香港國際仲裁中心（HKIAC）仲裁，仲裁裁決為終局裁決。</p>
+    <p><b>第八條 合同落款</b></p>
+    <p>甲方（買方）：{{header.partyA.name}} &nbsp;&nbsp;&nbsp;&nbsp; 乙方（賣方）：{{header.partyB.name}}</p>
+    <p>公司公章：____________________ &nbsp;&nbsp;&nbsp;&nbsp; 公司公章：____________________</p>
+    <p>法定/授權代表簽字：____________________ &nbsp;&nbsp; 法定/授權代表簽字：____________________</p>
+    <p>簽署日期：______年____月____日 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 簽署日期：______年____月____日</p>`;
   if(name==='国内采购合同')return `<h2 style="text-align:center;margin:6px 0">国内采购合同</h2>
     {{#each contracts}}<div style="border:1px solid #999;padding:8px;margin:8px 0">
     <p>采购方：{{header.shipper}} &nbsp; 供货工厂：{{supplier}}</p>
@@ -1638,8 +1693,8 @@ function xlsTable(type,d){
       const bc=d.lines.reduce((a,l)=>a+boxCntOf(l),0);
       putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,bc); putCell(R,r,4,d.totalQty); putCell(R,r,5,d.totalGW); putCell(R,r,6,d.totalNW); r++; };
   } else if(type==='客户发票'){
-    /* 给客户的 INVOICE(新增,繁体)：列同海关发票 + TOTAL:(CNY) + 收款账户信息 */
-    const bk=d.bankInfo||{};
+    /* 给客户的 INVOICE(新增,繁体)：列同海关发票 + TOTAL:(CNY) + 收款账户信息(按合同币种匹配) */
+    const bk=acctFor(d.header.currency)||{};
     title='INVOICE';
     head=[['Invoice No: '+no+'    DATE: '+d.dates.invoice],['To Messrs: '+H.consignee],['Terms of Pay: '+H.tradeTerm]];
     cols=[['Mark & No',12],['Description',30],['Model',14],['Quantity',12],['Unit price',14],['Amount',14]];
@@ -1667,6 +1722,86 @@ function xlsTable(type,d){
   if(footCells) footCells();
   return xwsFrom(R,MG,cols.map(c=>({wch:c[1]})));
 }
+/* 销售合同(繁体，仿用户模板 合約編號：HT1781940.docx)：
+   甲方/乙方随报关草单可编辑(非写死)；成交價格/合約貨幣/運輸方式/交貨日期随草单；
+   明细与客户发票同列同源(三单一致)；银行账户按合同币种匹配。 */
+function xlsSalesContract(d){
+  const H=d.header; const R=[]; const MG=[]; let r=0;
+  const A=H.partyA||{}, B=H.partyB||{};
+  const aName=A.name||H.consignee||'', bName=B.name||H.shipper||'';
+  const tr=String(H.transMode||'').replace(/^\d+\s*/,'');
+  const cur=(H.currency||'').split(' ')[0].toUpperCase();
+  const list=(DB.bankAccounts||[]).filter(a=>String(a.cur||'').toUpperCase().indexOf(cur)>=0);
+  const accs=list.length?list:(DB.bankAccounts||[]);
+  const bk=acctFor(H.currency)||{};
+  const C=7;
+  const line=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
+  line('合   同');
+  line('合約編號：'+(H.no||'')+'    簽訂地點：'+(H.signPlace||'【東莞】')+'    簽訂日期：'+(H.signDate||''));
+  line('');
+  line('第一條 合約當事人');
+  line('甲方（買方）：');
+  line('1. 公司全稱：'+(aName));
+  line('2. 公司地址：'+(A.addr||''));
+  line('3. 聯絡人：'+(A.contact||'')+'    4. 郵箱：'+(A.email||''));
+  line('乙方（賣方）：');
+  line('1. 公司全稱：'+(bName));
+  line('2. 公司地址：'+(B.addr||''));
+  line('3. 聯絡人：'+(B.contact||'')+'    4. 郵箱：'+(B.email||''));
+  line('');
+  line('第二條 合約標的及價格');
+  line('標的貨物：全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。');
+  line('2、合約價格：');
+  line('2.1. 成交價格：'+(H.tradeTerm||'FOB'));
+  line('2.2 合約貨幣：'+(H.currency||''));
+  ['Mark & No','Description','Model','Quantity','Unit price','Amount','金額小計'].forEach((h,i)=>putCell(R,r,i,h)); r++;
+  d.lines.forEach(l=>{ ['N/M',fan(l.name),l.style||l.sku,l.qty,l.decl,l.amount,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  putCell(R,r,0,'合計'); addMerge(MG,r,0,5); putCell(R,r,6,d.totalAmount); r++;
+  line('');
+  line('第三條 物流及運輸');
+  line('1. 運輸方式：☑ '+(tr||''));
+  line('2. 物流資訊：');
+  line('2.1 最終目的港/收貨地：'+(H.destCountry||''));
+  line('2.2 交貨時間：'+(H.deliveryDate||'____')+'前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。');
+  line('3. 運輸風險轉移');
+  line('按'+(H.tradeTerm||'FOB')+'價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。');
+  line('4. 運輸保險');
+  line('由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。');
+  line('');
+  line('第四條 履約期限及方式');
+  line('一、固定履約期限（均為工作日）');
+  line('1. 貨款：收到提單後7天內付全款。');
+  line('二、固定履約方式');
+  line('1. 付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶，否則視為未付款。');
+  line('銀行資訊：');
+  if(accs.length){ accs.forEach(a=>{ line((a.cur||'')+'賬戶：'); line('開戶行：'+(a.bank||'')+'    戶名：'+(a.name||'')+'    賬號：'+(a.no||'')); }); }
+  else { line('人民幣賬戶：'); line('開戶行：'+(bk.bank||'')+'    戶名：'+(bk.name||'')+'    賬號：'+(bk.no||'')); }
+  line('');
+  line('第五條 質量標準及爭議解決');
+  line('1. 質量判定：以雙方簽字蓋章封樣樣品為準。');
+  line('2. 質量異議：買方發現質量問題，需在【3】個工作日內以合同約定通知方式提出，並附第三方檢測報告，否則視為貨物無質量問題。');
+  line('3. 違約責任：① 輕微問題（不合格率≤0.5%）：賣方【15】個工作日內免費補貨並承擔物流費；② 批次問題（不合格率＞0.5%）：賣方【15】個工作日內更換不合格產品並承擔往返費用。');
+  line('');
+  line('第六條 合同生效與終止');
+  line('1. 生效：雙方加蓋公司公章後生效。');
+  line('2. 終止：雙方履行完本合同全部權利義務（含貨物質保期）後自動終止。');
+  line('');
+  line('第七條 其他約定');
+  line('1. 本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。');
+  line('2. 因履行本合同產生的任何爭議，雙方友好協商解決；協商不成的，提交香港國際仲裁中心（HKIAC），仲裁裁決為終局裁決，對雙方均具有約束力。');
+  line('');
+  line('第八條 合同落款');
+  line('甲方（買方）：'+aName);
+  line('公司公章：________________________');
+  line('法定/授權代表簽字：________________________');
+  line('簽署日期：______年____月____日');
+  line('');
+  line('乙方（賣方）：'+bName);
+  line('公司公章：________________________');
+  line('法定/授權代表簽字：________________________');
+  line('簽署日期：______年____月____日');
+  return xwsFrom(R,MG,[{wch:14},{wch:30},{wch:14},{wch:12},{wch:14},{wch:14},{wch:14}]);
+}
 /* 国内采购合同：每个一级供应商(归集后签约主体)一页；明细保留二级原工厂 */
 function xlsContract(c,d){
   const H=d.header; const R=[]; const MG=[]; let r=0;
@@ -1678,7 +1813,7 @@ function xlsContract(c,d){
   putCell(R,r,0,'本厂采购金额合计'); addMerge(MG,r,0,5); putCell(R,r,6,c.amount); r++;
   return xwsFrom(R,MG,[{wch:16},{wch:28},{wch:14},{wch:10},{wch:14},{wch:22},{wch:14}]);
 }
-function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; return xlsTable(type,d); }
+function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
 /* 单工作簿：含整套单据（国内采购合同→每个供应商一页） */
 function xlsWorkbookForDoc(doc){
   const d=buildData(doc); const wb=XLSX.utils.book_new(); let added=false;
@@ -1910,8 +2045,19 @@ function updBuyer(i,v){if(!DB.buyerParties)DB.buyerParties=[];const old=DB.buyer
 function delBuyer(i){if(DB.buyerParties&&DB.buyerParties.length>1){const v=DB.buyerParties[i];DB.buyerParties.splice(i,1);hiddenPush('hiddenParties',v);}save();renderSetBody();}
 /* 统一社会信用代码 / 海关注册编码 */
 function updCode(i,f,v){const s=DB.parties.shippers[i];if(!s)return;if(!DB.parties.codes)DB.parties.codes={};if(!DB.parties.codes[s])DB.parties.codes[s]={};DB.parties.codes[s][f]=v;save();}
-/* 客户发票收款账户信息维护 */
-function updBank(k,v){if(!DB.bankInfo)DB.bankInfo={pay:'',account:'',bank:'',name:'',no:''};DB.bankInfo[k]=v;save();}
+/* 银行账户列表维护(多账户按币种)：updBank(i,k,v) 行内修改; addBank/delBank */
+function updBank(i,k,v){if(!DB.bankAccounts)DB.bankAccounts=[];if(i<0){i=DB.bankAccounts.length;}if(!DB.bankAccounts[i])DB.bankAccounts[i]={cur:'',pay:'',account:'',bank:'',name:'',no:''};DB.bankAccounts[i][k]=v;save();}
+function addBank(){if(!DB.bankAccounts)DB.bankAccounts=[];DB.bankAccounts.push({cur:'CNY 人民币',pay:'T/T',account:'',bank:'',name:'',no:''});save();renderSetBody();}
+function delBank(i){if(DB.bankAccounts&&DB.bankAccounts.length>1){DB.bankAccounts.splice(i,1);}else{DB.bankAccounts=[];}save();renderSetBody();}
+/* 按合同币种取收款账户：币种代码匹配优先(如 USD 美元→USD 户)，无则人民币户，再则第一个，兜底 bankInfo */
+function acctFor(cur){
+  const arr=DB.bankAccounts||[];
+  if(!arr.length) return DB.bankInfo||{};
+  const c=(cur||'').split(' ')[0].toUpperCase();
+  return arr.find(a=>String(a.cur||'').toUpperCase().indexOf(c)>=0)
+      || arr.find(a=>String(a.cur||'').toUpperCase().indexOf('CNY')>=0)
+      || arr[0];
+}
 /* 供应商归集：二级工厂 → 一级签约主体(留空=不归集，自为一级) */
 function setSupplierMap(sec,prim){if(!DB.supplierMap)DB.supplierMap={};const v=(prim||'').trim();if(v)DB.supplierMap[sec]=v;else delete DB.supplierMap[sec];save();renderSetBody();}
 /* 一级供应商列表维护 */
@@ -1944,7 +2090,7 @@ function buildSharedConfig(){
     buyerParties:DB.buyerParties||[],supplierMap:DB.supplierMap||{},tier1Suppliers:DB.tier1Suppliers||[],extraSup2:DB.extraSup2||[],
     hiddenParties:DB.hiddenParties||[],hiddenSup2:DB.hiddenSup2||[],prefOverride:DB.prefOverride||{},prefHidden:DB.prefHidden||[],
     brandTypeMap:DB.brandTypeMap||{},price:DB.price||{},hsLibOverride:DB.hsLibOverride||{},
-    templates:DB.templates||{},skuOverride:DB.skuOverride||{},bankInfo:DB.bankInfo||{}};
+    templates:DB.templates||{},skuOverride:DB.skuOverride||{},bankInfo:DB.bankInfo||{},bankAccounts:DB.bankAccounts||[]};
 }
 /* 导出共享配置(软件级全员共享那份)：维护人导出后交 WorkBuddy 推 GitHub config.json，其他人打开自动拉取 */
 function expSharedConfig(){
@@ -2046,10 +2192,18 @@ function renderSetBody(){
         <div class="add"><input id="newParty_consignee" placeholder="+ 新增境外收货人"><button class="btn add" onclick="addParty('consignee')">添加</button></div>
       </div>
       <div class="cd">
-        <div class="hd"><div class="bar" style="background:#D85A30"></div><p class="ttl">客户发票收款账户</p><span class="cnt">给客户汇款用</span></div>
-        <table><tr><th style="width:24%">项目</th><th style="width:76%">内容</th></tr><tbody>
-          ${[['pay','Payment Method(付款方式)'],['account','RMB Account(人民币账户)'],['bank','Bank(银行)'],['name','Account Name(户名)'],['no','Account Number(账号)']].map(([k,lab])=>`<tr><td>${lab}</td><td><input value="${esc((DB.bankInfo&&DB.bankInfo[k])||'')}" onchange="updBank('${k}',this.value)"></td></tr>`).join('')}
+        <div class="hd"><div class="bar" style="background:#D85A30"></div><p class="ttl">银行账户(收款)</p><span class="cnt">${(DB.bankAccounts||[]).length} 个 · 按合同币种匹配</span></div>
+        <table><tr><th style="width:12%">币种</th><th style="width:14%">付款方式</th><th style="width:22%">开户行</th><th style="width:24%">户名</th><th style="width:18%">账号</th><th style="width:10%">操作</th></tr><tbody>
+          ${(DB.bankAccounts||[]).map((b,i)=>`<tr>
+            <td><input value="${esc(b.cur||'')}" placeholder="CNY 人民币" onchange="updBank(${i},'cur',this.value)"></td>
+            <td><input value="${esc(b.pay||'T/T')}" onchange="updBank(${i},'pay',this.value)"></td>
+            <td><input value="${esc(b.bank||'')}" placeholder="开户行" onchange="updBank(${i},'bank',this.value)"></td>
+            <td><input value="${esc(b.name||'')}" placeholder="户名" onchange="updBank(${i},'name',this.value)"></td>
+            <td><input value="${esc(b.no||'')}" placeholder="账号" onchange="updBank(${i},'no',this.value)"></td>
+            <td><button class="btn del" onclick="if(confirm('删除该账户?'))delBank(${i})">删除</button></td></tr>`).join('')}
+          ${!(DB.bankAccounts||[]).length?`<tr><td colspan="6" class="muted" style="text-align:center">暂无账户，点下方「+ 添加账户」</td></tr>`:''}
         </tbody></table>
+        <div class="add"><button class="btn add" onclick="addBank()">+ 添加账户</button><span class="hint" style="border:0;padding:0 10px">客户发票/销售合同自动取与合同币种匹配的账户(如 USD 合同→USD 户)</span></div>
       </div>
       ${(DB.hiddenParties||[]).length?`<div class="cd"><div class="rec">已隐藏主体 ${(DB.hiddenParties||[]).length} 个: ${(DB.hiddenParties||[]).map((v,i)=>esc(v)+` <button onclick="unhide('hiddenParties',${i})">恢复</button>`).join(' · ')}</div></div>`:''}
       <div style="display:flex;gap:8px;margin:2px 0 12px;flex-wrap:wrap;padding-left:16px">
@@ -2293,6 +2447,7 @@ function mergeSharedCfg(cfg){
   if(cfg.templates)DB.templates=Object.assign({},DB.templates,cfg.templates);
   if(cfg.skuOverride)DB.skuOverride=Object.assign({},cfg.skuOverride,DB.skuOverride);
   if(cfg.bankInfo)DB.bankInfo=Object.assign({},DB.bankInfo||{},cfg.bankInfo);
+  if(Array.isArray(cfg.bankAccounts)&&cfg.bankAccounts.length)DB.bankAccounts=cfg.bankAccounts;
   DB._sharedCfg={at:cfg._at||'',t1:(cfg.tier1Suppliers||[]).length,sup:(cfg.supplierMap?Object.keys(cfg.supplierMap).length:0),shippers:(cfg.parties&&cfg.parties.shippers?cfg.parties.shippers.length:0),ok:true};
   save();renderAll();
   updCloudBadge();
