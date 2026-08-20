@@ -1037,48 +1037,51 @@ function builtin(name){
 <h2 style="text-align:center;margin:8px 0 10px">中华人民共和国海关出口货物报关单</h2>
 <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
 <tr>
-<td style="width:16%">预录入编号：<br><b>{{header.preNo}}</b></td>
-<td style="width:16%">海关编号：<br><b>{{header.customsNo}}</b></td>
-<td style="width:16%">页码/页数：<br><b>1/1</b></td>
-<td style="width:22%">发票号：<br><b>{{header.invNo}}</b></td>
-<td style="width:30%">委托协议号：<br><b>{{header.entrustNo}}</b></td>
+<td colspan="2">预录入编号：<br><b>{{header.preNo}}</b></td>
+<td colspan="2">海关编号：<br><b>{{header.customsNo}}</b></td>
+<td>页码/页数：<br><b>1/1</b></td>
+<td colspan="2">委托协议号：<br><b>{{header.entrustNo}}</b></td>
+<td>发票号：<br><b>{{header.invNo}}</b></td>
 </tr>
 <tr>
-<td>境内发货人<br><b>{{header.shipper}}</b><br><span style="color:#444;font-size:10px">信用代码 {{header.shipperUSCI}}</span><br><span style="color:#444;font-size:10px">海关注册编码 {{header.shipperReg}}</span></td>
+<td colspan="2">境内发货人<br><b>{{header.shipper}}</b><br><span style="color:#444;font-size:10px">信用代码 {{header.shipperUSCI}}</span><br><span style="color:#444;font-size:10px">海关注册编码 {{header.shipperReg}}</span></td>
 <td>出境关别<br><b>{{header.port}}</b></td>
 <td>出口日期<br><b>{{dates.exportDate}}</b></td>
 <td>申报日期<br><b>{{dates.customs}}</b></td>
-<td>备案号<br><b>{{header.recordNo}}</b></td>
+<td colspan="3">备案号<br><b>{{header.recordNo}}</b></td>
 </tr>
 <tr>
-<td>境外收货人<br><b>{{header.consignee}}</b></td>
+<td colspan="2">境外收货人<br><b>{{header.consignee}}</b></td>
 <td>运输方式<br><b>{{header.transMode}}</b></td>
 <td colspan="2">运输工具名称及航次号<br><b>{{header.vehicle}}</b></td>
-<td>提运单号<br><b>{{header.billNo}}</b></td>
+<td colspan="3">提运单号<br><b>{{header.billNo}}</b></td>
 </tr>
 <tr>
-<td>生产销售单位<br><b>{{header.prodUnit}}</b><br><span style="color:#444;font-size:10px">信用代码 {{header.prodUSCI}}</span></td>
+<td colspan="2">生产销售单位<br><b>{{header.prodUnit}}</b><br><span style="color:#444;font-size:10px">信用代码 {{header.prodUSCI}}</span></td>
 <td>监管方式<br><b>{{header.tradeMode}}</b></td>
 <td>征免性质<br><b>{{header.levyNature}}</b></td>
-<td colspan="2">许可证号<br><b>{{header.license}}</b></td>
+<td colspan="4">许可证号<br><b>{{header.license}}</b></td>
 </tr>
 <tr>
-<td>合同协议号<br><b>{{header.no||order.no}}</b></td>
+<td colspan="2">合同协议号<br><b>{{header.no||order.no}}</b></td>
 <td>贸易国(地区)<br><b>{{header.tradeCountry}}</b></td>
 <td>运抵国(地区)<br><b>{{header.arrivalCountry}}</b></td>
 <td>指运港<br><b>{{header.destPort}}</b></td>
-<td>离境口岸<br><b>{{header.exitPort}}</b></td>
+<td colspan="3">离境口岸<br><b>{{header.exitPort}}</b></td>
 </tr>
 <tr>
 <td>运输包装种类<br><b>{{header.packKind}}</b></td>
 <td>件数<br><b>{{boxCount}}</b></td>
 <td>毛重(千克)<br><b>{{totalGW}}</b></td>
 <td>净重(千克)<br><b>{{totalNW}}</b></td>
-<td>成交方式<br><b>{{header.tradeTerm}}</b></td><td>运费<br><b>{{header.freight}}</b></td><td>保费<br><b>{{header.premium}}</b></td><td>杂费<br><b>{{header.misc}}</b></td>
+<td>成交方式<br><b>{{header.tradeTerm}}</b></td>
+<td>运费<br><b>{{header.freight}}</b></td>
+<td>保费<br><b>{{header.premium}}</b></td>
+<td>杂费<br><b>{{header.misc}}</b></td>
 </tr>
 <tr>
-<td>随附单证及编号<br><b>{{header.attach}}</b></td>
-<td colspan="7">标记唛码及备注<br><b>{{header.marks}}</b></td>
+<td colspan="2">随附单证及编号<br><b>{{header.attach}}</b></td>
+<td colspan="6">标记唛码及备注<br><b>{{header.marks}}</b></td>
 </tr>
 </table>
 <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px">
@@ -1280,8 +1283,8 @@ function xlsCur(d){
   put(0,'预录入编号：'+(H.preNo||''),[[0,1]]);
   put(2,'海关编号：'+(H.customsNo||''),[[2,3]]);
   put(4,'页码/页数：1/1');
-  put(5,'发票号：'+(H.invNo||''),[[5,6]]);
-  put(7,'委托协议号：'+(H.entrustNo||'')); r++;
+  put(5,'委托协议号：'+(H.entrustNo||''),[[5,6]]);
+  put(7,'发票号：'+(H.invNo||'')); r++;
   /* 表头 */
   put(0,'境内发货人\n'+(H.shipper||'')+'\n信用代码 '+(H.shipperUSCI||'')+'\n海关注册 '+(H.shipperReg||''),[[0,1]]);
   put(2,'出境关别\n'+(H.port||''));
@@ -1301,17 +1304,16 @@ function xlsCur(d){
   put(3,'运抵国(地区)\n'+(H.arrivalCountry||H.destCountry||''));
   put(4,'指运港\n'+(H.destPort||''));
   put(5,'离境口岸\n'+(H.exitPort||''),[[5,7]]); r++;
-  put(0,'运输包装种类\n'+(H.packKind||''),[[0,1]]);
-  put(2,'件数\n'+(d.boxCount||''));
-  put(3,'毛重(千克)\n'+(d.totalGW||''));
-  put(4,'净重(千克)\n'+(d.totalNW||''));
-  put(5,'成交方式\n'+(H.tradeTerm||''));
-  put(6,'运费\n'+(H.freight||''));
-  put(7,'保费\n'+(H.premium||'')); r++;
-  put(0,'杂费\n'+(H.misc||''),[[0,1]]);
-  put(2,'集装箱号\n'+(H.container||''),[[2,3]]);
-  put(4,'随附单证及编号\n'+(H.attach||''),[[4,7]]); r++;
-  put(0,'标记唛码及备注\n'+(H.marks||''),[[0,7]]); r++;
+  put(0,'运输包装种类\n'+(H.packKind||''));
+  put(1,'件数\n'+(d.boxCount||''));
+  put(2,'毛重(千克)\n'+(d.totalGW||''));
+  put(3,'净重(千克)\n'+(d.totalNW||''));
+  put(4,'成交方式\n'+(H.tradeTerm||''));
+  put(5,'运费\n'+(H.freight||''));
+  put(6,'保费\n'+(H.premium||''));
+  put(7,'杂费\n'+(H.misc||'')); r++;
+  put(0,'随附单证及编号\n'+(H.attach||''),[[0,1]]);
+  put(2,'标记唛码及备注\n'+(H.marks||''),[[2,7]]); r++;
   /* 商品明细 12 列 */
   const hdr=['项号','商品编号','中文名称','英文名称','数量单位','单价','总价','币制','原产国(地区)','最终目的国(地区)','境内货源地/产地','征免'];
   hdr.forEach((h,i)=>putCell(R,r,i,h)); r++;
