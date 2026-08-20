@@ -1,0 +1,34 @@
+{
+  "_v": "export-doc-v3-config",
+  "_at": "2026-08-20T22:41:30",
+  "parties": {
+    "shippers": [
+      "井太兰(东莞)贸易有限公司"
+    ],
+    "consignees": [
+      "Leading Trade One Limited"
+    ],
+    "currencyList": [
+      "USD 美元",
+      "CNY 人民币",
+      "EUR 欧元"
+    ],
+    "codes": {}
+  },
+  "buyerParties": [
+    "井太兰(东莞)贸易有限公司"
+  ],
+  "supplierMap": {
+    "广州革瓦拉贸易有限公司": "广州自衍空间科创有限公司",
+    "广州革辉鞋业有限公司": "广州自衍空间科创有限公司",
+    "广州极优尼迅捷供应链管理有限公司": "广州自衍空间科创有限公司"
+  },
+  "brandTypeMap": {
+    "JW PEI": "4"
+  },
+  "price": {
+    "rate": 0.2,
+    "exch": 7.1
+  },
+  "hsLibOverride": {}
+}
