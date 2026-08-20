@@ -348,6 +348,8 @@ function defaultDB(){
     /* 供应商归集：二级供应商(生产工厂/商品库supplier) → 一级供应商(签约主体/合同抬头)。
        归集后按一级分行、按一级出采购合同；明细行仍保留二级原工厂供对账。 */
     supplierMap:{},
+    /* 一级供应商(签约主体)列表：可多个，维护界面增删；归集框下拉选 */
+    tier1Suppliers:['广州自衍空间科创有限公司'],
     sku:[
       {sku:'BAG-001',style:'1C131-33',cn:'磁性扣手拿包',en:'Magnetic Clutch Bag',noTax:102.9,tax:116.28,factory:'利景工厂',hs:'4202220000',mat:'PU',brandType:'境内自主品牌',enjoys:'0'},
       {sku:'BAG-002',style:'2T03-1',cn:'牛皮手拿包',en:'Leather Clutch Bag',noTax:160.0,tax:180.80,factory:'璞景工厂',hs:'4202220000',mat:'牛皮',brandType:'境内自主品牌',enjoys:'0'}
@@ -362,7 +364,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -1746,6 +1748,32 @@ let skuPage=1, skuSize=200, skuQ='';
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function skuList(){const b=window.__SKU_BULK__||[];if(b.length){const have=new Set(b.map(x=>x.sku));return b.concat((DB.sku||[]).filter(x=>!have.has(x.sku)));}return DB.sku||[];}
 function skuMerged(sku){const b=skuList().find(x=>x&&x.sku===sku);const ov=DB.skuOverride&&DB.skuOverride[sku];return Object.assign({},b,ov);}
+/* 商品库表格单独渲染：搜索/翻页只刷新表格，不重建输入框(避免失焦跳出的BUG) */
+function renderSkuTable(){
+  const allList=skuList();
+  const list=skuQ?allList.filter(x=>{const q=skuQ.toLowerCase();return [x.sku,x.style,x.prodCode,x.nameFull,x.nameShort,x.cn,x.en,x.hs,x.brand].some(v=>v!=null&&String(v).toLowerCase().indexOf(q)>=0);}):allList;
+  const total=list.length;
+  const pages=Math.max(1,Math.ceil(total/skuSize));
+  if(skuPage>pages)skuPage=pages;
+  const start=(skuPage-1)*skuSize;
+  const slice=list.slice(start,start+skuSize);
+  const pi=document.getElementById('skuPageInfo');
+  if(pi)pi.textContent='第 '+skuPage+'/'+pages+' 页（'+(start+1)+'–'+Math.min(start+skuSize,total)+' / 共 '+total+' 行）'+(skuQ?('（过滤自 '+allList.length+'）'):'');
+  const wrap=document.getElementById('skuTableWrap');
+  if(!wrap)return;
+  let t='<table><thead><tr><th>款式编码</th><th>SKU</th><th>商品名称</th><th>商品简称</th><th>中文品名</th><th>英文品名</th><th>销售单价USD</th><th>不含税价CNY</th><th>含税价CNY</th><th>净重kg</th><th>海关编码</th><th>计量单位</th><th>品牌</th><th>材质</th><th>鞋底材质</th><th>用途</th><th>图片</th><th>分类</th><th>供应商(维护)</th><th>品牌类型(维护)</th></tr></thead><tbody>';
+  slice.forEach(s=>{const m=skuMerged(s.sku);
+    const img=m.img?`<a href="${m.img}" target="_blank" style="color:#7fd1ff">${esc(m.img.split('/').pop())}</a>`:'<span class="muted">—</span>';
+    t+=`<tr>
+    <td class="muted">${esc(m.style)}</td><td><b>${esc(m.sku)}</b></td><td class="muted">${esc(m.nameFull)}</td><td class="muted">${esc(m.nameShort)}</td>
+    <td>${esc(m.cn)}</td><td class="muted">${esc(m.en)}</td><td class="muted">${esc(m.usd)}</td><td>${esc(m.noTax)}</td><td class="muted">${esc(m.tax)}</td>
+    <td class="muted">${esc(m.gw)}</td><td>${esc(m.hs)}</td><td class="muted">${esc(m.unit)}</td><td class="muted">${esc(m.brand)}</td><td>${esc(m.mat)}</td>
+    <td class="muted">${esc(m.soleMat)}</td><td class="muted">${esc(m.use)}</td><td>${img}</td><td class="muted">${esc(m.cat)}</td>
+    <td><input style="width:80px" value="${esc(m.supplier||m.factory)}" onchange="setSkuOv('${esc(m.sku)}','supplier',this.value)"></td>
+    <td><input style="width:90px" value="${esc(m.brandType)}" onchange="setSkuOv('${esc(m.sku)}','brandType',this.value)"></td></tr>`;});
+  t+='</tbody></table>';
+  wrap.innerHTML=t;
+}
 function setSkuOv(sku,k,v){if(!DB.skuOverride)DB.skuOverride={};DB.skuOverride[sku]=Object.assign({},DB.skuOverride[sku],{[k]:v});save();renderSetBody();}
 /* 品牌类型映射维护：按品牌名映射海关品牌类型(0-4)，未来加新品牌在设置中心新增一行即可 */
 function setBrandTypeMap(b,v){if(!DB.brandTypeMap)DB.brandTypeMap={};DB.brandTypeMap[b]=v;save();renderSetBody();}
@@ -1783,6 +1811,9 @@ function updBuyer(i,v){if(!DB.buyerParties)DB.buyerParties=[];DB.buyerParties[i]
 function delBuyer(i){if(DB.buyerParties&&DB.buyerParties.length>1)DB.buyerParties.splice(i,1);save();renderSetBody();}
 /* 供应商归集：二级工厂 → 一级签约主体(留空=不归集，自为一级) */
 function setSupplierMap(sec,prim){if(!DB.supplierMap)DB.supplierMap={};const v=(prim||'').trim();if(v)DB.supplierMap[sec]=v;else delete DB.supplierMap[sec];save();renderSetBody();}
+/* 一级供应商列表维护 */
+function addTier1(){const el=document.getElementById('newTier1');const v=(el&&el.value||'').trim();if(!v){alert('请输入一级供应商名称');return;}if(!DB.tier1Suppliers)DB.tier1Suppliers=[];if(DB.tier1Suppliers.indexOf(v)<0)DB.tier1Suppliers.push(v);save();renderSetBody();}
+function delTier1(i){if(DB.tier1Suppliers){const removed=DB.tier1Suppliers[i];DB.tier1Suppliers.splice(i,1);Object.keys(DB.supplierMap||{}).forEach(k=>{if(DB.supplierMap[k]===removed)delete DB.supplierMap[k];});}save();renderSetBody();}
 function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length>1)a.splice(i,1);save();renderSetBody();}
 function updParty(t,i,v){(t==='shipper'?DB.parties.shippers:DB.parties.consignees)[i]=v;save();}
 function updCode(i,f,v){const s=DB.parties.shippers[i];if(!s)return;if(!DB.parties.codes)DB.parties.codes={};if(!DB.parties.codes[s])DB.parties.codes[s]={};DB.parties.codes[s][f]=v;save();}
@@ -1852,42 +1883,37 @@ function renderSetBody(){
     const start=(skuPage-1)*skuSize;
     const slice=list.slice(start,start+skuSize);
     h='<p class="muted">商品库 SKU（含 HS）—— 原封不动 18 源字段 + 工厂/品牌类型 2 维护字段。出口享惠由目的国自动派生，申报价生成时算，均不落表。图片存「商品图片/」本地路径，做发票时模板写 &lt;img src="{{img}}"&gt; 复用同一张图。</p>';
-    h+=`<div class="toolbar"><input placeholder="🔍 搜索 SKU/款号/品名/HS/品牌…" value="${esc(skuQ)}" oninput="skuQ=this.value.trim();skuPage=1;renderSetBody()" style="width:220px;flex:none">
+    h+=`<div class="toolbar"><input placeholder="🔍 搜索 SKU/款号/品名/HS/品牌…" value="${esc(skuQ)}" oninput="skuQ=this.value.trim();skuPage=1;renderSkuTable()" style="width:220px;flex:none">
       <button class="small" onclick="upSkuFile()">⬆ 上传商品信息表(CSV/XLSX)</button>
       <button class="small" onclick="importBulk()">⬆ 导入商品库JSON</button>
       <button class="small" onclick="addSkuRow()">+ 新增行</button>
       <span style="flex:1"></span>
-      <label class="muted">每页</label><select class="small" onchange="skuSize=+this.value;skuPage=1;renderSetBody()"><option ${skuSize===100?'selected':''}>100</option><option ${skuSize===200?'selected':''}>200</option><option ${skuSize===500?'selected':''}>500</option></select>
-      <button class="small" onclick="if(skuPage>1){skuPage--;renderSetBody()}">上一页</button>
-      <button class="small" onclick="if(skuPage<pages){skuPage++;renderSetBody()}">下一页</button>
-      <span class="muted">第 ${skuPage}/${pages} 页（${start+1}–${Math.min(start+skuSize,total)} / 共 ${total} 行）</span>
+      <label class="muted">每页</label><select class="small" onchange="skuSize=+this.value;skuPage=1;renderSkuTable()"><option ${skuSize===100?'selected':''}>100</option><option ${skuSize===200?'selected':''}>200</option><option ${skuSize===500?'selected':''}>500</option></select>
+      <button class="small" onclick="if(skuPage>1){skuPage--;renderSkuTable()}">上一页</button>
+      <button class="small" onclick="if(skuPage<pages){skuPage++;renderSkuTable()}">下一页</button>
+      <span class="muted" id="skuPageInfo"></span>
       <input type="file" id="skuFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="onSkuFile(event)">
       <input type="file" id="bulkFile" accept=".json" style="display:none" onchange="onBulkFile(event)"></div>`;
-    h+='<table><thead><tr><th>款式编码</th><th>SKU</th><th>商品名称</th><th>商品简称</th><th>中文品名</th><th>英文品名</th><th>销售单价USD</th><th>不含税价CNY</th><th>含税价CNY</th><th>净重kg</th><th>海关编码</th><th>计量单位</th><th>品牌</th><th>材质</th><th>鞋底材质</th><th>用途</th><th>图片</th><th>分类</th><th>供应商(维护)</th><th>品牌类型(维护)</th></tr></thead><tbody>';
-    slice.forEach(s=>{const m=skuMerged(s.sku);
-      const img=m.img?`<a href="${m.img}" target="_blank" style="color:#7fd1ff">${esc(m.img.split('/').pop())}</a>`:'<span class="muted">—</span>';
-      h+=`<tr>
-      <td class="muted">${esc(m.style)}</td><td><b>${esc(m.sku)}</b></td><td class="muted">${esc(m.nameFull)}</td><td class="muted">${esc(m.nameShort)}</td>
-      <td>${esc(m.cn)}</td><td class="muted">${esc(m.en)}</td><td class="muted">${esc(m.usd)}</td><td>${esc(m.noTax)}</td><td class="muted">${esc(m.tax)}</td>
-      <td class="muted">${esc(m.gw)}</td><td>${esc(m.hs)}</td><td class="muted">${esc(m.unit)}</td><td class="muted">${esc(m.brand)}</td><td>${esc(m.mat)}</td>
-      <td class="muted">${esc(m.soleMat)}</td><td class="muted">${esc(m.use)}</td><td>${img}</td><td class="muted">${esc(m.cat)}</td>
-      <td><input style="width:80px" value="${esc(m.supplier||m.factory)}" onchange="setSkuOv('${esc(m.sku)}','supplier',this.value)"></td>
-      <td><input style="width:90px" value="${esc(m.brandType)}" onchange="setSkuOv('${esc(m.sku)}','brandType',this.value)"></td></tr>`;});
-    h+='</tbody></table><div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
+    h+='<div id="skuTableWrap"></div>';
+    h+='<div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
+    renderSkuTable();
   } else if(curTab==='supmap'){
     /* 列出商品库已出现的二级工厂(去重) + 归集映射 */
     const secs=[];const seen=new Set();
     skuList().forEach(s=>{const v=(s.supplier||s.factory||'').trim();if(v&&!seen.has(v)&&!/未匹配|None|test|⚠/.test(v)){seen.add(v);secs.push(v);}});
     secs.sort();
     const sm=DB.supplierMap||{};
-    /* 收集所有一级(映射目标 + 采购主体)，用于输入建议 */
-    const tier1s=[...new Set(Object.values(sm).filter(Boolean))];
+    const t1=(DB.tier1Suppliers||[]).filter(Boolean);
     h=`<p class="muted">供应商归集：商品库 supplier 记的是<b>二级供应商(生产工厂)</b>；此处将多个二级归集到一个<b>一级供应商(签约主体)</b>。归集后：①草单「按供应商分行」按一级分组 ②国内采购合同按一级出(抬头=一级)，明细保留二级原工厂。留空=不归集(该二级自为一级)。</p>
-      <div style="font-weight:600;margin:8px 0 6px">二级供应商(生产工厂) → 一级供应商(签约主体)</div>
+      <div style="font-weight:600;margin:10px 0 6px">① 一级供应商(签约主体)列表 —— 先在这里维护，再在下方归集</div>
+      ${t1.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><span style="flex:1.4;color:var(--fg)">${esc(s)}</span><button onclick="delTier1(${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
+      <div style="display:flex;gap:6px;margin:6px 0"><input id="newTier1" placeholder="新一级供应商，如：某签约公司" style="flex:1.4"><button onclick="addTier1()" style="background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;cursor:pointer">+ 添加一级</button></div>
+      <div style="font-weight:600;margin:14px 0 6px">② 二级供应商(生产工厂) → 归集到一级(留空=不归集)</div>
       ${secs.map(sec=>`<div style="display:flex;gap:8px;margin:4px 0;align-items:center"><span style="flex:1.4;color:var(--fg)">${esc(sec)}</span>
-        <input list="tier1List" data-sec="${esc(sec)}" value="${esc(sm[sec]||'')}" placeholder="留空=不归集" onchange="setSupplierMap(this.dataset.sec,this.value)" style="flex:1"></div>`).join('')}
-      <datalist id="tier1List">${tier1s.map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
-      <div class="note">已有归集：${Object.keys(sm).length?Object.keys(sm).map(k=>k+' → '+sm[k]).join('；'):'无'}。一级供应商自动从归集目标收集(可在输入框直接输新主体)。</div>`;
+        <select data-sec="${esc(sec)}" onchange="setSupplierMap(this.dataset.sec,this.value)" style="flex:1">
+          <option value="">(不归集)</option>${t1.map(t=>`<option value="${esc(t)}" ${sm[sec]===t?'selected':''}>${esc(t)}</option>`).join('')}
+        </select></div>`).join('')}
+      <div class="note">已有归集：${Object.keys(sm).length?Object.keys(sm).map(k=>k+' → '+sm[k]).join('；'):'无'}。一级列表维护后，归集下拉自动带出。</div>`;
   } else if(curTab==='brand'){
     const btOpts=[['0','无品牌'],['1','境内自主品牌'],['2','境内收购品牌'],['3','境外品牌(贴牌生产)'],['4','境外品牌(其它)']];
     const bm=DB.brandTypeMap||{};
