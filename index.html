@@ -119,6 +119,30 @@
   .content{flex:1;min-width:0;padding-left:16px}
   .flow-stage{display:none}
   .flow-stage.show{display:block}
+  /* ===== ERP 化设置中心主数据卡片 ===== */
+  .erp .cd{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .erp .hd{display:flex;align-items:center;gap:10px;padding:11px 16px 9px;border-bottom:1px solid var(--line)}
+  .erp .bar{width:4px;height:18px;border-radius:2px;flex:none}
+  .erp .ttl{font-size:14px;font-weight:600;margin:0}
+  .erp .cnt{font-size:11px;border-radius:10px;padding:1px 9px;background:var(--panel2);color:var(--mut)}
+  .erp table{width:100%;border-collapse:collapse;table-layout:fixed}
+  .erp th{text-align:left;font-size:12px;color:var(--mut);padding:7px 16px;border-bottom:1px solid var(--line);font-weight:600}
+  .erp td{padding:6px 16px;font-size:13px;border-bottom:1px solid var(--line)}
+  .erp tbody tr:nth-child(even){background:var(--panel2)}
+  .erp tbody tr:hover{background:#1a2530}
+  .erp input,.erp select{width:100%;box-sizing:border-box;border-radius:6px;padding:4px 8px;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+  .erp .tag{font-size:11px;border-radius:10px;padding:1px 9px;white-space:nowrap;display:inline-block}
+  .erp .btn{border:1px solid;border-radius:6px;padding:3px 12px;font-size:12px;cursor:pointer;background:transparent}
+  .erp .btn.del{color:#e88;border-color:#5a2a3a}
+  .erp .btn.hide{color:var(--mut);border-color:var(--line)}
+  .erp .btn.add{background:#1a3a6a;color:#cfe;border-color:#2a5a9a}
+  .erp .add{display:flex;gap:8px;padding:9px 16px;border-top:1px solid var(--line);background:var(--panel2)}
+  .erp .add input{flex:1}
+  .erp .sub{font-size:12px;font-weight:600;color:var(--mut);margin:10px 16px 3px}
+  .erp .hint{font-size:12px;color:var(--mut);padding:8px 16px 11px}
+  .erp .ok{font-size:11px;color:var(--ok)}
+  .erp .rec{margin:6px 16px 12px;font-size:12px;color:var(--mut)}
+  .erp .rec button{background:transparent;color:#9cf;border:1px solid #3a5a7a;border-radius:6px;padding:1px 8px;font-size:11px;cursor:pointer;margin-left:6px}
 </style>
 </head>
 <body>
@@ -267,7 +291,7 @@ const COUNTRY_PREF={
   VNM:'1',THA:'1',MYS:'1',IDN:'1',PHL:'1',SGP:'1',KHM:'1',LAO:'1',MMR:'1',BRN:'1',
   USA:'0',DEU:'0',GBR:'0',FRA:'0',NLD:'0',POL:'0',ITA:'0',ESP:'0',CAN:'0',MEX:'0',RUS:'0',TUR:'0',IND:'0',BRA:'0',ARG:'0',SAU:'0',ARE:'0',ISR:'0',EGY:'0',ZAF:'0',TWN:'2'
 };
-function enjoysOf(code){const c=(code||'').split(' ')[0];return COUNTRY_PREF[c]!==undefined?COUNTRY_PREF[c]:'2';}
+function enjoysOf(code){const c=(code||'').split(' ')[0];if(DB&&DB.prefOverride&&DB.prefOverride[c]!==undefined)return DB.prefOverride[c];return COUNTRY_PREF[c]!==undefined?COUNTRY_PREF[c]:'2';}
 
 /* ============== HS_LIB 申报要素库（精确10位匹配，否决前缀归类） ============== */
 /* 内置已验证的真实码；匹配不上 → ⚠要素序列待填；用户可在「HS要素库维护」补录缺失码。
@@ -365,6 +389,12 @@ function defaultDB(){
     tier1Suppliers:['广州自衍空间科创有限公司'],
     /* 二级供应商手工列表(不在商品库但需归集的工厂，与商品库 supplier 合并展示) */
     extraSup2:[],
+    /* 隐藏排除表：云端/内置/商品库来源项在本地"隐藏"后不再显示(可随共享配置发布，全公司统一) */
+    hiddenParties:[],   /* 被隐藏的主体名(发货人/采购主体/收货人) */
+    hiddenSup2:[],      /* 被隐藏的二级供应商(商品库来源) */
+    /* 享惠国别覆盖层：内置国别只读+可改值/隐藏，自定义国别可增删改 */
+    prefOverride:{},    /* 国家代码 → '0'/'1'/'2'(优先于内置) */
+    prefHidden:[],      /* 被隐藏的内置国别代码 */
     sku:[
       {sku:'BAG-001',style:'1C131-33',cn:'磁性扣手拿包',en:'Magnetic Clutch Bag',noTax:102.9,tax:116.28,factory:'利景工厂',hs:'4202220000',mat:'PU',brandType:'境内自主品牌',enjoys:'0'},
       {sku:'BAG-002',style:'2T03-1',cn:'牛皮手拿包',en:'Leather Clutch Bag',noTax:160.0,tax:180.80,factory:'璞景工厂',hs:'4202220000',mat:'牛皮',brandType:'境内自主品牌',enjoys:'0'}
@@ -379,7 +409,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -1761,6 +1791,8 @@ const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'}
 let curTab='party';
 let skuPage=1, skuSize=200, skuQ='', skuSup='';
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+/* 用于 onclick/onchange 内嵌字符串参数：单引号转 \u0027 转义序列，HTML 属性解析后再由 JS 还原，不破坏字符串 */
+function escQ(s){return esc(s).replace(/'/g,'\\u0027');}
 function skuList(){const b=window.__SKU_BULK__||[];if(b.length){const have=new Set(b.map(x=>x.sku));return b.concat((DB.sku||[]).filter(x=>!have.has(x.sku)));}return DB.sku||[];}
 function skuMerged(sku){const b=skuList().find(x=>x&&x.sku===sku);const ov=DB.skuOverride&&DB.skuOverride[sku];return Object.assign({},b,ov);}
 /* 商品库表格单独渲染：搜索/翻页只刷新表格，不重建输入框(避免失焦跳出的BUG) */
@@ -1821,22 +1853,37 @@ function onPrefFile(e){const f=e.target.files[0];if(!f)return;const r=new FileRe
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('mask').classList.add('open');renderTabs();}
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('mask').classList.remove('open');}
 function renderTabs(){document.getElementById('setTabs').innerHTML=TABS.map(t=>`<button class="${curTab===t.k?'on':''}" onclick="curTab='${t.k}';renderTabs()">${t.n}</button>`).join('');renderSetBody();}
-function addParty(t){(t==='shipper'?DB.parties.shippers:DB.parties.consignees).push('');save();renderSetBody();}
-/* 采购主体维护：采购合同「采购方」(默认=出口公司，可多个) */
-function addBuyer(){if(!DB.buyerParties)DB.buyerParties=[];DB.buyerParties.push('');save();renderSetBody();}
-function updBuyer(i,v){if(!DB.buyerParties)DB.buyerParties=[];DB.buyerParties[i]=v;save();}
-function delBuyer(i){if(DB.buyerParties&&DB.buyerParties.length>1)DB.buyerParties.splice(i,1);save();renderSetBody();}
+/* ============ ERP 化主数据 增删改查(含"隐藏"机制：云端/内置/商品库来源项本地不可真删，隐藏后不显示，可随共享配置发布) ============ */
+function hiddenPush(h,v){if(!DB[h])DB[h]=[];const s=String(v||'').trim();if(s&&DB[h].indexOf(s)<0)DB[h].push(s);}
+function unhide(h,i){const arr=DB[h]||[];if(i>=0&&i<arr.length){arr.splice(i,1);save();renderSetBody();}}
+/* 境内发货人 / 境外收货人 */
+function addParty(t){const el=document.getElementById('newParty_'+t);const v=(el&&el.value||'').trim();const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(!v){alert('请输入名称');return;}if(a.indexOf(v)<0)a.push(v);save();renderSetBody();}
+function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length<=1){alert('至少保留一个'+(t==='shipper'?'境内发货人':'境外收货人'));return;}const v=a[i];a.splice(i,1);hiddenPush('hiddenParties',v);save();renderSetBody();}
+function updParty(t,i,v){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;const old=a[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){a[i]=nv;if(DB.parties.codes&&DB.parties.codes[old]!==undefined){DB.parties.codes[nv]=DB.parties.codes[old];delete DB.parties.codes[old];}if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();}
+/* 采购主体 */
+function addBuyer(){const el=document.getElementById('newBuyer');const v=(el&&el.value||'').trim();if(!v){alert('请输入采购主体名称');return;}if(!DB.buyerParties)DB.buyerParties=[];if(DB.buyerParties.indexOf(v)<0)DB.buyerParties.push(v);save();renderSetBody();}
+function updBuyer(i,v){if(!DB.buyerParties)DB.buyerParties=[];const old=DB.buyerParties[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){DB.buyerParties[i]=nv;if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();}
+function delBuyer(i){if(DB.buyerParties&&DB.buyerParties.length>1){const v=DB.buyerParties[i];DB.buyerParties.splice(i,1);hiddenPush('hiddenParties',v);}save();renderSetBody();}
+/* 统一社会信用代码 / 海关注册编码 */
+function updCode(i,f,v){const s=DB.parties.shippers[i];if(!s)return;if(!DB.parties.codes)DB.parties.codes={};if(!DB.parties.codes[s])DB.parties.codes[s]={};DB.parties.codes[s][f]=v;save();}
 /* 供应商归集：二级工厂 → 一级签约主体(留空=不归集，自为一级) */
 function setSupplierMap(sec,prim){if(!DB.supplierMap)DB.supplierMap={};const v=(prim||'').trim();if(v)DB.supplierMap[sec]=v;else delete DB.supplierMap[sec];save();renderSetBody();}
 /* 一级供应商列表维护 */
 function addTier1(){const el=document.getElementById('newTier1');const v=(el&&el.value||'').trim();if(!v){alert('请输入一级供应商名称');return;}if(!DB.tier1Suppliers)DB.tier1Suppliers=[];if(DB.tier1Suppliers.indexOf(v)<0)DB.tier1Suppliers.push(v);save();renderSetBody();}
-function delTier1(i){if(DB.tier1Suppliers){const removed=DB.tier1Suppliers[i];DB.tier1Suppliers.splice(i,1);Object.keys(DB.supplierMap||{}).forEach(k=>{if(DB.supplierMap[k]===removed)delete DB.supplierMap[k];});}save();renderSetBody();}
-/* 二级供应商手工列表：不在商品库但需归集的工厂 */
-function addSup2(){const el=document.getElementById('newSup2');const v=(el&&el.value||'').trim();if(!v){alert('请输入二级供应商名称');return;}if(!DB.extraSup2)DB.extraSup2=[];if(DB.extraSup2.indexOf(v)<0)DB.extraSup2.push(v);save();renderSetBody();}
-function delSup2(sec){DB.extraSup2=(DB.extraSup2||[]).filter(x=>x!==sec);if(DB.supplierMap)delete DB.supplierMap[sec];save();renderSetBody();}
-function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length>1)a.splice(i,1);save();renderSetBody();}
-function updParty(t,i,v){(t==='shipper'?DB.parties.shippers:DB.parties.consignees)[i]=v;save();}
-function updCode(i,f,v){const s=DB.parties.shippers[i];if(!s)return;if(!DB.parties.codes)DB.parties.codes={};if(!DB.parties.codes[s])DB.parties.codes[s]={};DB.parties.codes[s][f]=v;save();}
+function updTier1(i,v){if(!DB.tier1Suppliers)return;const old=DB.tier1Suppliers[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){DB.tier1Suppliers[i]=nv;Object.keys(DB.supplierMap||{}).forEach(k=>{if(DB.supplierMap[k]===old)DB.supplierMap[k]=nv;});if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();}
+function delTier1(i){if(DB.tier1Suppliers){const v=DB.tier1Suppliers[i];DB.tier1Suppliers.splice(i,1);Object.keys(DB.supplierMap||{}).forEach(k=>{if(DB.supplierMap[k]===v)delete DB.supplierMap[k];});hiddenPush('hiddenParties',v);}save();renderSetBody();}
+/* 二级供应商：商品库自动收集(来源sku，可隐藏) ∪ 手工维护(来源manual，可改/删) */
+function addSup2(){const el=document.getElementById('newSup2');const v=(el&&el.value||'').trim();if(!v){alert('请输入二级供应商名称');return;}if(!DB.extraSup2)DB.extraSup2=[];if(DB.extraSup2.indexOf(v)<0)DB.extraSup2.push(v);if(DB.hiddenSup2&&DB.hiddenSup2.indexOf(v)>=0)DB.hiddenSup2.splice(DB.hiddenSup2.indexOf(v),1);save();renderSetBody();}
+function updSup2(oldName,newName){const v=String(newName||'').trim();if(!v){alert('名称不能为空');renderSetBody();return;}const idx=(DB.extraSup2||[]).indexOf(oldName);if(idx>=0){if(v!==oldName){if(DB.extraSup2.indexOf(v)>=0){alert('已存在同名二级供应商');renderSetBody();return;}DB.extraSup2[idx]=v;if(DB.supplierMap&&DB.supplierMap[oldName]!==undefined){DB.supplierMap[v]=DB.supplierMap[oldName];delete DB.supplierMap[oldName];}}}save();}
+function hideSup2(sec){hiddenPush('hiddenSup2',sec);if(DB.supplierMap)delete DB.supplierMap[sec];save();renderSetBody();}
+function delSup2(sec){DB.extraSup2=(DB.extraSup2||[]).filter(x=>x!==sec);hiddenPush('hiddenSup2',sec);if(DB.supplierMap)delete DB.supplierMap[sec];save();renderSetBody();}
+/* 享惠国别：内置(改值走覆盖层/隐藏) + 自定义(增删改) */
+function prefVal(c){return (DB.prefOverride&&DB.prefOverride[c]!==undefined)?DB.prefOverride[c]:(COUNTRY_PREF[c]!==undefined?COUNTRY_PREF[c]:'2');}
+function setPrefVal(c,v){if(!DB.prefOverride)DB.prefOverride={};DB.prefOverride[c]=v;save();}
+function hidePref(c){hiddenPush('prefHidden',c);save();renderSetBody();}
+function delPref(c){if(DB.prefOverride)delete DB.prefOverride[c];hiddenPush('prefHidden',c);save();renderSetBody();}
+function addPref(){const el=document.getElementById('newPrefCode');const v=document.getElementById('newPrefVal');const c=((el&&el.value)||'').trim().toUpperCase();if(!c){alert('请输入国家代码');return;}if(!DB.prefOverride)DB.prefOverride={};DB.prefOverride[c]=v?v.value:'2';if(DB.prefHidden&&DB.prefHidden.indexOf(c)>=0)DB.prefHidden.splice(DB.prefHidden.indexOf(c),1);save();renderSetBody();}
+function updPrefCode(oldC,newC){const v=String(newC||'').trim().toUpperCase();if(!v){alert('代码不能为空');renderSetBody();return;}if(v!==oldC){if(DB.prefOverride&&DB.prefOverride[oldC]!==undefined){DB.prefOverride[v]=DB.prefOverride[oldC];delete DB.prefOverride[oldC];}else if(COUNTRY_PREF[oldC]!==undefined){DB.prefOverride[v]=COUNTRY_PREF[oldC];}if(DB.prefHidden&&DB.prefHidden.indexOf(oldC)>=0){DB.prefHidden.splice(DB.prefHidden.indexOf(oldC),1);DB.prefHidden.push(v);}}save();}
 function expParty(){
   const data={shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,codes:DB.parties.codes||{},_v:'exp3-party-v1',_exported:new Date().toISOString()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
@@ -1849,6 +1896,7 @@ function buildSharedConfig(){
   return {_v:'export-doc-v3-config',_at:new Date().toISOString(),
     parties:{shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,codes:DB.parties.codes||{}},
     buyerParties:DB.buyerParties||[],supplierMap:DB.supplierMap||{},tier1Suppliers:DB.tier1Suppliers||[],extraSup2:DB.extraSup2||[],
+    hiddenParties:DB.hiddenParties||[],hiddenSup2:DB.hiddenSup2||[],prefOverride:DB.prefOverride||{},prefHidden:DB.prefHidden||[],
     brandTypeMap:DB.brandTypeMap||{},price:DB.price||{},hsLibOverride:DB.hsLibOverride||{},
     templates:DB.templates||{},skuOverride:DB.skuOverride||{}};
 }
@@ -1911,47 +1959,55 @@ function impParty(ev){
 function renderSetBody(){
   const b=document.getElementById('setBody');let h='';
   if(curTab==='party'){
-    /* 共享配置中心状态 */
     const sc=DB._sharedCfg||{};
-    h=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:14px;background:var(--panel2)">
-      <div style="font-weight:600;margin-bottom:6px">🔄 共享配置中心（一人维护 · 全员共享）</div>
-      <div style="font-size:12px;color:var(--mut);line-height:1.7">
-        云端共享配置存放在 GitHub 仓库 config.json：<b>任何人打开本系统都会自动拉取最新配置</b>，无需重复维护。<br>
-        发布流程：你在下方/其他Tab维护好（发货人/采购主体/一级二级供应商/归集/品牌映射/售价）→ 点「导出共享配置」把 JSON 发管理员(WorkBuddy) → 推送到云端 → 全员自动生效。
+    const hp=new Set(DB.hiddenParties||[]);
+    const shippers=DB.parties.shippers.filter(s=>s&&s.trim()&&!hp.has(s.trim()));
+    const buyers=(DB.buyerParties||[]).filter(s=>s&&s.trim()&&!hp.has(s.trim()));
+    const consignees=DB.parties.consignees.filter(s=>s&&s.trim()&&!hp.has(s.trim()));
+    h=`<div class="erp">
+      <div class="cd">
+        <div class="hd"><div class="bar" style="background:#378ADD"></div><p class="ttl">共享配置中心</p><span class="cnt">${sc.at?('更新于 '+sc.at.slice(0,16)+' · 发货人'+sc.shippers+' · 一级'+sc.t1+' · 归集'+sc.sup):'尚未拉取'}${sc.ok?' · ✅ 已同步':''}</span></div>
+        <div style="display:flex;gap:8px;padding:10px 16px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line)">
+          <button class="small" onclick="fetchSharedConfig();alert('正在重新拉取云端共享配置…')">↻ 重新拉取</button>
+          <button class="small" style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a" onclick="expSharedConfig()">⬆ 导出共享配置</button>
+          <label class="small" style="background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:3px 10px;cursor:pointer">📤 上传配置
+            <input type="file" accept=".json" style="display:none" onchange="impSharedConfig(event)"></label>
+          <input id="ghToken" type="password" placeholder="GitHub 发布凭证(受限PAT,可选)" value="${localStorage.getItem('v3.ghToken')?'已保存(重新输入可覆盖)':''}" style="flex:1;min-width:200px">
+          <button class="small" onclick="saveGhToken()">保存凭证</button>
+          <button class="small primary" onclick="publishConfig()">🚀 发布到云端(全员同步)</button>
+        </div>
+        <div class="hint">打开系统自动拉取云端配置;发布 = 维护后点「🚀」(需已保存凭证)或导出 JSON 交管理员。</div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:12px;color:var(--mut)">云端状态：${sc.at?('更新于 '+sc.at+'（发货人'+sc.shippers+' · 一级'+sc.t1+' · 归集'+sc.sup+'）'):'尚未拉取'}${sc.ok?'✅':''}</span>
-        <button class="small" onclick="fetchSharedConfig();alert('正在重新拉取云端共享配置…')">↻ 重新拉取</button>
-        <button class="small" style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a" onclick="expSharedConfig()">⬆ 导出共享配置</button>
-        <label class="small" style="background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:3px 10px;cursor:pointer">📤 上传配置(手动导入)
-          <input type="file" accept=".json" style="display:none" onchange="impSharedConfig(event)">
-        </label>
+      <div class="cd">
+        <div class="hd"><div class="bar" style="background:#378ADD"></div><p class="ttl">境内发货人</p><span class="cnt">${shippers.length} 个</span></div>
+        <table><tr><th style="width:28%">名称</th><th style="width:23%">统一社会信用代码</th><th style="width:23%">海关注册编码</th><th style="width:26%">操作</th></tr><tbody>
+          ${shippers.map((s,i)=>{const di=DB.parties.shippers.indexOf(s);const c=(DB.parties.codes&&DB.parties.codes[s])||{};return `<tr><td><input value="${esc(s)}" onchange="updParty('shipper',${di},this.value)"></td><td><input value="${esc(c.usci||'')}" placeholder="18位" onchange="updCode(${di},'usci',this.value)"></td><td><input value="${esc(c.reg||'')}" placeholder="10位" onchange="updCode(${di},'reg',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该发货人?'))delParty('shipper',${di})">删除</button></td></tr>`;}).join('')}
+        </tbody></table>
+        <div class="add"><input id="newParty_shipper" placeholder="+ 新增境内发货人"><button class="btn add" onclick="addParty('shipper')">添加</button></div>
       </div>
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
-        <input id="ghToken" type="password" placeholder="GitHub 发布凭证(受限PAT,可选)" value="${localStorage.getItem('v3.ghToken')?'已保存(重新输入可覆盖)':''}" style="flex:1;min-width:220px">
-        <button class="small" onclick="saveGhToken()">保存凭证</button>
-        <button class="small primary" onclick="publishConfig()">🚀 发布到云端(全员同步)</button>
+      <div class="cd">
+        <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">采购主体</p><span class="cnt">${buyers.length} 个</span></div>
+        <table><tr><th style="width:74%">名称(采购合同「采购方」)</th><th style="width:26%">操作</th></tr><tbody>
+          ${buyers.map((s,i)=>{const di=DB.buyerParties.indexOf(s);return `<tr><td><input value="${esc(s)}" onchange="updBuyer(${di},this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该采购主体?'))delBuyer(${di})">删除</button></td></tr>`;}).join('')}
+        </tbody></table>
+        <div class="add"><input id="newBuyer" placeholder="+ 新增采购主体"><button class="btn add" onclick="addBuyer()">添加</button></div>
       </div>
-      <div style="font-size:11px;color:var(--mut);margin-top:4px">可选：填入受限 PAT(仅授权本仓库 contents 写)后可「一键发布」，无需经管理员。凭证只存本浏览器；建议用最小权限 token。</div></div>
-      <div style="font-weight:600;margin-bottom:6px">境内发货人（可维护，做草单时下拉选）</div>
-      ${DB.parties.shippers.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('shipper',${i},this.value)" style="flex:1"> <button onclick="delParty('shipper',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
-      <button onclick="addParty('shipper')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境内发货人</button>
-      <div style="font-weight:600;margin:14px 0 6px">采购主体（采购合同「采购方」，草单时下拉选；默认=出口公司）</div>
-      ${(DB.buyerParties||[]).map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updBuyer(${i},this.value)" style="flex:1"> <button onclick="delBuyer(${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
-      <button onclick="addBuyer()" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增采购主体</button>
-      <div style="font-weight:600;margin:14px 0 6px">境外收货人（可维护，做草单时下拉选）</div>
-      ${DB.parties.consignees.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('consignee',${i},this.value)" style="flex:1"> <button onclick="delParty('consignee',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
-      <button onclick="addParty('consignee')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境外收货人</button>
-      <div style="font-weight:600;margin:14px 0 6px">境内发货人 / 生产销售单位 代码（报关草单自动带出）</div>
-      ${DB.parties.shippers.map((s,i)=>{const c=(DB.parties.codes&&DB.parties.codes[s])||{};return `<div style="display:flex;gap:6px;margin:4px 0;align-items:center"><span style="flex:1.2;color:var(--fg)">${s}</span><input value="${c.usci||''}" placeholder="统一社会信用代码" onchange="updCode('${i}','usci',this.value)" style="flex:1"><input value="${c.reg||''}" placeholder="海关注册编码" onchange="updCode('${i}','reg',this.value)" style="flex:1"></div>`;}).join('')}
-      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button onclick="expParty()" style="background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📥 导出主体信息(JSON)</button>
-        <label style="background:#2a1a3a;color:#c9b;border:1px solid #5a3a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📤 导入主体信息(JSON)
-          <input type="file" accept=".json" onchange="impParty(event)" style="display:none">
-        </label>
-        <button onclick="expSharedConfig()" style="background:#1a3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 12px;cursor:pointer">⬆ 导出共享配置(JSON)</button>
+      <div class="cd">
+        <div class="hd"><div class="bar" style="background:#1D9E75"></div><p class="ttl">境外收货人</p><span class="cnt">${consignees.length} 个</span></div>
+        <table><tr><th style="width:74%">名称</th><th style="width:26%">操作</th></tr><tbody>
+          ${consignees.map((s,i)=>{const di=DB.parties.consignees.indexOf(s);return `<tr><td><input value="${esc(s)}" onchange="updParty('consignee',${di},this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该收货人?'))delParty('consignee',${di})">删除</button></td></tr>`;}).join('')}
+        </tbody></table>
+        <div class="add"><input id="newParty_consignee" placeholder="+ 新增境外收货人"><button class="btn add" onclick="addParty('consignee')">添加</button></div>
       </div>
-      <div class="note">数据保存在浏览器本地（localStorage）。<b>导出</b>可备份为 JSON 文件发给同事，对方在「设置中心→主体信息维护」点<b>导入</b>即可加载。导出包含：境内发货人列表、境外收货人列表、币种列表。<b>「导出共享配置」</b> = 全员共享的那份配置(发货人/采购主体/供应商归集/品牌映射/售价/HS库)，交维护人推送到云端即可全员生效，其他人打开系统自动拉取。</div>`;
+      ${(DB.hiddenParties||[]).length?`<div class="cd"><div class="rec">已隐藏主体 ${(DB.hiddenParties||[]).length} 个: ${(DB.hiddenParties||[]).map((v,i)=>esc(v)+` <button onclick="unhide('hiddenParties',${i})">恢复</button>`).join(' · ')}</div></div>`:''}
+      <div style="display:flex;gap:8px;margin:2px 0 12px;flex-wrap:wrap;padding-left:16px">
+        <button class="small" onclick="expParty()">📥 导出主体信息(JSON)</button>
+        <label class="small" style="background:#2a1a3a;color:#c9b;border:1px solid #5a3a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📤 导入主体信息(JSON)
+          <input type="file" accept=".json" onchange="impParty(event)" style="display:none"></label>
+      </div>
+      <div class="hint">删除 = 本地移除 + 加入隐藏(云端项不会被拉回);「已隐藏」可随时恢复。统一社会信用代码/海关注册编码用于报关表头生产销售单位。</div>
+    </div>`;
+
   } else if(curTab==='sku'){
     /* 供应商筛选选项(商品库全部二级去重) */
     const allList=skuList();
@@ -1973,25 +2029,38 @@ function renderSetBody(){
     h+='<div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
     renderSkuTable();
   } else if(curTab==='supmap'){
-    /* 二级工厂 = 商品库已出现的 ∪ 手工维护 extraSup2 */
+    /* 二级工厂 = 商品库已出现的(可隐藏) ∪ 手工维护 extraSup2(可改/删)；排除已隐藏 */
+    const hp=new Set(DB.hiddenParties||[]);
+    const hs=new Set(DB.hiddenSup2||[]);
     const secSet=new Set();
     skuList().forEach(s=>{const v=(s.supplier||s.factory||'').trim();if(v&&!/未匹配|None|test|⚠/.test(v))secSet.add(v);});
     (DB.extraSup2||[]).forEach(v=>{const t=String(v||'').trim();if(t)secSet.add(t);});
-    const secs=[...secSet].sort();
+    const secs=[...secSet].filter(v=>!hs.has(v)).sort();
     const sm=DB.supplierMap||{};
-    const t1=(DB.tier1Suppliers||[]).filter(Boolean);
-    h=`<p class="muted">供应商归集：商品库 supplier 记的是<b>二级供应商(生产工厂)</b>；此处将多个二级归集到一个<b>一级供应商(签约主体)</b>。归集后：①草单「按供应商分行」按一级分组 ②国内采购合同按一级出(抬头=一级)，明细保留二级原工厂。留空=不归集(该二级自为一级)。</p>
-      <div style="font-weight:600;margin:10px 0 6px">① 一级供应商(签约主体)列表 —— 先在这里维护，再在下方归集</div>
-      ${t1.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><span style="flex:1.4;color:var(--fg)">${esc(s)}</span><button onclick="delTier1(${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
-      <div style="display:flex;gap:6px;margin:6px 0"><input id="newTier1" placeholder="新一级供应商，如：某签约公司" style="flex:1.4"><button onclick="addTier1()" style="background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;cursor:pointer">+ 添加一级</button></div>
-      <div style="font-weight:600;margin:14px 0 6px">② 二级供应商(生产工厂) —— 商品库自动收集 + 可手工新增/删除</div>
-      ${secs.map(sec=>`<div style="display:flex;gap:8px;margin:4px 0;align-items:center"><span style="flex:1.4;color:var(--fg)">${esc(sec)}</span>
-        <select data-sec="${esc(sec)}" onchange="setSupplierMap(this.dataset.sec,this.value)" style="flex:1">
-          <option value="">(不归集)</option>${t1.map(t=>`<option value="${esc(t)}" ${sm[sec]===t?'selected':''}>${esc(t)}</option>`).join('')}
-        </select>
-        ${(DB.extraSup2||[]).indexOf(sec)>=0?`<button onclick="delSup2('${esc(sec)}')" style="width:28px;background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer" title="删除(仅手工新增的)">×</button>`:''}</div>`).join('')}
-      <div style="display:flex;gap:6px;margin:8px 0"><input id="newSup2" placeholder="新二级供应商(生产工厂)，如：某工厂" style="flex:1.4"><button onclick="addSup2()" style="background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;cursor:pointer">+ 添加二级</button></div>
-      <div class="note">已有归集：${Object.keys(sm).length?Object.keys(sm).map(k=>k+' → '+sm[k]).join('；'):'无'}。二级列表来自商品库 supplier(自动)+ 手工新增(可删)；商品库出现的新工厂会自动出现。</div>`;
+    const t1=(DB.tier1Suppliers||[]).filter(s=>s&&s.trim()&&!hp.has(s.trim()));
+    h=`<div class="erp">
+      <div class="cd">
+        <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">一级供应商(签约主体)</p><span class="cnt">${t1.length} 个</span></div>
+        <table><tr><th style="width:74%">名称(采购合同抬头,可改名)</th><th style="width:26%">操作</th></tr><tbody>
+          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
+        </tbody></table>
+        <div class="add"><input id="newTier1" placeholder="+ 新一级供应商(签约主体)"><button class="btn add" onclick="addTier1()">添加</button></div>
+      </div>
+      <div class="cd">
+        <div class="hd"><div class="bar" style="background:#1D9E75"></div><p class="ttl">二级供应商(生产工厂)</p><span class="cnt">${secs.length} 个</span></div>
+        <table><tr><th style="width:34%">名称</th><th style="width:30%">归集到一级</th><th style="width:22%">来源</th><th style="width:14%">操作</th></tr><tbody>
+          ${secs.map(sec=>{const manual=(DB.extraSup2||[]).indexOf(sec)>=0;return `<tr><td>${manual?`<input value="${esc(sec)}" onchange="updSup2('${escQ(sec)}',this.value)">`:esc(sec)}</td>
+            <td><select data-sec="${esc(sec)}" onchange="setSupplierMap(this.dataset.sec,this.value)">
+              <option value="">(不归集)</option>${t1.map(t=>`<option value="${esc(t)}" ${sm[sec]===t?'selected':''}>${esc(t)}</option>`).join('')}
+            </select></td>
+            <td>${manual?`<span class="tag" style="background:#2a3a1a;color:#9e7;border:1px solid #3a5a2a">手工</span>`:`<span class="tag" style="background:#1a2a3a;color:#8af;border:1px solid #2a4a6a">商品库</span>`}</td>
+            <td>${manual?`<button class="btn del" onclick="if(confirm('删除该二级供应商?'))delSup2('${escQ(sec)}')">删除</button>`:`<button class="btn hide" onclick="hideSup2('${escQ(sec)}')">隐藏</button>`}</td></tr>`;}).join('')}
+        </tbody></table>
+        <div class="add"><input id="newSup2" placeholder="+ 新二级供应商(生产工厂)"><button class="btn add" onclick="addSup2()">添加</button></div>
+        ${(DB.hiddenSup2||[]).length?`<div class="rec">已隐藏 ${(DB.hiddenSup2||[]).length} 个: ${(DB.hiddenSup2||[]).map((v,i)=>esc(v)+` <button onclick="unhide('hiddenSup2',${i})">恢复</button>`).join(' · ')}</div>`:''}
+      </div>
+      <div class="hint" style="padding-left:16px">商品库来源的工厂点「隐藏」即不再显示(写排除表,不碰商品库数据);手工来源可改名/删除。归集后:草单按一级分行、采购合同按一级出(明细保留原工厂)。已有归集 ${Object.keys(sm).length?Object.keys(sm).map(k=>k+' → '+sm[k]).join('；'):'无'}。</div>
+    </div>`;
   } else if(curTab==='brand'){
     const btOpts=[['0','无品牌'],['1','境内自主品牌'],['2','境内收购品牌'],['3','境外品牌(贴牌生产)'],['4','境外品牌(其它)']];
     const bm=DB.brandTypeMap||{};
@@ -2006,9 +2075,34 @@ function renderSetBody(){
         <button onclick="addBrandTypeMap()" style="width:60px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;cursor:pointer">+ 添加</button></div>
       <div class="note">生效范围：本浏览器（存 localStorage）。优先序：商品库逐条填写的「品牌类型」 > 此处品牌映射表。导出/导入主体信息 JSON 不含本映射（如需跨设备，另行备份或同步商品库）。</div>`;
   } else if(curTab==='pref'){
-    h='<p class="muted">出口享惠国别配置：按「最终目的国」自动判定 0不享惠 / 1享惠(RCEP等自贸协定) / 2不能确定。生成草单时系统据此自动填规格型号的出口享惠段，一般无需改动。</p><div class="toolbar"><input type="file" id="prefFile" accept=".json" style="display:none" onchange="onPrefFile(event)"><button class="small" onclick="document.getElementById(&quot;prefFile&quot;).click()">⬆ 导入国别映射JSON</button></div><table><thead><tr><th>目的国</th><th>出口享惠</th></tr></thead><tbody>';
-    Object.keys(COUNTRY_PREF).forEach(c=>{h+=`<tr><td>${c}</td><td><select class="small" onchange="COUNTRY_PREF['${c}']=this.value;renderSetBody()"><option value="0" ${COUNTRY_PREF[c]==='0'?'selected':''}>0 不享惠</option><option value="1" ${COUNTRY_PREF[c]==='1'?'selected':''}>1 享惠</option><option value="2" ${COUNTRY_PREF[c]==='2'?'selected':''}>2 不能确定</option></select></td></tr>`;});
-    h+='</tbody></table>';
+    /* 内置国别 + 自定义国别(覆盖层)，排除已隐藏；自定义=prefOverride 键不在内置 */
+    const ph=new Set(DB.prefHidden||[]);
+    const all=new Set(Object.keys(COUNTRY_PREF));
+    Object.keys(DB.prefOverride||{}).forEach(c=>all.add(c));
+    const codes=[...all].filter(c=>c&&!ph.has(c)).sort();
+    const ov=DB.prefOverride||{};
+    h=`<div class="erp">
+      <div class="cd">
+        <div class="hd"><div class="bar" style="background:#EF9F27"></div><p class="ttl">享惠国别配置</p><span class="cnt">${codes.length} 个 · 内置 ${Object.keys(COUNTRY_PREF).length} + 自定义 ${Object.keys(ov).filter(c=>!COUNTRY_PREF[c]).length}</span></div>
+        <table><tr><th style="width:20%">目的国</th><th style="width:44%">出口享惠</th><th style="width:22%">来源</th><th style="width:14%">操作</th></tr><tbody>
+          ${codes.map(c=>{const builtin=COUNTRY_PREF[c]!==undefined;const v=ov[c]!==undefined?ov[c]:COUNTRY_PREF[c];
+            return `<tr><td>${builtin?`<b>${esc(c)}</b>`:`<input value="${esc(c)}" onchange="updPrefCode('${escQ(c)}',this.value)" style="font-weight:600">`}</td>
+              <td><select onchange="setPrefVal('${escQ(c)}',this.value)">
+                <option value="0" ${v==='0'?'selected':''}>0 不享惠</option>
+                <option value="1" ${v==='1'?'selected':''}>1 享惠(自贸协定)</option>
+                <option value="2" ${v==='2'?'selected':''}>2 不能确定</option></select></td>
+              <td>${builtin?`<span class="tag" style="background:#3a2a3a;color:#c9b;border:1px solid #5a3a5a">内置</span>`:`<span class="tag" style="background:#3a1a2a;color:#e9a;border:1px solid #6a2a4a">自定义</span>`}</td>
+              <td>${builtin?`<button class="btn hide" onclick="hidePref('${escQ(c)}')">隐藏</button>`:`<button class="btn del" onclick="if(confirm('删除国别 ${esc(c)}?'))delPref('${escQ(c)}')">删除</button>`}</td></tr>`;}).join('')}
+        </tbody></table>
+        <div class="add"><input id="newPrefCode" placeholder="国家代码,如 BRZ"><select id="newPrefVal" style="flex:0 0 150px"><option value="0">0 不享惠</option><option value="1">1 享惠</option><option value="2">2 不能确定</option></select><button class="btn add" onclick="addPref()">添加</button></div>
+        ${(DB.prefHidden||[]).length?`<div class="rec">已隐藏 ${(DB.prefHidden||[]).length} 个: ${(DB.prefHidden||[]).map((v,i)=>esc(v)+` <button onclick="unhide('prefHidden',${i})">恢复</button>`).join(' · ')}</div>`:''}
+      </div>
+      <div style="display:flex;gap:8px;margin:2px 0 12px;padding-left:16px">
+        <input type="file" id="prefFile" accept=".json" style="display:none" onchange="onPrefFile(event)">
+        <button class="small" onclick="document.getElementById('prefFile').click()">⬆ 导入国别映射JSON</button>
+      </div>
+      <div class="hint" style="padding-left:16px">内置国别可改享惠值/隐藏;自定义国别可增删改。生成草单时按此自动判定规格型号的「出口享惠」段;改动随共享配置发布后全员生效。</div>
+    </div>`;
   } else if(curTab==='price'){
     h=`<div class="row"><div class="field"><label>毛利率（默认 0.20）</label><input value="${DB.price.rate}" onchange="DB.price.rate=+this.value;save();renderSetBody();renderDrafts();"></div>
       <div class="field"><label>美元汇率（换汇成本核用）</label><input value="${DB.price.exch}" onchange="DB.price.exch=+this.value;save();"></div></div>
@@ -2131,10 +2225,15 @@ function mergeSharedCfg(cfg){
       if(Array.isArray(cl)&&Array.isArray(lo))DB.parties[k]=[...new Set([...cl,...lo].map(x=>String(x).trim()).filter(Boolean))];
     });
   }
-  if(Array.isArray(cfg.buyerParties)&&cfg.buyerParties.length)DB.buyerParties=cfg.buyerParties;
-  if(cfg.supplierMap)DB.supplierMap=cfg.supplierMap;
-  if(Array.isArray(cfg.tier1Suppliers))DB.tier1Suppliers=cfg.tier1Suppliers;
-  if(Array.isArray(cfg.extraSup2))DB.extraSup2=cfg.extraSup2;
+  const union=(a,b)=>[...new Set([...(Array.isArray(a)?a:[]),...(Array.isArray(b)?b:[])].map(x=>String(x).trim()).filter(Boolean))];
+  if(Array.isArray(cfg.buyerParties)&&cfg.buyerParties.length)DB.buyerParties=union(DB.buyerParties,cfg.buyerParties);
+  if(cfg.supplierMap)DB.supplierMap=Object.assign({},cfg.supplierMap,DB.supplierMap);
+  if(Array.isArray(cfg.tier1Suppliers)&&cfg.tier1Suppliers.length)DB.tier1Suppliers=union(DB.tier1Suppliers,cfg.tier1Suppliers);
+  if(Array.isArray(cfg.extraSup2)&&cfg.extraSup2.length)DB.extraSup2=union(DB.extraSup2,cfg.extraSup2);
+  if(Array.isArray(cfg.hiddenParties))DB.hiddenParties=union(DB.hiddenParties,cfg.hiddenParties);
+  if(Array.isArray(cfg.hiddenSup2))DB.hiddenSup2=union(DB.hiddenSup2,cfg.hiddenSup2);
+  if(cfg.prefOverride)DB.prefOverride=Object.assign({},cfg.prefOverride,DB.prefOverride);
+  if(Array.isArray(cfg.prefHidden))DB.prefHidden=union(DB.prefHidden,cfg.prefHidden);
   if(cfg.brandTypeMap)DB.brandTypeMap=Object.assign({},cfg.brandTypeMap,DB.brandTypeMap);
   if(cfg.price)DB.price=Object.assign({},DB.price,cfg.price);
   if(cfg.hsLibOverride)DB.hsLibOverride=Object.assign({},cfg.hsLibOverride,DB.hsLibOverride);
