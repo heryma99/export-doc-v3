@@ -324,7 +324,7 @@ function mergeLines(lines,mode,sup){
 }
 function defaultDB(){
   return {
-    parties:{shippers:['广州革瓦拉贸易有限公司'], consignees:['Leading Trade One Limited'], currencyList:['USD 美元','CNY 人民币','EUR 欧元']},
+    parties:{shippers:['广州革瓦拉贸易有限公司'], consignees:['Leading Trade One Limited'], currencyList:['USD 美元','CNY 人民币','EUR 欧元'], codes:{}},
     sku:[
       {sku:'BAG-001',style:'1C131-33',cn:'磁性扣手拿包',en:'Magnetic Clutch Bag',noTax:102.9,tax:116.28,factory:'利景工厂',hs:'4202220000',mat:'PU',brandType:'境内自主品牌',enjoys:'0'},
       {sku:'BAG-002',style:'2T03-1',cn:'牛皮手拿包',en:'Leather Clutch Bag',noTax:160.0,tax:180.80,factory:'璞景工厂',hs:'4202220000',mat:'牛皮',brandType:'境内自主品牌',enjoys:'0'}
@@ -337,7 +337,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -797,6 +797,14 @@ function renderDrafts(){
     <div class="field"><label>产终国</label><input value="${H.originCountry}"></div>
     <div class="field"><label>申报日期</label><input type="date" value="${H.declDate}" onchange="setHeader('${d.id}','declDate',this.value)"></div>
     <div class="field"><label>合同协议号(=外部单号)</label><input value="${H.no||''}" onchange="setHeader('${d.id}','no',this.value)"></div>
+    <div class="field"><label>发票号</label><input value="${H.invNo||''}" onchange="setHeader('${d.id}','invNo',this.value)"></div>
+    <div class="field"><label>委托协议号</label><input value="${H.entrustNo||''}" onchange="setHeader('${d.id}','entrustNo',this.value)"></div>
+    <div class="field"><label>备案号</label><input value="${H.recordNo||''}" onchange="setHeader('${d.id}','recordNo',this.value)"></div>
+    <div class="field"><label>境内货源地/产地</label><input value="${H.domSrc||''}" onchange="setHeader('${d.id}','domSrc',this.value)" placeholder="如 广州其他(44019)"></div>
+    <div class="field"><label>申报人员</label><input value="${H.declarer||''}" onchange="setHeader('${d.id}','declarer',this.value)"></div>
+    <div class="field"><label>申报人员证号</label><input value="${H.declarerNo||''}" onchange="setHeader('${d.id}','declarerNo',this.value)"></div>
+    <div class="field"><label>电话</label><input value="${H.declPhone||''}" onchange="setHeader('${d.id}','declPhone',this.value)"></div>
+    <div class="field"><label>自报自缴</label><input value="${H.selfPay||''}" onchange="setHeader('${d.id}','selfPay',this.value)" placeholder="是/否"></div>
   </div>`;
   let t='<table><thead><tr><th style="width:40px">项号</th><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>供应商</th><th>归类</th></tr></thead><tbody>';
   d.lines.forEach((l,i)=>{
@@ -839,7 +847,7 @@ function renderDrafts(){
     </div>${mh}</div></div>`;
   updRail();
 }
-function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.header[f]=v;if(f==='shipper')d.header.prodUnit=v;save();renderDrafts();}
+function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}save();renderDrafts();}
 function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
   if(d.rawLines&&d.lines[i]._keys){d.rawLines.forEach(r=>{if(d.lines[i]._keys.indexOf(r.sku)>=0)r[k]=v;});}
   save();renderDrafts();}
@@ -971,7 +979,7 @@ function confirmDraft(did){
 function buildData(doc){
   const d=DB.drafts.find(x=>x.id===doc.dftId);
   const lines=d.lines.map(l=>{const spec=[l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',(l.mat+';'+l.sku)].filter(Boolean).join(' | ');
-    return {...l,spec,amount:((+l.decl)*(+l.qty)).toFixed(2)};});
+    return {...l,spec,en:l.en||'',unit:l.unit||'',amount:((+l.decl)*(+l.qty)).toFixed(2)};});
   const base=d.header.declDate||today();
   const contracts=[...new Set(lines.map(l=>l.supplier))].map(s=>{const items=lines.filter(l=>l.supplier===s);
     return {supplier:s,items,amount:items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0).toFixed(2),count:items.length};});
@@ -1015,44 +1023,96 @@ function builtin(name){
 <div style="display:flex;justify-content:space-between;margin-bottom:4px;color:#666"><span>SAVED</span><span>预录入编号：<b>{{header.preNo}}</b></span><span>海关编号：<b>{{header.customsNo}}</b></span><span>页码/页数：<b>1/1</b></span></div>
 <h2 style="text-align:center;margin:8px 0 10px">中华人民共和国海关出口货物报关单</h2>
 <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
-<tr><td style="width:14%">境内发货人<br><b>{{header.shipper}}</b></td><td style="width:18%">出境关别<br><b>{{header.port}}</b></td><td style="width:16%">出口日期<br><b>{{dates.exportDate}}</b></td><td style="width:16%">申报日期<br><b>{{dates.customs}}</b></td></tr>
-<tr><td>境外收货人<br><b>{{header.consignee}}</b></td><td>运输方式<br><b>{{header.transMode}}</b></td><td colspan="2">运输工具名称及航次号<br><b>{{header.vehicle}}</b></td><td>提运单号<br><b>{{header.billNo}}</b></td></tr>
-<tr><td>生产销售单位<br><b>{{header.prodUnit}}</b></td><td>监管方式<br><b>{{header.tradeMode}}</b></td><td>征免性质<br><b>{{header.levyNature}}</b></td><td colspan="2">许可证号<br><b>{{header.license}}</b></td></tr>
-<tr><td>合同协议号<br><b>{{header.no||order.no}}</b></td><td>贸易国(地区)<br><b>{{header.tradeCountry}}</b></td><td>运抵国(地区)<br><b>{{header.arrivalCountry}}</b></td><td>指运港<br><b>{{header.destPort}}</b></td><td>离境口岸<br><b>{{header.exitPort}}</b></td></tr>
-<tr><td>包装种类<br><b>{{header.packKind}}</b></td><td>件数<br><b>{{boxCount}}</b></td><td>毛重(千克)<br><b>{{totalGW}}</b></td><td>净重(千克)<br><b>{{totalNW}}</b></td><td>成交方式<br><b>{{header.tradeTerm}}</b></td><td>运费<br><b>{{header.freight}}</b></td><td>保费<br><b>{{header.premium}}</b></td><td>杂费<br><b>{{header.misc}}</b></td></tr>
-<tr><td>集装箱号<br><b>{{header.container}}</b></td><td colspan="7">随附单证及编号<br><b>{{header.attach}}</b></td></tr>
-<tr><td colspan="8">标记唧码及备注<br><b>{{header.marks}}</b></td></tr>
+<tr>
+<td style="width:16%">预录入编号：<br><b>{{header.preNo}}</b></td>
+<td style="width:16%">海关编号：<br><b>{{header.customsNo}}</b></td>
+<td style="width:16%">页码/页数：<br><b>1/1</b></td>
+<td style="width:22%">发票号：<br><b>{{header.invNo}}</b></td>
+<td style="width:30%">委托协议号：<br><b>{{header.entrustNo}}</b></td>
+</tr>
+<tr>
+<td>境内发货人<br><b>{{header.shipper}}</b><br><span style="color:#444;font-size:10px">信用代码 {{header.shipperUSCI}}</span><br><span style="color:#444;font-size:10px">海关注册编码 {{header.shipperReg}}</span></td>
+<td>出境关别<br><b>{{header.port}}</b></td>
+<td>出口日期<br><b>{{dates.exportDate}}</b></td>
+<td>申报日期<br><b>{{dates.customs}}</b></td>
+<td>备案号<br><b>{{header.recordNo}}</b></td>
+</tr>
+<tr>
+<td>境外收货人<br><b>{{header.consignee}}</b></td>
+<td>运输方式<br><b>{{header.transMode}}</b></td>
+<td colspan="2">运输工具名称及航次号<br><b>{{header.vehicle}}</b></td>
+<td>提运单号<br><b>{{header.billNo}}</b></td>
+</tr>
+<tr>
+<td>生产销售单位<br><b>{{header.prodUnit}}</b><br><span style="color:#444;font-size:10px">信用代码 {{header.prodUSCI}}</span></td>
+<td>监管方式<br><b>{{header.tradeMode}}</b></td>
+<td>征免性质<br><b>{{header.levyNature}}</b></td>
+<td colspan="2">许可证号<br><b>{{header.license}}</b></td>
+</tr>
+<tr>
+<td>合同协议号<br><b>{{header.no||order.no}}</b></td>
+<td>贸易国(地区)<br><b>{{header.tradeCountry}}</b></td>
+<td>运抵国(地区)<br><b>{{header.arrivalCountry}}</b></td>
+<td>指运港<br><b>{{header.destPort}}</b></td>
+<td>离境口岸<br><b>{{header.exitPort}}</b></td>
+</tr>
+<tr>
+<td>运输包装种类<br><b>{{header.packKind}}</b></td>
+<td>件数<br><b>{{boxCount}}</b></td>
+<td>毛重(千克)<br><b>{{totalGW}}</b></td>
+<td>净重(千克)<br><b>{{totalNW}}</b></td>
+<td>成交方式<br><b>{{header.tradeTerm}}</b></td><td>运费<br><b>{{header.freight}}</b></td><td>保费<br><b>{{header.premium}}</b></td><td>杂费<br><b>{{header.misc}}</b></td>
+</tr>
+<tr>
+<td>随附单证及编号<br><b>{{header.attach}}</b></td>
+<td colspan="7">标记唛码及备注<br><b>{{header.marks}}</b></td>
+</tr>
 </table>
 <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px">
 <thead><tr>
-<th style="width:45px">项号/<br>备案序号</th>
-<th style="width:90px">商品编号</th>
-<th>商品名称及规格型号</th>
-<th style="width:120px">数量/净重/毛重/<br>数量及单位</th>
-<th style="width:130px">单价/总价/<br>币制</th>
-<th style="width:80px">原产国<br>(地区)</th>
-<th style="width:90px">最终目的国<br>(地区)</th>
-<th style="width:60px">征免</th>
+<th style="width:34px">项号</th>
+<th style="width:78px">商品编号</th>
+<th style="width:120px">中文名称</th>
+<th style="width:110px">英文名称</th>
+<th style="width:70px">数量单位</th>
+<th style="width:62px">单价</th>
+<th style="width:66px">总价</th>
+<th style="width:50px">币制</th>
+<th style="width:62px">原产国<br>(地区)</th>
+<th style="width:80px">最终目的国<br>(地区)</th>
+<th style="width:90px">境内货源地<br>/产地</th>
+<th style="width:54px">征免</th>
 </tr></thead>
 <tbody>
 {{#each lines}}<tr>
 <td>{{_i}}</td>
 <td>{{hs}}</td>
 <td>{{name}}<br><span style="color:#444;font-size:10px">规格型号：{{spec}}</span></td>
-<td>{{qty}}<br>{{nw}}<br>{{gw}}</td>
-<td>{{decl}}<br>{{amount}}<br>{{header.currency}}</td>
+<td>{{en}}</td>
+<td>{{qty}} {{unit}}</td>
+<td>{{decl}}</td>
+<td>{{amount}}</td>
+<td>{{header.currency}}</td>
 <td>{{header.originCountry}}</td>
 <td>{{header.destCountry}}</td>
+<td>{{header.domSrc}}</td>
 <td>{{header.levy}}</td>
 </tr>{{/each}}
-<tr><td colspan="3">合计</td><td>{{totalQty}}<br>{{totalNW}}<br>{{totalGW}}</td><td colspan="2">{{totalAmount}} {{header.currency}}</td><td></td><td></td></tr>
+<tr><td colspan="4">合计</td><td>{{totalQty}} {{unit}}</td><td></td><td>{{totalAmount}}</td><td>{{header.currency}}</td><td></td><td></td><td></td><td></td></tr>
 </tbody></table>
-<div style="margin-top:6px;display:flex;gap:30px;font-size:11px">
+<div style="margin-top:6px;display:flex;gap:18px;flex-wrap:wrap;font-size:11px">
 <span>特殊关系确认：<b>{{header.special||'/'}}</b></span>
 <span>价格影响确认：<b>{{header.priceEff||'/'}}</b></span>
 <span>支付特许权使用费确认：<b>{{header.royalty||'/'}}</b></span>
+<span>自报自缴：<b>{{header.selfPay||'/'}}</b></span>
 </div>
-<div style="margin-top:4px;font-size:11px">申报人员：<b>{{header.declarer||''}}</b> &nbsp; 申报单位(签章)：<b>{{header.declUnit||''}}</b> &nbsp; 海关批注及签章</div>
+<div style="margin-top:4px;display:flex;gap:18px;flex-wrap:wrap;font-size:11px">
+<span>申报人员：<b>{{header.declarer||''}}</b></span>
+<span>申报人员证号：<b>{{header.declarerNo||''}}</b></span>
+<span>电话：<b>{{header.declPhone||''}}</b></span>
+<span>申报单位(签章)：<b>{{header.declUnit||''}}</b></span>
+<span style="margin-left:auto">海关批注及签章</span>
+</div>
 </div>`;
   }
   if(name==='Invoice发票')return head+`<p>卖方：{{header.shipper}} &nbsp; 买方：{{header.consignee}}</p>
@@ -1201,36 +1261,79 @@ function addMerge(MG,r,c0,c1){ MG.push({s:{r,c:c0},e:{r,c:c1}}); }
 function xlsCur(d){
   const H=d.header, O=d.order, dt=d.dates;
   const R=[]; const MG=[]; let r=0;
-  putCell(R,r,0,'SAVED'); putCell(R,r,2,'预录入编号：'+(H.preNo||'')); putCell(R,r,4,'海关编号：'+(H.customsNo||'')); putCell(R,r,6,'页码/页数：1/1');
-  addMerge(MG,r,2,3); addMerge(MG,r,4,5); addMerge(MG,r,6,7); r++;
-  putCell(R,r,0,'中华人民共和国海关出口货物报关单'); addMerge(MG,r,0,7); r++;
-  const fld=(col,label,val)=>{ putCell(R,r,col,label+'\n'+(val||'')); addMerge(MG,r,col,col+1); };
-  const row4=(a,b,cc,dd)=>{ fld(0,a[0],a[1]); fld(2,b[0],b[1]); fld(4,cc[0],cc[1]); fld(6,dd[0],dd[1]); r++; };
-  row4(['境内发货人',H.shipper],['出境关别',H.port],['出口日期',dt.exportDate],['申报日期',dt.customs]);
-  row4(['境外收货人',H.consignee],['运输方式',H.transMode],['运输工具名称及航次号',H.vehicle],['提运单号',H.billNo]);
-  row4(['生产销售单位',H.prodUnit],['监管方式',H.tradeMode],['征免性质',H.levyNature],['许可证号',H.license]);
-  row4(['合同协议号',H.no||O.no],['贸易国(地区)',H.tradeCountry],['运抵国(地区)',H.arrivalCountry||H.destCountry],['指运港',H.destPort]);
-  row4(['离境口岸',H.exitPort],['包装种类',H.packKind],['件数',d.boxCount],['毛重(千克)',d.totalGW]);
-  row4(['净重(千克)',d.totalNW],['成交方式',H.tradeTerm],['运费',H.freight],['保费',H.premium]);
-  putCell(R,r,0,'杂费\n'+(H.misc||'')); addMerge(MG,r,0,1);
-  putCell(R,r,2,'集装箱号\n'+(H.container||'')); addMerge(MG,r,2,3);
-  putCell(R,r,4,'随附单证及编号\n'+(H.attach||'')); addMerge(MG,r,4,7); r++;
-  putCell(R,r,0,'标记唛码及备注\n'+(H.marks||'')); addMerge(MG,r,0,7); r++;
-  putCell(R,r,0,'特殊关系确认\n'+(H.special||'/')); addMerge(MG,r,0,2);
-  putCell(R,r,3,'价格影响确认\n'+(H.priceEff||'/')); addMerge(MG,r,3,5);
-  putCell(R,r,6,'支付特许权使用费确认\n'+(H.royalty||'/')); addMerge(MG,r,6,7); r++;
-  const hdr=['项号/备案序号','商品编号','商品名称及规格型号','数量/净重/毛重/数量及单位','单价/总价/币制','原产国(地区)','最终目的国(地区)','征免'];
+  const put=(c,t,m)=>{putCell(R,r,c,t);if(m)m.forEach(x=>addMerge(MG,r,x[0],x[1]));};
+  put(0,'中华人民共和国海关出口货物报关单',[[0,7]]); r++;
+  /* 顶部信息：预录入编号 / 海关编号 / 页码 / 发票号 / 委托协议号 */
+  put(0,'预录入编号：'+(H.preNo||''),[[0,1]]);
+  put(2,'海关编号：'+(H.customsNo||''),[[2,3]]);
+  put(4,'页码/页数：1/1');
+  put(5,'发票号：'+(H.invNo||''),[[5,6]]);
+  put(7,'委托协议号：'+(H.entrustNo||'')); r++;
+  /* 表头 */
+  put(0,'境内发货人\n'+(H.shipper||'')+'\n信用代码 '+(H.shipperUSCI||'')+'\n海关注册 '+(H.shipperReg||''),[[0,1]]);
+  put(2,'出境关别\n'+(H.port||''));
+  put(3,'出口日期\n'+(dt.exportDate||''));
+  put(4,'申报日期\n'+(dt.customs||''));
+  put(5,'备案号\n'+(H.recordNo||''),[[5,7]]); r++;
+  put(0,'境外收货人\n'+(H.consignee||''),[[0,1]]);
+  put(2,'运输方式\n'+(H.transMode||''));
+  put(3,'运输工具名称及航次号\n'+(H.vehicle||''),[[3,4]]);
+  put(5,'提运单号\n'+(H.billNo||''),[[5,7]]); r++;
+  put(0,'生产销售单位\n'+(H.prodUnit||'')+'\n信用代码 '+(H.prodUSCI||''),[[0,1]]);
+  put(2,'监管方式\n'+(H.tradeMode||''));
+  put(3,'征免性质\n'+(H.levyNature||''));
+  put(4,'许可证号\n'+(H.license||''),[[4,7]]); r++;
+  put(0,'合同协议号\n'+(H.no||O.no||''),[[0,1]]);
+  put(2,'贸易国(地区)\n'+(H.tradeCountry||''));
+  put(3,'运抵国(地区)\n'+(H.arrivalCountry||H.destCountry||''));
+  put(4,'指运港\n'+(H.destPort||''));
+  put(5,'离境口岸\n'+(H.exitPort||''),[[5,7]]); r++;
+  put(0,'运输包装种类\n'+(H.packKind||''),[[0,1]]);
+  put(2,'件数\n'+(d.boxCount||''));
+  put(3,'毛重(千克)\n'+(d.totalGW||''));
+  put(4,'净重(千克)\n'+(d.totalNW||''));
+  put(5,'成交方式\n'+(H.tradeTerm||''));
+  put(6,'运费\n'+(H.freight||''));
+  put(7,'保费\n'+(H.premium||'')); r++;
+  put(0,'杂费\n'+(H.misc||''),[[0,1]]);
+  put(2,'集装箱号\n'+(H.container||''),[[2,3]]);
+  put(4,'随附单证及编号\n'+(H.attach||''),[[4,7]]); r++;
+  put(0,'标记唛码及备注\n'+(H.marks||''),[[0,7]]); r++;
+  /* 商品明细 12 列 */
+  const hdr=['项号','商品编号','中文名称','英文名称','数量单位','单价','总价','币制','原产国(地区)','最终目的国(地区)','境内货源地/产地','征免'];
   hdr.forEach((h,i)=>putCell(R,r,i,h)); r++;
   d.lines.forEach((l,i)=>{
-    putCell(R,r,0,i+1); putCell(R,r,1,l.hs); putCell(R,r,2,l.name+'\n规格型号：'+l.spec);
-    putCell(R,r,3,l.qty+'\n'+l.nw+'\n'+l.gw); putCell(R,r,4,l.decl+'\n'+l.amount+'\n'+H.currency);
-    putCell(R,r,5,H.originCountry); putCell(R,r,6,H.destCountry); putCell(R,r,7,H.levy); r++;
+    putCell(R,r,0,i+1);
+    putCell(R,r,1,l.hs);
+    putCell(R,r,2,(l.name||'')+'\n规格型号：'+(l.spec||''));
+    putCell(R,r,3,l.en||'');
+    putCell(R,r,4,(l.qty||'')+(l.unit?(' '+l.unit):''));
+    putCell(R,r,5,l.decl);
+    putCell(R,r,6,l.amount);
+    putCell(R,r,7,H.currency);
+    putCell(R,r,8,H.originCountry);
+    putCell(R,r,9,H.destCountry);
+    putCell(R,r,10,H.domSrc||'');
+    putCell(R,r,11,H.levy);
+    r++;
   });
-  putCell(R,r,0,'合计'); addMerge(MG,r,0,2);
-  putCell(R,r,3,d.totalQty+'\n'+d.totalNW+'\n'+d.totalGW);
-  putCell(R,r,4,d.totalAmount+' '+H.currency); addMerge(MG,r,4,5); r++;
-  putCell(R,r,0,'申报人员：'+(H.declarer||'')+'    申报单位(签章)：'+(H.declUnit||'')+'    海关批注及签章'); addMerge(MG,r,0,7); r++;
-  const cols=[{wch:14},{wch:14},{wch:24},{wch:16},{wch:16},{wch:12},{wch:14},{wch:10}];
+  const u0=(d.lines[0]&&d.lines[0].unit)?(' '+d.lines[0].unit):'';
+  put(0,'合计',[[0,3]]);
+  put(4,(d.totalQty||'')+u0);
+  put(6,d.totalAmount);
+  put(7,H.currency); r++;
+  /* 确认 + 自报自缴 */
+  put(0,'特殊关系确认\n'+(H.special||'/')); addMerge(MG,r,0,1); r++;
+  put(2,'价格影响确认\n'+(H.priceEff||'/')); addMerge(MG,r,2,3); r++;
+  put(4,'支付特许权使用费确认\n'+(H.royalty||'/')); addMerge(MG,r,4,5); r++;
+  put(6,'自报自缴\n'+(H.selfPay||'/')); addMerge(MG,r,6,7); r++;
+  /* 申报人员 / 证号 / 电话 / 单位 */
+  put(0,'申报人员\n'+(H.declarer||''),[[0,1]]);
+  put(2,'申报人员证号\n'+(H.declarerNo||''),[[2,3]]);
+  put(4,'电话\n'+(H.declPhone||''),[[4,5]]);
+  put(6,'申报单位(签章)\n'+(H.declUnit||''),[[6,7]]); r++;
+  put(0,'海关批注及签章',[[0,7]]); r++;
+  const cols=[{wch:16},{wch:14},{wch:24},{wch:16},{wch:12},{wch:10},{wch:10},{wch:10},{wch:12},{wch:15},{wch:15},{wch:10}];
   return xwsFrom(R,MG,cols);
 }
 /* 发票 / 装箱单 / 销售合同：标准表格 */
@@ -1456,8 +1559,9 @@ function renderTabs(){document.getElementById('setTabs').innerHTML=TABS.map(t=>`
 function addParty(t){(t==='shipper'?DB.parties.shippers:DB.parties.consignees).push('');save();renderSetBody();}
 function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length>1)a.splice(i,1);save();renderSetBody();}
 function updParty(t,i,v){(t==='shipper'?DB.parties.shippers:DB.parties.consignees)[i]=v;save();}
+function updCode(i,f,v){const s=DB.parties.shippers[i];if(!s)return;if(!DB.parties.codes)DB.parties.codes={};if(!DB.parties.codes[s])DB.parties.codes[s]={};DB.parties.codes[s][f]=v;save();}
 function expParty(){
-  const data={shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,_v:'exp3-party-v1',_exported:new Date().toISOString()};
+  const data={shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,codes:DB.parties.codes||{},_v:'exp3-party-v1',_exported:new Date().toISOString()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='出口单证_主体信息_'+new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')+'.json';
@@ -1473,6 +1577,7 @@ function impParty(ev){
       if(Array.isArray(d.shippers)){d.shippers.forEach(s=>{if(s&&!DB.parties.shippers.includes(s)){DB.parties.shippers.push(s);n++}});}
       if(Array.isArray(d.consignees)){d.consignees.forEach(s=>{if(s&&!DB.parties.consignees.includes(s)){DB.parties.consignees.push(s);n++}});}
       if(Array.isArray(d.currencyList)){d.currencyList.forEach(c=>{if(c&&!DB.parties.currencyList.includes(c)){DB.parties.currencyList.push(c);n++}});}
+      if(d.codes&&typeof d.codes==='object'){if(!DB.parties.codes)DB.parties.codes={};Object.keys(d.codes).forEach(k=>{DB.parties.codes[k]=Object.assign({},DB.parties.codes[k],d.codes[k]);});n++;}
       save();renderSetBody();alert('导入成功，新增 '+n+' 条（去重合并）');
     }catch(e){alert('导入失败：'+e.message);}
   };rd.readAsText(f);
@@ -1487,6 +1592,8 @@ function renderSetBody(){
       <div style="font-weight:600;margin:14px 0 6px">境外收货人（可维护，做草单时下拉选）</div>
       ${DB.parties.consignees.map((s,i)=>`<div style="display:flex;gap:6px;margin:4px 0"><input value="${s}" onchange="updParty('consignee',${i},this.value)" style="flex:1"> <button onclick="delParty('consignee',${i})" style="background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
       <button onclick="addParty('consignee')" style="margin-top:4px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;padding:4px 10px;cursor:pointer">+ 新增境外收货人</button>
+      <div style="font-weight:600;margin:14px 0 6px">境内发货人 / 生产销售单位 代码（报关草单自动带出）</div>
+      ${DB.parties.shippers.map((s,i)=>{const c=(DB.parties.codes&&DB.parties.codes[s])||{};return `<div style="display:flex;gap:6px;margin:4px 0;align-items:center"><span style="flex:1.2;color:var(--fg)">${s}</span><input value="${c.usci||''}" placeholder="统一社会信用代码" onchange="updCode('${i}','usci',this.value)" style="flex:1"><input value="${c.reg||''}" placeholder="海关注册编码" onchange="updCode('${i}','reg',this.value)" style="flex:1"></div>`;}).join('')}
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button onclick="expParty()" style="background:#1a2a3a;color:#8af;border:1px solid #3a5a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📥 导出主体信息(JSON)</button>
         <label style="background:#2a1a3a;color:#c9b;border:1px solid #5a3a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📤 导入主体信息(JSON)
