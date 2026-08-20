@@ -840,7 +840,7 @@ function renderDrafts(){
   if(!d){document.getElementById('dftArea').innerHTML='<p class="muted">勾选订单并点「生成草单→」。</p>';return;}
   DB.sel.dft=d.id;
   /* 面包屑 + 切换标签 */
-  let tabs=`<div class="ctx-bar"><span class="ctx-label">当前编辑：</span><span class="ctx-val">${d.id}</span><span class="ctx-extra">${d.lines.length} 项 · ${d.mergeMode||'M0'}${d.locked?' · 🔒已锁定':''}</span></div>`;
+  let tabs=`<div class="ctx-bar"><span class="ctx-label">当前编辑：</span><span class="ctx-val">${d.id}</span><span class="ctx-extra">${d.lines.length} 项 · ${d.mergeMode||'M0'}${d.locked?' · 🔒已锁定':''}${d.splitNote?' · '+d.splitNote:''}</span></div>`;
   if(DB.drafts.length>1){
     tabs+=`<div class="tab-strip">${DB.drafts.map(dd=>`<div class="tab${dd.id===d.id?' on':''}" onclick="switchDraft('${dd.id}')">${dd.id}${dd.locked?'🔒':''} <small style="color:var(--mut)">${dd.lines.length}项</small></div>`).join('')}</div>`;
   }
@@ -900,6 +900,14 @@ function renderDrafts(){
       <label style="font-size:12px;display:flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" ${d.mergeSup?'checked':''} onchange="setMergeSup('${d.id}',this.checked)"> 按供应商分行</label>
     </div>
     <div class="muted" style="font-size:11px;margin-top:6px">归并后 <b>${d.lines.length}</b> 项（原 ${rawCount} 行）· 规格型号最长 <b style="color:${maxLen0>250?'var(--bad)':'var(--ok)'}">${maxLen0}</b> 字${maxLen0>250?' ⚠超限(≤250)':''} · 合计金额 ¥${total0.toFixed(2)} 恒等</div>${spuHint}
+    ${d.lines.length>50?`<div style="margin-top:8px;border:2px solid var(--bad);border-radius:8px;padding:10px 12px;background:#2a1518">
+      <div style="font-size:17px;font-weight:600;color:var(--bad)">⚠ 商品项数超限：${d.lines.length} 项 &gt; 50 项上限</div>
+      <div style="font-size:12px;color:var(--mut);margin-top:4px">依据《报关单填制规范》（海关总署公告2019年第18号）：一份报关单商品项 ≤ 50 项，超限须<b>分单申报</b>。请一键分单（按供应商，每张 ≤ 50）或改用更粗归并模式压项数。</div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <button class="primary" style="font-size:13px;padding:7px 14px" onclick="splitDraftBySupplier('${d.id}')">一键分单（按供应商）</button>
+        <span class="muted" style="font-size:11px">试算各归并模式项数（点击切换）：</span>
+        ${MODES.map(mo=>{const n=mergeLines(d.rawLines,mo.id,d.mergeSup).length;return `<button class="small ${d.mergeMode===mo.id?'primary':''}" onclick="setMerge('${d.id}','${mo.id}')" title="${mo.lb}">${mo.id}=${n}${n>50?'⚠':''}</button>`;}).join('')}
+      </div></div>`:''}
     <button class="small ghost" style="margin-top:6px" onclick="openHsLib()">HS 要素库维护</button>
   </div>`;
   document.getElementById('dftArea').innerHTML=tabs+panel+`<div class="stage"><div class="bd">${h}${t}
@@ -925,6 +933,31 @@ function delDraft(id){
 
 function setMerge(did,mode){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.mergeMode=mode;d.lines=mergeLines(d.rawLines,d.mergeMode,d.mergeSup);save();renderDrafts();}
 function setMergeSup(did,chk){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.mergeSup=!!chk;d.lines=mergeLines(d.rawLines,d.mergeMode,d.mergeSup);save();renderDrafts();}
+/* 一键分单：按供应商分组(每组≤50项,超出再按50切)，生成新草单，备注写「分单申报」。依据报关单填制规范(海关总署2019-18) 50项/单上限 */
+function splitDraftBySupplier(did){
+  const src=DB.drafts.find(x=>x.id===did);if(!src)return;
+  const total=src.rawLines.length;
+  if(total<=50){alert('当前草单 '+total+' 项 ≤ 50，无需分单');return;}
+  const groups={};
+  src.rawLines.forEach(l=>{const s=l.supplier||'未匹配';(groups[s]=groups[s]||[]).push(l);});
+  let made=0;
+  Object.keys(groups).forEach(sup=>{
+    const lines=groups[sup];
+    for(let st=0;st<lines.length;st+=50){
+      const chunk=lines.slice(st,st+50);
+      const dft=Object.assign({},src,{
+        id:uid('D'),ordId:src.ordId,rawLines:chunk,
+        lines:mergeLines(chunk,src.mergeMode,src.mergeSup),
+        header:Object.assign({},src.header,{marks:((src.header.marks||'')+' 分单申报,总项数'+total+',本单'+chunk.length+'项').trim()}),
+        confirmed:false,monitor:null,splitFrom:src.id
+      });
+      DB.drafts.push(dft);made++;
+    }
+  });
+  src.splitTo=made;src.splitNote='已分单('+made+'张)';
+  save();renderDrafts();
+  alert('已按供应商拆分为 '+made+' 张草单（每张≤50项）。原草单保留并标记「已分单」。每张备注栏已写「分单申报,总项数'+total+'」。可在上方草单列表切换查看。');
+}
 /* 归类弹窗 */
 function openCls(did,i){DB._cls={did,i};const l=DB.drafts.find(x=>x.id===did).lines[i];
   document.getElementById('clsBody').innerHTML=`
@@ -988,6 +1021,9 @@ function runMonitor(did){
   const ePref=COUNTRY_PREF[destCode];
   const a12bad = ePref==='1' ? L.some(l=>l.enjoys!=='1') : (ePref==='0' ? L.some(l=>l.enjoys==='1') : false);
   add('A','A12','出口享惠与目的国协定一致',a12bad?'WARN':'OK',!a12bad,a12bad?('目的国 '+destCode+' 应享惠='+ePref+'，但存在矛盾'):'一致');
+  /* A13 商品项数上限：报关单填制规范(海关总署公告2019年第18号) 上限50项/单 */
+  const a13=L.length<=50;
+  add('A','A13','商品项数≤50项/单(报关单填制规范,海关总署公告2019-18号)',a13?'OK':'WARN',a13,'归并后 '+L.length+' 项，超 50 项上限，须分单申报');
   const a5=L.every(l=>/^\d{10}$/.test(l.hs));
   add('A','A5','HS为10位商品编号',a5?'OK':'BLOCK',a5,'HS非10位');
   add('A','A6','法定计量单位与申报单位匹配','OK','OK','默认计量单位「个」，如需其他单位请人工确认');
