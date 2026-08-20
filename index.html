@@ -294,6 +294,14 @@ function getSpu(l){
   const m=/^(.*)-[A-Za-z0-9]+$/.exec(s);
   return m?m[1]:'';
 }
+/* 品牌类型解析：①行内已填(brandType)优先 → ②按品牌查映射表(DB.brandTypeMap) → ③空。
+   海关品牌类型分类：0-无品牌 / 1-境内自主品牌 / 2-境内收购品牌 / 3-境外品牌(贴牌生产) / 4-境外品牌(其它)。 */
+function resolveBrandType(l){
+  if(l&&l.brandType&&String(l.brandType).trim())return String(l.brandType).trim();
+  const m=DB&&DB.brandTypeMap;
+  if(l&&l.brand&&m&&m[l.brand])return String(m[l.brand]).trim();
+  return '';
+}
 function buildSpec(l){
   const lib=mergedHsLib();
   const entry=lib[(l.hs||'').trim()];
@@ -301,7 +309,7 @@ function buildSpec(l){
   const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),
     weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
   const seqStr=entry.seq.map(k=>map[k]).filter(v=>v!=null&&String(v).trim()!=='').join(';');
-  return [l.brandType,l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | ');
+  return [resolveBrandType(l),l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | ');
 }
 /* 归并：按模式 keys 构建归并键；供应商开关在键尾追加 §SUP:<供应商>。同组合并，款号聚合。 */
 function mergeLines(lines,mode,sup){
@@ -333,11 +341,13 @@ function defaultDB(){
     templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null},
     records:[],orders:[],drafts:[],docs:[],
     skuOverride:{},
+    /* 品牌类型映射：申报要素首段按品牌名自动带出海关品牌类型(0-4)。JW PEI 默认 4-境外品牌(其它)。加新品牌在此加一行即可。 */
+    brandTypeMap:{"JW PEI":"4"},
     sel:{rec:null,ord:null,dft:null,doc:null,docsSet:[],draftsSet:[]}
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -765,7 +775,7 @@ function genDraft(ordId){
   const locked=!(o.destCountry&&o.currency);
   const e0=enjoysOf(o.destCountry);
   const rawLines=o.items.map(it=>{const s=getSku(it.sku)||{};
-    return {sku:it.sku,name:s.cn||'⚠未匹配商品库',en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:s.brandType||'',enjoys:e0,
+    return {sku:it.sku,name:s.cn||'⚠未匹配商品库',en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:resolveBrandType(s),enjoys:e0,
       decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',
       supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
@@ -999,7 +1009,7 @@ function buildData(doc){
        服装：weave;nm;gender;mat;brand;sku → 4|0|针织;连衣裙;女;涤纶;JW PEI;X1
        手机壳：use;mat;brand;sku → 4|0|手机壳;TPU|JW PEI|X1
        去掉尾部空段；缺码则 ⚠要素序列待填(HS) */
-    const parts=[l.brandType,l.enjoys||'0'];
+    const parts=[resolveBrandType(l),l.enjoys||'0'];
     if(ent) ent.seq.forEach(k=>parts.push(map[k]));
     while(parts.length&&(parts[parts.length-1]==null||String(parts[parts.length-1]).trim()===''))parts.pop();
     const spec=parts.join('|')||('⚠ 要素序列待填('+(l.hs||'?')+')');
@@ -1635,13 +1645,17 @@ function batchDownloadMergedXlsx(){
 }
 
 /* ============== 设置中心 ============== */
-const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'},{k:'pref',n:'享惠国别配置'},{k:'price',n:'售价公式'},{k:'mon',n:'监控规则'},{k:'tmpl',n:'模板管理'}];
+const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'},{k:'brand',n:'品牌类型映射'},{k:'pref',n:'享惠国别配置'},{k:'price',n:'售价公式'},{k:'mon',n:'监控规则'},{k:'tmpl',n:'模板管理'}];
 let curTab='party';
 let skuPage=1, skuSize=200;
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function skuList(){const b=window.__SKU_BULK__||[];if(b.length){const have=new Set(b.map(x=>x.sku));return b.concat((DB.sku||[]).filter(x=>!have.has(x.sku)));}return DB.sku||[];}
 function skuMerged(sku){const b=skuList().find(x=>x&&x.sku===sku);const ov=DB.skuOverride&&DB.skuOverride[sku];return Object.assign({},b,ov);}
 function setSkuOv(sku,k,v){if(!DB.skuOverride)DB.skuOverride={};DB.skuOverride[sku]=Object.assign({},DB.skuOverride[sku],{[k]:v});save();renderSetBody();}
+/* 品牌类型映射维护：按品牌名映射海关品牌类型(0-4)，未来加新品牌在设置中心新增一行即可 */
+function setBrandTypeMap(b,v){if(!DB.brandTypeMap)DB.brandTypeMap={};DB.brandTypeMap[b]=v;save();renderSetBody();}
+function addBrandTypeMap(){const el=document.getElementById('btmBrand');const b=(el&&el.value||'').trim();const v=document.getElementById('btmType').value;if(!b){alert('请先输入品牌名');return;}if(!DB.brandTypeMap)DB.brandTypeMap={};DB.brandTypeMap[b]=v;save();renderSetBody();}
+function delBrandTypeMap(b){if(!DB.brandTypeMap)return;delete DB.brandTypeMap[b];save();renderSetBody();}
 function importBulk(){const el=document.getElementById('bulkFile');if(el)el.click();}
 function normBulk(arr){
   if(!arr.length) return arr;
@@ -1741,6 +1755,19 @@ function renderSetBody(){
       <td><input style="width:80px" value="${esc(m.supplier||m.factory)}" onchange="setSkuOv('${esc(m.sku)}','supplier',this.value)"></td>
       <td><input style="width:90px" value="${esc(m.brandType)}" onchange="setSkuOv('${esc(m.sku)}','brandType',this.value)"></td></tr>`;});
     h+='</tbody></table><div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
+  } else if(curTab==='brand'){
+    const btOpts=[['0','无品牌'],['1','境内自主品牌'],['2','境内收购品牌'],['3','境外品牌(贴牌生产)'],['4','境外品牌(其它)']];
+    const bm=DB.brandTypeMap||{};
+    h=`<p class="muted">品牌类型映射：申报要素首段（品牌类型）按「品牌名」自动带出海关标准分类 0-4。当前已默认 JW PEI → 4 境外品牌(其它)。未来新增品牌在此加一行即可，生成草单/导出时自动生效。</p>
+      <div style="display:flex;gap:6px;margin:4px 0;align-items:center;color:var(--mut)"><span style="flex:1.4">品牌名</span><span style="flex:1">品牌类型</span><span style="width:60px"></span></div>
+      ${Object.keys(bm).map(b=>`<div style="display:flex;gap:6px;margin:4px 0;align-items:center"><span style="flex:1.4">${esc(b)}</span>
+        <select style="flex:1" onchange="setBrandTypeMap('${esc(b)}',this.value)">${btOpts.map(o=>`<option value="${o[0]}" ${String(bm[b])===o[0]?'selected':''}>${o[0]} ${o[1]}</option>`).join('')}</select>
+        <button onclick="delBrandTypeMap('${esc(b)}')" style="width:60px;background:#3a2630;color:#e88;border:1px solid #5a2a3a;border-radius:6px;cursor:pointer">×</button></div>`).join('')}
+      <div style="display:flex;gap:6px;margin:8px 0;align-items:center">
+        <input id="btmBrand" placeholder="新品牌名，如 XYZ" style="flex:1.4">
+        <select id="btmType" style="flex:1">${btOpts.map(o=>`<option value="${o[0]}">${o[0]} ${o[1]}</option>`).join('')}</select>
+        <button onclick="addBrandTypeMap()" style="width:60px;background:#1d3a2a;color:#9e7;border:1px solid #2a5a3a;border-radius:6px;cursor:pointer">+ 添加</button></div>
+      <div class="note">生效范围：本浏览器（存 localStorage）。优先序：商品库逐条填写的「品牌类型」 > 此处品牌映射表。导出/导入主体信息 JSON 不含本映射（如需跨设备，另行备份或同步商品库）。</div>`;
   } else if(curTab==='pref'){
     h='<p class="muted">出口享惠国别配置：按「最终目的国」自动判定 0不享惠 / 1享惠(RCEP等自贸协定) / 2不能确定。生成草单时系统据此自动填规格型号的出口享惠段，一般无需改动。</p><div class="toolbar"><input type="file" id="prefFile" accept=".json" style="display:none" onchange="onPrefFile(event)"><button class="small" onclick="document.getElementById(&quot;prefFile&quot;).click()">⬆ 导入国别映射JSON</button></div><table><thead><tr><th>目的国</th><th>出口享惠</th></tr></thead><tbody>';
     Object.keys(COUNTRY_PREF).forEach(c=>{h+=`<tr><td>${c}</td><td><select class="small" onchange="COUNTRY_PREF['${c}']=this.value;renderSetBody()"><option value="0" ${COUNTRY_PREF[c]==='0'?'selected':''}>0 不享惠</option><option value="1" ${COUNTRY_PREF[c]==='1'?'selected':''}>1 享惠</option><option value="2" ${COUNTRY_PREF[c]==='2'?'selected':''}>2 不能确定</option></select></td></tr>`;});
