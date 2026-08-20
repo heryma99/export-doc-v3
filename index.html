@@ -991,7 +991,18 @@ function confirmDraft(did){
 }
 function buildData(doc){
   const d=DB.drafts.find(x=>x.id===doc.dftId);
-  const lines=d.lines.map(l=>{const spec=String(l.brandType||'').trim();
+  const lines=d.lines.map(l=>{const ent=(mergedHsLib())[(l.hs||'').trim()];
+    const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
+    /* 申报要素=品牌类型|出口享惠(0)|<HS_LIB.seq 要素按品类管道拼装>
+       包：nm;mat;brand;sku → 4|0|手提包|100%PU|JW PEI|1C56-2
+       鞋：kind;upmat;solemat;brand;sku → 4|0|短筒靴|PU|TPR|JW PEI|X1
+       服装：weave;nm;gender;mat;brand;sku → 4|0|针织;连衣裙;女;涤纶;JW PEI;X1
+       手机壳：use;mat;brand;sku → 4|0|手机壳;TPU|JW PEI|X1
+       去掉尾部空段；缺码则 ⚠要素序列待填(HS) */
+    const parts=[l.brandType,l.enjoys||'0'];
+    if(ent) ent.seq.forEach(k=>parts.push(map[k]));
+    while(parts.length&&(parts[parts.length-1]==null||String(parts[parts.length-1]).trim()===''))parts.pop();
+    const spec=parts.join('|')||('⚠ 要素序列待填('+(l.hs||'?')+')');
     return {...l,spec,en:l.en||'',unit:l.unit||'',amount:((+l.decl)*(+l.qty)).toFixed(2)};});
   const base=d.header.declDate||today();
   const contracts=[...new Set(lines.map(l=>l.supplier))].map(s=>{const items=lines.filter(l=>l.supplier===s);
@@ -1139,7 +1150,7 @@ function builtin(name){
 <td>{{header.domSrc}}</td>
 <td colspan="2">{{header.levy}}</td>
 </tr>
-<tr><td colspan="2"></td><td colspan="12">{{spec}}</td></tr>{{/each}}
+<tr><td colspan="2"></td><td colspan="12">申报要素：{{spec}}</td></tr>{{/each}}
 <tr><td colspan="8">TOTAL：{{header.currency}} {{totalAmount}}</td><td colspan="6"></td></tr>
 <tr>
 <td colspan="2">特殊关系确认：<b>{{header.special||'否'}}</b></td>
@@ -1407,7 +1418,7 @@ function xlsCur(d){
     set(r,11,H.domSrc||'');
     set(r,12,H.levy,13);
     r++;
-    set(r,2,l.spec||'',13);
+    set(r,2,'申报要素：'+(l.spec||''),13);
     r++;
   });
   /* 合计 */
