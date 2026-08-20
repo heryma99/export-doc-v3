@@ -160,7 +160,7 @@
               <button class="primary" onclick="document.getElementById('file').click()">选择文件</button>
               <button class="ghost" onclick="loadDemo()">用示例数据（HT1860040 风格）</button></div>
               <div class="hint">列名自动识别（简繁体/带单位均可）：SKU列认 <code>款号/货号/商品编码/款式编码/SKU/style</code>；箱号认 <code>箱号/箱號/carton</code>；单号认 <code>订单号/单号/唛头号</code>。表头行自动探测，毛净重按箱号去重汇总。</div>
-              <div class="hint" style="margin-top:6px">净重兜底：无「净重」列时自动按 <code>毛重 − 包装箱重量</code> 计算（优先取源文件「包装箱重量」列，其次 <code>box_specs</code> 纸箱规格表，最后用固定值）。
+              <div class="hint" style="margin-top:6px">净重兜底：无「净重」列时自动按 <code>单箱毛重×箱数 − 纸箱皮重</code> 计算（纸箱皮重优先取源文件「包装箱重量」列，其次设置中心固定值，最后默认1.3kg/箱；「箱子毛重」类列识别为单箱值自动乘箱数。<code>box_specs.weight</code> 是单箱毛重、不当皮重用）。
                 箱重固定值(kg)：<input id="pkFixedBw" type="number" step="0.01" min="0" style="width:70px" placeholder="选填" onchange="localStorage.setItem('v3.fixedBoxWeight',this.value)"></div>
             </div>
             <div id="parseDiag"></div>
@@ -525,16 +525,19 @@ function parseGrid(grid,forceSku,opts){
     let nw=numv(g('nw'));
     const srcBw=numv(g('bw'));
     let bw=srcBw;
-    /* 纸箱重量兜底链：源文件bw → box_specs[sku].weight → 固定值 → 默认1.3kg/箱 */
-    if(!bw) bw=(boxLib[sku]||{}).weight||0;
+    /* 纸箱重量兜底链：源文件「包装箱重量」列 → 固定值 → 默认1.3kg/箱
+       ⚠ box_specs[sku].weight 是「单箱毛重」(含货)，绝不可当皮重扣，否则净重被扣成0 */
     if(!bw) bw=fixedBw||0;
     if(!bw) bw=1.3;
     /* FBA 数量推导：无「数量」列但有 每箱件数×箱子总数 */
     let qty=numv(g('qty'));
-    const qpb=numv(g('qtyPerBox')), bc=numv(g('boxCnt'));
+    const qpb=numv(g('qtyPerBox')), bc=numv(g('boxCnt'))||1;
     if(!qty&&qpb&&bc) qty=qpb*bc;
-    /* 净重：有则取上传值；无则 毛重−纸箱重量（默认纸箱1.3kg/箱） */
-    if(!nw&&gw) nw=Math.max(0,gw-bw);
+    /* 「箱子毛重/单箱毛重」列是单箱值 → 乘箱数得该行总毛重 */
+    const gwHead=head[m.gw]||'';
+    if((normHead(gwHead).indexOf('箱子')>=0||normHead(gwHead).indexOf('单箱')>=0) && bc>1) gw=Math.round(gw*bc*1000)/1000;
+    /* 净重：有则取上传值；无则 行总毛重 − 单箱皮重×箱数 */
+    if(!nw&&gw) nw=Math.max(0,Math.round((gw-bw*bc)*1000)/1000);
     /* FBA 无毛净重列 → 商品库单件净重推导：nw = sku.gw × qty；gw = nw + bw × 箱数 */
     if(!nw&&!gw&&qty){
       const s0=skuList().find(x=>x&&x.sku===sku);
@@ -562,12 +565,22 @@ function parseGrid(grid,forceSku,opts){
   if(m.bw<0) missing.push('bw');                    /* bw 缺失仅提示（有 box_specs/固定值兜底），不阻断 */
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
 }
-/* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计 */
+/* 箱号范围解析：如 FBA 箱号 «U000002～3» 表示 2~3 号共 2 箱，计为真实箱数 */
+function parseBoxNoCount(s){
+  const mm=String(s||'').match(/[Uu](\d+)[^\d]+(\d+)/);
+  return mm?(+mm[2]-+mm[1]+1):1;
+}
+/* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计；箱号带范围时按真实箱数统计 */
 function packSummary(items, opts){
   const seen=Object.create(null), boxes=[]; let gw=0,nw=0,conflict=0;
   (items||[]).forEach(function(it,i){
     const k=it.boxNo?('B:'+it.boxNo):('R:'+i);
-    if(seen[k]==null){ seen[k]={gw:+it.gw||0,nw:+it.nw||0}; boxes.push(k); gw+=(+it.gw||0); nw+=(+it.nw||0); }
+    if(seen[k]==null){
+      seen[k]={gw:+it.gw||0,nw:+it.nw||0};
+      const cnt=parseBoxNoCount(it.boxNo);
+      for(let c=0;c<cnt;c++) boxes.push(k);
+      gw+=(+it.gw||0); nw+=(+it.nw||0);
+    }
     else if(Math.abs((+it.gw||0)-seen[k].gw)>0.001){ conflict++; }
   });
   /* 无净重列场景：皮重统一按箱数扣（perBoxBw），贴合"单位是箱"业务口径，避免空毛重行漏扣 */
@@ -672,8 +685,8 @@ function showOk(r,ps){
   const warn=[];
   if((r.missing||[]).indexOf('boxNo')>=0) warn.push('无箱号列 → 毛净重按行汇总');
   if((r.missing||[]).indexOf('gw')>=0) warn.push(ps.totalGW>0?'毛重由商品库单件净重推导':'无毛重列');
-  if((r.missing||[]).indexOf('nw')>=0) warn.push('源文件无净重列 → 净重=毛重−纸箱重量（纸箱皮重取：源文件>规格表>固定值>默认1.3kg/箱）');
-  if((r.missing||[]).indexOf('bw')>=0) warn.push('无纸箱重量列 → 按 规格表/固定值/默认1.3kg 取皮重');
+  if((r.missing||[]).indexOf('nw')>=0) warn.push('源文件无净重列 → 净重=单箱毛重×箱数−纸箱皮重（纸箱皮重取：源文件「包装箱重量」列>固定值>默认1.3kg/箱；box_specs.weight 是单箱毛重，不用于扣皮重）');
+  if((r.missing||[]).indexOf('bw')>=0) warn.push('无纸箱重量列 → 固定值>默认1.3kg/箱 取皮重');
   if(ps.conflict) warn.push('同一箱号出现 '+ps.conflict+' 处重量不一致（已取首行）');
   el.innerHTML='<div style="margin-top:12px;border:1px solid '+(warn.length?'#7a6320':'#2c5d3f')+';border-radius:8px;padding:10px 12px;background:'+(warn.length?'#2a2416':'#16241c')+'">'
     +'<b style="color:'+(warn.length?'#ffd479':'#7ee2a8')+'">'+(warn.length?'⚠ 解析完成（有提示）':'✓ 解析成功')+'</b> '
