@@ -1724,7 +1724,7 @@ function batchDownloadMergedXlsx(){
 /* ============== 设置中心 ============== */
 const TABS=[{k:'party',n:'主体信息维护'},{k:'sku',n:'商品库SKU(含HS)'},{k:'brand',n:'品牌类型映射'},{k:'pref',n:'享惠国别配置'},{k:'price',n:'售价公式'},{k:'mon',n:'监控规则'},{k:'tmpl',n:'模板管理'}];
 let curTab='party';
-let skuPage=1, skuSize=200;
+let skuPage=1, skuSize=200, skuQ='';
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function skuList(){const b=window.__SKU_BULK__||[];if(b.length){const have=new Set(b.map(x=>x.sku));return b.concat((DB.sku||[]).filter(x=>!have.has(x.sku)));}return DB.sku||[];}
 function skuMerged(sku){const b=skuList().find(x=>x&&x.sku===sku);const ov=DB.skuOverride&&DB.skuOverride[sku];return Object.assign({},b,ov);}
@@ -1804,14 +1804,17 @@ function renderSetBody(){
       </div>
       <div class="note">数据保存在浏览器本地（localStorage）。<b>导出</b>可备份为 JSON 文件发给同事，对方在「设置中心→主体信息维护」点<b>导入</b>即可加载。导出包含：境内发货人列表、境外收货人列表、币种列表。</div>`;
   } else if(curTab==='sku'){
-    const list=skuList();
+    const allList=skuList();
+    /* SKU 搜索：匹配 款号/SKU/品名/HS/品牌 等字段 */
+    const list=skuQ?allList.filter(x=>{const q=skuQ.toLowerCase();return [x.sku,x.style,x.prodCode,x.nameFull,x.nameShort,x.cn,x.en,x.hs,x.brand].some(v=>v!=null&&String(v).toLowerCase().indexOf(q)>=0);}):allList;
     const total=list.length;
     const pages=Math.max(1,Math.ceil(total/skuSize));
     if(skuPage>pages)skuPage=pages;
     const start=(skuPage-1)*skuSize;
     const slice=list.slice(start,start+skuSize);
     h='<p class="muted">商品库 SKU（含 HS）—— 原封不动 18 源字段 + 工厂/品牌类型 2 维护字段。出口享惠由目的国自动派生，申报价生成时算，均不落表。图片存「商品图片/」本地路径，做发票时模板写 &lt;img src="{{img}}"&gt; 复用同一张图。</p>';
-    h+=`<div class="toolbar"><button class="small" onclick="upSkuFile()">⬆ 上传商品信息表(CSV/XLSX)</button>
+    h+=`<div class="toolbar"><input placeholder="🔍 搜索 SKU/款号/品名/HS/品牌…" value="${esc(skuQ)}" oninput="skuQ=this.value.trim();skuPage=1;renderSetBody()" style="width:220px;flex:none">
+      <button class="small" onclick="upSkuFile()">⬆ 上传商品信息表(CSV/XLSX)</button>
       <button class="small" onclick="importBulk()">⬆ 导入商品库JSON</button>
       <button class="small" onclick="addSkuRow()">+ 新增行</button>
       <span style="flex:1"></span>
