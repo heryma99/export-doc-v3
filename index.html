@@ -411,10 +411,10 @@ const PL_ALIAS=[
   ['box',   ['纸箱规格','紙箱規格','箱规格','箱規格','纸箱','紙箱','箱型','箱规','箱規','cartonsize','箱子规格','外箱规格','boxsize','外箱尺寸','纸箱尺寸','紙箱尺寸']],
   ['boxCnt',['箱数','箱數','总箱数','總箱數','ctns','ctn','箱件数','箱子总数','箱子總數','boxcount','totalboxes','总箱件数','总件箱数','總件箱數']],
   ['boxNo', ['箱号','箱號','箱序号','箱序號','carton','cartonno','箱子编号','外箱号','外箱號','箱唛号','箱嘜號','ctnno','箱号no.','序号','序號','货箱编号']],
-  ['sku',   ['sku','款号','款號','货号','貨號','商品编码','商品編碼','款式编码','款式編碼','style','styleno','物料编码','物料編碼','产品编码','產品編碼','商品编号','商品編號','型号','型號','itemcode','artno','商品条码']],
+  ['sku',   ['msku','msk','卖家sku','商家sku','卖方sku','amazonsku','sku','款号','款號','货号','貨號','商品编码','商品編碼','款式编码','款式編碼','style','styleno','物料编码','物料編碼','产品编码','產品編碼','商品编号','商品編號','型号','型號','itemcode','artno','商品条码']],
   ['asin',  ['asin','amazonasin','亚马逊asin','亞馬遜asin','商品asin']],
   ['fnsku', ['fnsku','fba编号','fba編號','亚马逊fnsku','fba货件sku','货件fnsku']],
-  ['qty',   ['数量','數量','件数','件數','双数','雙數','对数','對數','qty','quantity','pcs','pairs','出货数量','出貨數量','商品总数','商品總數','totalunits','units','总数量','總數量']],
+  ['qty',   ['数量','數量','件数','件數','双数','雙數','对数','對數','qty','quantity','pcs','pairs','出货数量','出貨數量','发货量','發貨量','已装量','已裝量','已装数量','已裝數量','已发数量','已發數量','商品总数','商品總數','totalunits','units','shippedqty','shippedquantity','shipqty','总数量','總數量']],
   ['qtyPerBox',['每箱件数','每箱件數','每箱数量','每箱數量','箱内件数','箱內件數','每箱pcs','unitperbox','unitsperbox','每箱单位数','每箱單位數','每箱商品数','每箱商品數']],
   ['gw',    ['毛重','毛重量','gw','grossweight','gross','毛重kg','毛重(kg)','毛重（kg）','箱毛重','总毛重','總毛重','grossweightkg','重量','重量kg','重量(kg)','重量（kg）','总重','總重','总重量','總重量']],
   ['nw',    ['净重','淨重','净重量','淨重量','nw','netweight','净重kg','净重(kg)','净重（kg）','箱净重','總淨重','总净重','netweightkg']],
@@ -551,11 +551,15 @@ function parseGrid(grid,forceSku,opts){
     let box=g('box');
     if(!box){const L=numv(g('length')),W=numv(g('width')),H=numv(g('height'));if(L&&W&&H) box=L+'*'+W+'*'+H;}
     rows.push({sku:sku,qty:qty,gw:gw,nw:nw,bw:bw,
-      box:box,boxNo:g('boxNo'),no:g('no'),boxCnt:bc||numv(g('boxCnt')),
+      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:bc||numv(g('boxCnt')),
       asin:g('asin'),fnsku:g('fnsku'),name:g('name'),shop:g('shop'),pallet:g('pallet')||g('palletSize')});
   }
-  const missing=['sku','qty','gw','nw','box','boxNo','no'].filter(function(k){return m[k]<0;});
-  if(m.bw<0) missing.push('bw');   /* bw 缺失仅提示（有 box_specs/固定值兜底），不阻断 */
+  const missing=[];
+  ['sku','qty','gw','boxNo'].forEach(function(k){ if(m[k]<0) missing.push(k); });
+  if(m.nw<0 && m.gw<0) missing.push('nw');         /* 有毛重即可推导净重，不再报缺失 */
+  if(m.box<0 && (m.length<0 || m.width<0 || m.height<0)) missing.push('box'); /* 有长/宽/高即可拼箱规，不再报缺失 */
+  if(m.no<0) missing.push('no');                    /* 单号缺失仅提示，不阻断；下游表头可补 */
+  if(m.bw<0) missing.push('bw');                    /* bw 缺失仅提示（有 box_specs/固定值兜底），不阻断 */
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
 }
 /* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计 */
@@ -623,7 +627,7 @@ function loadDemo(){ingestGrid('示例HT1860040',csvToGrid(DEMO_CSV));}
 let PEND=null;
 function ingestGrid(src,grid,forceSku){
   const fixed=+(localStorage.getItem('v3.fixedBoxWeight')||0);
-  const r=parseGrid(grid,forceSku,{fixedBoxWeight:fixed});
+  const r=parseGrid(grid,forceSku,{fixedBoxWeight:fixed, sourceName:src.replace(/\.[^.]+$/,'')});
   if(!r.rows.length){ PEND={src:src,grid:grid}; showDiag(r); return; }
   const ps=packSummary(r.rows, (r.missing||[]).indexOf('nw')>=0 ? {perBoxBw:(fixed||1.3)} : null);
   const rec={id:uid('R'),fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
@@ -643,10 +647,14 @@ function headTable(r){
 }
 function showDiag(r){
   const el=diagEl();
-  if(!el){alert('未识别到 SKU 列，请检查表头');return;}
+  const skuMissing=(r.missing||[]).indexOf('sku')>=0;
+  if(!el){alert(skuMissing?'未识别到 SKU 列，请检查表头':'未解析到有效数据行，请检查表头或手动指定 SKU 列');return;}
+  const title=skuMissing?'✗ 解析失败：识别不到 SKU 列':'✗ 解析失败：未解析到有效数据行';
+  const hint=skuMissing?'':'（表头已识别，但数据行 SKU 单元格为空，请尝试手动指定正确的 SKU 列）';
   const opts=(r.head||[]).map(function(h,i){return '<option value="'+i+'">'+(i+1)+'. '+esc(h||'(空)')+'</option>';}).join('');
   el.innerHTML='<div style="margin-top:12px;border:1px solid #a33;border-radius:8px;padding:12px;background:#2a1b1b">'
-    +'<b style="color:#ff8a8a">✗ 解析失败：识别不到 SKU 列</b>'
+    +'<b style="color:#ff8a8a">'+title+'</b>'
+    +(hint?'<div class="muted" style="margin:4px 0">'+hint+'</div>':'')
     +'<div class="muted" style="margin:6px 0">识别到的表头（第 '+((r.headRow||0)+1)+' 行）：<code>'+esc((r.head||[]).join(' | '))+'</code></div>'
     +'<div class="muted" style="margin:6px 0">缺失列：<b style="color:#ffb86b">'+esc((r.missing||[]).join(', ')||'无')+'</b></div>'
     +'<div style="margin:8px 0">'+headTable(r)+'</div>'
