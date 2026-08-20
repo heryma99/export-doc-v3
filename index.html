@@ -1198,7 +1198,9 @@ function buildData(doc){
     boxCount:packSummary(lines).boxCount,
     contractCount:contracts.length,
     bankInfo:acctFor(d.header.currency)||{},
-    bankAccounts:DB.bankAccounts||[]};
+    bankAccounts:DB.bankAccounts||[],
+    signDateCN:fmtDateCN(d.header.signDate),
+    deliveryDateCN:fmtDateCN(d.header.deliveryDate)};
 }
 /* 模板引擎（递归计数，正确处理嵌套 each + 注入 _i 序号） */
 function getPath(o,p){return p.split('.').reduce((a,k)=>a==null?undefined:a[k],o);}
@@ -1384,7 +1386,7 @@ function builtin(name){
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{boxCnt}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
     <tr><td colspan="3">Total</td><td>{{boxCount}}</td><td>{{totalQty}}</td><td>{{totalGW}}</td><td>{{totalNW}}</td></tr></table>`;
   if(name==='销售合同')return `<h2 style="text-align:center;margin:6px 0">合&nbsp;&nbsp;同</h2>
-    <p>合約編號：{{header.no}} &nbsp; 簽訂地點：{{header.signPlace}} &nbsp; 簽訂日期：{{header.signDate}}</p>
+    <p>合約編號：{{header.no}} &nbsp; 簽訂地點：{{header.signPlace}} &nbsp; 簽訂日期：{{signDateCN}}</p>
     <p><b>第一條 合約當事人</b></p>
     <p>甲方（買方）：{{header.partyA.name}}&nbsp;{{header.partyA.addr}}&nbsp;聯絡人：{{header.partyA.contact}}&nbsp;郵箱：{{header.partyA.email}}</p>
     <p>乙方（賣方）：{{header.partyB.name}}&nbsp;{{header.partyB.addr}}&nbsp;聯絡人：{{header.partyB.contact}}&nbsp;郵箱：{{header.partyB.email}}</p>
@@ -1398,7 +1400,7 @@ function builtin(name){
     <p><b>第三條 物流及運輸</b></p>
     <p>1. 運輸方式：☑ {{header.transMode}}</p>
     <p>2.1 最終目的港/收貨地：{{header.destCountry}}</p>
-    <p>2.2 交貨時間：{{header.deliveryDate}}前，賣方需及時通知買方運輸工具資訊。</p>
+    <p>2.2 交貨時間：{{deliveryDateCN}}前，賣方需及時通知買方運輸工具資訊。</p>
     <p>3. 運輸風險轉移：按{{header.tradeTerm}}價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。</p>
     <p>4. 運輸保險：由買方全權負責貨物投保，保險費由買方承擔。</p>
     <p><b>第四條 履約期限及方式</b></p>
@@ -1737,7 +1739,7 @@ function xlsSalesContract(d){
   const C=7;
   const line=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
   line('合   同');
-  line('合約編號：'+(H.no||'')+'    簽訂地點：'+(H.signPlace||'【東莞】')+'    簽訂日期：'+(H.signDate||''));
+  line('合約編號：'+(H.no||'')+'    簽訂地點：'+(H.signPlace||'【東莞】')+'    簽訂日期：'+(fmtDateCN(H.signDate)||'____'));
   line('');
   line('第一條 合約當事人');
   line('甲方（買方）：');
@@ -1762,7 +1764,7 @@ function xlsSalesContract(d){
   line('1. 運輸方式：☑ '+(tr||''));
   line('2. 物流資訊：');
   line('2.1 最終目的港/收貨地：'+(H.destCountry||''));
-  line('2.2 交貨時間：'+(H.deliveryDate||'____')+'前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。');
+  line('2.2 交貨時間：'+(fmtDateCN(H.deliveryDate)||'____')+'前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。');
   line('3. 運輸風險轉移');
   line('按'+(H.tradeTerm||'FOB')+'價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。');
   line('4. 運輸保險');
@@ -1972,6 +1974,8 @@ const FAN_MAP={'单':'單','个':'個','数':'數','长':'長','宽':'寬','卖'
 function fan(s){return (s==null?'':String(s)).split('').map(ch=>FAN_MAP[ch]||ch).join('');}
 /* 箱数(Ge.Crate)：qtyPerBox(每箱件数)可算则 ceil(qty/每箱件数)，否则行内 boxCnt，兜底 1 */
 function boxCntOf(l){if(!l)return 1;const q=+l.qty||0;if(q<=0)return 1;const qpb=+l.qtyPerBox||0||(+((window.BOX_SPECS||{})[l.sku]||{}).qtyPerBox||0);if(qpb>0)return Math.max(1,Math.ceil(q/qpb));return +l.boxCnt||1;}
+/* 日期 → 中文格式：2026-04-08 → 2026年4月8日(销售合同模板风格)；无法解析原样返回 */
+function fmtDateCN(s){if(!s)return '';const m=String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(!m)return String(s);return (+m[1])+'年'+(+m[2])+'月'+(+m[3])+'日';}
 function skuList(){const b=window.__SKU_BULK__||[];if(b.length){const have=new Set(b.map(x=>x.sku));return b.concat((DB.sku||[]).filter(x=>!have.has(x.sku)));}return DB.sku||[];}
 function skuMerged(sku){const b=skuList().find(x=>x&&x.sku===sku);const ov=DB.skuOverride&&DB.skuOverride[sku];return Object.assign({},b,ov);}
 /* 商品库表格单独渲染：搜索/翻页只刷新表格，不重建输入框(避免失焦跳出的BUG) */
