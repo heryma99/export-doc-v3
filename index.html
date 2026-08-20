@@ -1911,6 +1911,7 @@ function renderSetBody(){
       <div class="note">数据保存在浏览器本地（localStorage）。<b>导出</b>可备份为 JSON 文件发给同事，对方在「设置中心→主体信息维护」点<b>导入</b>即可加载。导出包含：境内发货人列表、境外收货人列表、币种列表。<b>「导出共享配置」</b> = 全员共享的那份配置(发货人/采购主体/供应商归集/品牌映射/售价/HS库)，交维护人推送到云端即可全员生效，其他人打开系统自动拉取。</div>`;
   } else if(curTab==='sku'){
     /* 供应商筛选选项(商品库全部二级去重) */
+    const allList=skuList();
     const supOpts=[...new Set(allList.map(x=>(x.supplier||x.factory||'').trim()).filter(v=>v&&!/未匹配|None|test|⚠/.test(v)))].sort();
     h='<p class="muted">商品库 SKU（含 HS）—— 原封不动 18 源字段 + 工厂/品牌类型 2 维护字段。出口享惠由目的国自动派生，申报价生成时算，均不落表。图片存「商品图片/」本地路径，做发票时模板写 &lt;img src="{{img}}"&gt; 复用同一张图。</p>';
     h+=`<div class="toolbar"><input placeholder="🔍 搜索 SKU/款号/品名/HS/品牌…" value="${esc(skuQ)}" oninput="skuQ=this.value.trim();skuPage=1;renderSkuTable()" style="width:220px;flex:none">
