@@ -1861,7 +1861,8 @@ function expSharedConfig(){
   a.click();URL.revokeObjectURL(a.href);
 }
 /* GitHub 发布凭证(受限PAT，仅本仓库 contents 写)：保存到本浏览器 */
-function saveGhToken(){const v=(document.getElementById('ghToken')||{}).value||'';if(v)localStorage.setItem('v3.ghToken',v.trim());else localStorage.removeItem('v3.ghToken');alert(v?'已保存发布凭证(仅存本浏览器)':'已清除发布凭证');}
+function saveGhTokenVal(v){const t=(v==null?'':String(v)).trim();if(t)localStorage.setItem('v3.ghToken',t);else localStorage.removeItem('v3.ghToken');alert(t?'✅ 已保存发布凭证(仅存本浏览器)':'已清除发布凭证');updCloudBadge();}
+function saveGhToken(){const el=document.getElementById('ghToken');saveGhTokenVal(el?el.value:'');}
 /* 🚀 一键发布到云端：浏览器直接用 PAT 推 GitHub config.json */
 function publishConfig(){
   const token=(localStorage.getItem('v3.ghToken')||'').trim();
@@ -1916,7 +1917,7 @@ function renderSetBody(){
         </label>
       </div>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
-        <input id="ghToken" type="password" placeholder="GitHub 发布凭证(受限PAT,可选)" value="" style="flex:1;min-width:220px">
+        <input id="ghToken" type="password" placeholder="GitHub 发布凭证(受限PAT,可选)" value="${localStorage.getItem('v3.ghToken')?'已保存(重新输入可覆盖)':''}" style="flex:1;min-width:220px">
         <button class="small" onclick="saveGhToken()">保存凭证</button>
         <button class="small primary" onclick="publishConfig()">🚀 发布到云端(全员同步)</button>
       </div>
@@ -2155,7 +2156,7 @@ function renderSharedBody(){
         <input type="file" accept=".json" style="display:none" onchange="impSharedConfig(event)">
       </label></div>
     <div style="margin-top:8px;font-size:12px;color:var(--mut)">一键发布(可选)：填入 GitHub 受限 PAT 后可「🚀 发布到云端」，无需经管理员；凭证只存本浏览器。
-      <div style="display:flex;gap:6px;margin-top:6px;align-items:center"><input id="ghToken2" type="password" placeholder="GitHub 发布凭证(受限PAT)" value="${(localStorage.getItem('v3.ghToken')||'')?'已保存':''}" style="flex:1"><button class="small" onclick="document.getElementById('ghToken').value=document.getElementById('ghToken2').value;saveGhToken()">保存凭证</button></div>
+      <div style="display:flex;gap:6px;margin-top:6px;align-items:center"><input id="ghToken2" type="password" placeholder="GitHub 发布凭证(受限PAT)" value="${localStorage.getItem('v3.ghToken')?'已保存(重新输入可覆盖)':''}" style="flex:1"><button class="small" onclick="saveGhTokenVal(document.getElementById('ghToken2').value);document.getElementById('ghToken2').value=''">保存凭证</button></div>
     </div></div>`;
 }
 /* 手动上传共享配置(兜底)：读本地 config.json 合并进本地 */
