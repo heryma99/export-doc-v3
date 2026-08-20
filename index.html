@@ -892,6 +892,10 @@ function genDraft(ordId){
       partyA:{name:'',addr:'',contact:'',email:''},
       partyB:{name:'',addr:'',contact:'',email:''},
       signPlace:'【東莞】',signDate:today(),deliveryDate:'',
+      /* 国内采购合同(采购方=发货人/甲方, 供货方=一级供应商/乙方)：乙方信息/账户/交货地点随草单可编辑 */
+      deliveryPlace:'',
+      purchaseB:{addr:'',contact:'',email:''},
+      purchaseAcct:{bank:'',no:'',name:''},
       tradeMode:'0110 一般贸易',transMode:'2 水路运输',tradeTerm:'FOB',port:'',levy:'1 照章征税',
       currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today(),
       /* 报关草单扩展字段（草单可留空，打印前补全） */
@@ -927,6 +931,19 @@ function renderDrafts(){
     <div class="field"><label>合同簽訂地點</label><input value="${H.signPlace||'【東莞】'}" onchange="setHeader('${d.id}','signPlace',this.value)"></div>
     <div class="field"><label>合同簽訂日期</label><input type="date" value="${H.signDate||''}" onchange="setHeader('${d.id}','signDate',this.value)"></div>
     <div class="field"><label>交货日期</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
+    <div class="field"><label>交货地点(采购/销售合同)</label><input value="${H.deliveryPlace||''}" onchange="setHeader('${d.id}','deliveryPlace',this.value)" placeholder="如 广东省东莞市厚街镇恒通路6号3栋"></div>
+    <div class="field" style="flex:1 1 100%"><label>采购合同 乙方(供货方一级供应商) 信息 — 地址/聯絡人/郵箱(随草单可改)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input style="flex:1 1 50%" placeholder="乙方地址" value="${esc((H.purchaseB&&H.purchaseB.addr)||'')}" onchange="setHeader('${d.id}','purchaseB.addr',this.value)">
+        <input style="flex:1 1 20%" placeholder="聯絡人" value="${esc((H.purchaseB&&H.purchaseB.contact)||'')}" onchange="setHeader('${d.id}','purchaseB.contact',this.value)">
+        <input style="flex:1 1 25%" placeholder="郵箱" value="${esc((H.purchaseB&&H.purchaseB.email)||'')}" onchange="setHeader('${d.id}','purchaseB.email',this.value)">
+      </div></div>
+    <div class="field" style="flex:1 1 100%"><label>采购合同 乙方账户信息(付款给供货方) — 开户行/账号/户名(随草单可改)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input style="flex:1 1 40%" placeholder="开户行" value="${esc((H.purchaseAcct&&H.purchaseAcct.bank)||'')}" onchange="setHeader('${d.id}','purchaseAcct.bank',this.value)">
+        <input style="flex:1 1 25%" placeholder="账号" value="${esc((H.purchaseAcct&&H.purchaseAcct.no)||'')}" onchange="setHeader('${d.id}','purchaseAcct.no',this.value)">
+        <input style="flex:1 1 30%" placeholder="户名" value="${esc((H.purchaseAcct&&H.purchaseAcct.name)||'')}" onchange="setHeader('${d.id}','purchaseAcct.name',this.value)">
+      </div></div>
     <div class="field" style="flex:1 1 100%"><label>销售合同 甲方(买方) — 公司全稱/地址/聯絡人/郵箱(随草单可改，空则用收货人)</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <input style="flex:1 1 30%" placeholder="甲方公司全稱" value="${esc((H.partyA&&H.partyA.name)||'')}" onchange="setHeader('${d.id}','partyA.name',this.value)">
@@ -1187,8 +1204,8 @@ function buildData(doc){
     return {...l,spec,en:l.en||'',unit:l.unit||'',amount:((+l.decl)*(+l.qty)).toFixed(2),boxCnt:boxCntOf(l)};});
   const base=d.header.declDate||today();
   /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
-  const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map(s=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s);
-    return {supplier:s,items,amount:items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0).toFixed(2),count:items.length};});
+  const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=Math.round((+l.cost||0)*1.13*100)/100;return {...l,taxPrice:tp.toFixed(2),taxAmount:(tp*(+l.qty||0)).toFixed(2)};});
+    return {supplier:s,items,_no:((d.header&&d.header.no)||'')+'-'+(ci+1),taxTotal:items.reduce((a,l)=>a+(+l.taxAmount||0),0).toFixed(2),amount:items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0).toFixed(2),count:items.length};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
@@ -1418,14 +1435,35 @@ function builtin(name){
     <p>公司公章：____________________ &nbsp;&nbsp;&nbsp;&nbsp; 公司公章：____________________</p>
     <p>法定/授權代表簽字：____________________ &nbsp;&nbsp; 法定/授權代表簽字：____________________</p>
     <p>簽署日期：______年____月____日 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 簽署日期：______年____月____日</p>`;
-  if(name==='国内采购合同')return `<h2 style="text-align:center;margin:6px 0">国内采购合同</h2>
+  if(name==='国内采购合同')return `<h2 style="text-align:center;margin:6px 0">采购合同</h2>
     {{#each contracts}}<div style="border:1px solid #999;padding:8px;margin:8px 0">
-    <p>采购方：{{header.shipper}} &nbsp; 供货工厂：{{supplier}}</p>
-    <p>合同日期：{{dates.purchase}} &nbsp; （早于销售/报关）</p>
+    <p><b>合同编号：{{_no}}</b></p>
+    <p>甲方：{{header.partyB.name}} &nbsp;&nbsp; 住所/注册地址：{{header.partyB.addr}}</p>
+    <p>乙方：{{supplier}} &nbsp;&nbsp; 住所/注册地址：{{header.purchaseB.addr}} &nbsp; 聯絡人：{{header.purchaseB.contact}} &nbsp; 郵箱：{{header.purchaseB.email}}</p>
+    <p>甲方因出口业务需求，向乙方采购商品，双方依据《中华人民共和国民法典》，遵循平等自愿原则，签订本合同，以资共同信守。</p>
+    <p><b>一、合同标的，名称、数量、价格</b></p>
+    <p>1.以下为含税交货价：详见下表&nbsp;&nbsp; 2.交易币种：{{header.currency}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
-    <tr><th>款号/SKU</th><th>品名</th><th>HS</th><th>数量</th><th>不含税单价</th><th>采购金额</th></tr>
-    {{#each items}}<tr><td>{{sku}}</td><td>{{name}}</td><td>{{hs}}</td><td>{{qty}}</td><td>{{cost}}</td><td>{{amount}}</td></tr>{{/each}}
-    <tr><td colspan="5">本厂采购金额合计</td><td>{{amount}}</td></tr></table></div>{{/each}}`;
+    <tr><th>序号</th><th>产品名称</th><th>型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>含税单价</th><th>含税总价</th></tr>
+    {{#each items}}<tr><td>{{_i}}</td><td>{{name}}</td><td>{{style}}</td><td>{{mat}}</td><td>{{unit}}</td><td>{{qty}}</td><td>{{taxPrice}}</td><td>{{taxAmount}}</td></tr>{{/each}}
+    <tr><td colspan="7">合计</td><td>{{taxTotal}}</td></tr></table>
+    <p>3.本合同价格为指定地点含税交货价，增值税税率 13%，价格已涵盖包装费、运输费。</p>
+    <p><b>二、付款时间与方式</b></p>
+    <p>1.甲方自验收合格10日内通知乙方开具合规增值税专用发票。</p>
+    <p>2.付款时间：甲方收到合规发票后15个工作日内付全款。</p>
+    <p>3.乙方账户信息：开户行：{{header.purchaseAcct.bank}} &nbsp; 账号：{{header.purchaseAcct.no}} &nbsp; 户名：{{header.purchaseAcct.name}}</p>
+    <p><b>三、交货时间、地点</b></p>
+    <p>1.交货时间：{{deliveryDateCN}}前 &nbsp;&nbsp; 2.交货地点：{{header.deliveryPlace}}</p>
+    <p>运输及费用：由乙方承担。乙方负责陆运送货至指定地点，承担运输风险，包装需符合国家标准。</p>
+    <p><b>四、验收及质保</b></p>
+    <p>1.验收方式：甲方收到货物3日内，完成验收；不合格甲方有权拒收，乙方须3日内更换至合格。</p>
+    <p>2.质量争议由广东省产品质量监督检验研究院检测，责任方承担费用；若乙方货物不合格，需支付合同总价 3% 违约金。</p>
+    <p><b>五、违约责任 / 六、争议解决 / 七、不可抗力 / 八、一式2份</b></p>
+    <p>争议协商不成，任一方可依法向甲方所在地有管辖权的人民法院提起诉讼。</p>
+    <p>甲方（盖章）：{{header.partyB.name}} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 乙方（盖章）：{{supplier}}</p>
+    <p>授权代表（签字）：________________________ &nbsp;&nbsp; 授权代表（签字）：________________________</p>
+    <p>签署日期：______年____月____日 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 签署日期：______年____月____日</p>
+    </div>{{/each}}`;
   return '<p>未知模板</p>';
 }
 function renderOut(){
@@ -1804,23 +1842,80 @@ function xlsSalesContract(d){
   line('簽署日期：______年____月____日');
   return xwsFrom(R,MG,[{wch:14},{wch:30},{wch:14},{wch:12},{wch:14},{wch:14},{wch:14}]);
 }
-/* 国内采购合同：每个一级供应商(归集后签约主体)一页；明细保留二级原工厂 */
-function xlsContract(c,d){
+/* 国内采购合同(仿模板 合同编号：HT1781940-1.docx)：
+   合同编号=销售合同协议号+'-'+(序号+1)；甲方=发货人(采购方,信息随草单 partyB 可改)；乙方=一级供应商(供货方,信息随草单 purchaseB 可改)；
+   一份草单多个一级供应商 → 多份采购合同(每份 -1/-2/-3)；
+   明细与销售合同/INVOICE 同源(产品名称/型号/数量一致)；单价=不含税采购价×1.13(增值税13%)含税；
+   乙方账户/交货时间/交货地点 随草单可改。 */
+function xlsContract(c,d,idx){
   const H=d.header; const R=[]; const MG=[]; let r=0;
-  putCell(R,r,0,'国内采购合同'); addMerge(MG,r,0,6); r++;
-  putCell(R,r,0,'采购方：'+(H.buyer||H.shipper)+'    供货工厂：'+c.supplier); addMerge(MG,r,0,6); r++;
-  putCell(R,r,0,'合同日期：'+d.dates.purchase+'  （早于销售/报关）'); addMerge(MG,r,0,6); r++;
-  ['款号/SKU','品名','HS','数量','不含税单价','供货工厂(原)','采购金额'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  c.items.forEach(l=>{ [l.sku,l.name,l.hs,l.qty,l.cost,l._supers||l.supplier,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
-  putCell(R,r,0,'本厂采购金额合计'); addMerge(MG,r,0,5); putCell(R,r,6,c.amount); r++;
-  return xwsFrom(R,MG,[{wch:16},{wch:28},{wch:14},{wch:10},{wch:14},{wch:22},{wch:14}]);
+  const B=H.partyB||{}, PB=H.purchaseB||{}, PA=H.purchaseAcct||{};
+  const bName=B.name||H.shipper||'';
+  const supName=c.supplier||'';
+  const no=(H.no||'')+'-'+((idx||0)+1);
+  const C=8;
+  const line=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
+  line('采购合同');
+  line('合同编号：'+no);
+  line('甲方：'+bName);
+  line('住所/注册地址：'+(B.addr||''));
+  line('乙方：'+supName);
+  line('住所/注册地址：'+(PB.addr||'')+'    聯絡人：'+(PB.contact||'')+'    郵箱：'+(PB.email||''));
+  line('');
+  line('甲方因出口业务需求，向乙方采购商品，双方依据《中华人民共和国民法典》，遵循平等自愿原则，签订本合同，以资共同信守。');
+  line('一、合同标的，名称、数量、价格');
+  line('1.以下为含税交货价：详见下表');
+  line('2.交易币种：'+(H.currency||'人民币（CNY）'));
+  ['序号','产品名称','型号','材质标准','单位','数量','含税单价','含税总价'].forEach((h,i)=>putCell(R,r,i,h)); r++;
+  c.items.forEach((l,i)=>{
+    const tp=Math.round((+l.cost||0)*1.13*100)/100;
+    [i+1,l.name,l.style||l.sku,l.mat||'',l.unit||'个',l.qty,tp.toFixed(2),(tp*(+l.qty||0)).toFixed(2)].forEach((v,j)=>putCell(R,r,j,v)); r++;
+  });
+  const total=c.items.reduce((a,l)=>a+(+l.cost||0)*1.13*(+l.qty||0),0);
+  putCell(R,r,0,'合计'); addMerge(MG,r,0,6); putCell(R,r,7,total.toFixed(2)); r++;
+  line('3.本合同价格为指定地点含税交货价，增值税税率 13%，价格已涵盖包装费、运输费。未经双方书面补充约定，甲方对合同外的任何额外费用均有权拒绝支付。');
+  line('4.标准：乙方交付的货物须符合国家相关产品质量标准（如包包/皮具：QB/T 1333-2018）、行业规范，同时严格匹配本合同约定的规格、款式、材质及甲方确认的样品标准，两者不一致时，按更严格标准执行。');
+  line('');
+  line('二、付款时间与方式');
+  line('1.甲方自验收合格10日内通知乙方开具合规增值税专用发票。');
+  line('2.付款时间：甲方收到合规发票后15个工作日内付全款。');
+  line('3.乙方账户信息：');
+  line('开户行：'+(PA.bank||''));
+  line('账号：'+(PA.no||''));
+  line('户名：'+(PA.name||''));
+  line('乙方账户信息应与合同及所开发票信息相一致。若因乙方原因导致合同、发票等信息有误，付款时间做相应顺延，甲方不承担任何责任。');
+  line('');
+  line('三、交货时间、地点');
+  line('1.交货时间：'+(fmtDateCN(H.deliveryDate)||'____')+'前');
+  line('2.交货地点：'+(H.deliveryPlace||''));
+  line('运输及费用：由乙方承担。乙方负责陆运送货至指定地点，承担运输风险，包装需符合国家标准。');
+  line('');
+  line('四、验收及质保');
+  line('1.验收方式：甲方收到货物3日内，完成验收；不合格甲方有权拒收，乙方须3日内更换至合格，逾期按违约处理。');
+  line('2.质量争议由广东省产品质量监督检验研究院检测，责任方承担费用；若乙方货物不合格，需支付合同总价 3% 违约金，不足弥补损失的另行补足。');
+  line('');
+  line('五、违约责任');
+  line('任何一方违反本合同约定，应承担违约责任并赔偿由此给对方造成的直接经济损失。');
+  line('');
+  line('六、争议解决');
+  line('本合同在履行过程中发生的争议，由双方当事人协商解决；协商不成的，任一方可依法向甲方所在地有管辖权的人民法院提起诉讼。');
+  line('');
+  line('七、不可抗力');
+  line('如遇不可抗力因素（包括但不限于恶劣天气、地震、洪水、疫情、政府行为）而使合同不能适当履行的，双方互不追究违约责任，双方可协议解除合同或签订补充协议另行履行合同。');
+  line('');
+  line('八、本合同一式2份，甲方执一份，乙方执一份，经双方盖章后生效。');
+  line('');
+  line('甲方（盖章）：'+bName+'                        乙方（盖章）：'+supName);
+  line('授权代表（签字）：________________________        授权代表（签字）：________________________');
+  line('签署日期：______年____月____日                    签署日期：______年____月____日');
+  return xwsFrom(R,MG,[{wch:8},{wch:28},{wch:14},{wch:14},{wch:8},{wch:10},{wch:12},{wch:12}]);
 }
 function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
 /* 单工作簿：含整套单据（国内采购合同→每个供应商一页） */
 function xlsWorkbookForDoc(doc){
   const d=buildData(doc); const wb=XLSX.utils.book_new(); let added=false;
   doc.out.forEach(o=>{
-    if(o.type==='国内采购合同'){ d.contracts.forEach(c=>{ XLSX.utils.book_append_sheet(wb,xlsContract(c,d),sheetName('采购合同_'+c.supplier)); added=true; }); }
+    if(o.type==='国内采购合同'){ d.contracts.forEach((c,idx)=>{ XLSX.utils.book_append_sheet(wb,xlsContract(c,d,idx),sheetName('采购合同_'+c.supplier)); added=true; }); }
     else { const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; } }
   });
   return added?wb:null;
@@ -1837,7 +1932,7 @@ function downloadDocXlsx(docI,idx){
     try{
       const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
       const wb=XLSX.utils.book_new();
-      if(o.type==='国内采购合同'){ d.contracts.forEach(c=>XLSX.utils.book_append_sheet(wb,xlsContract(c,d),sheetName('采购合同_'+c.supplier))); }
+      if(o.type==='国内采购合同'){ d.contracts.forEach((c,idx)=>XLSX.utils.book_append_sheet(wb,xlsContract(c,d,idx),sheetName('采购合同_'+c.supplier))); }
       else { XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(o.type)); }
       xlsDownload(o.type==='国内采购合同'?'国内采购合同':o.type,wb);
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
@@ -1947,8 +2042,8 @@ function batchDownloadMergedXlsx(){
         const prefix='set'+(idx+1)+'_';
         doc.out.forEach(function(o){
           if(o.type==='国内采购合同'){
-            d.contracts.forEach(function(c){
-              XLSX.utils.book_append_sheet(wb, xlsContract(c,d), sheetName(prefix+'采购合同_'+c.supplier));
+            d.contracts.forEach(function(c,ci){
+              XLSX.utils.book_append_sheet(wb, xlsContract(c,d,ci), sheetName(prefix+'采购合同_'+c.supplier));
               added=true;
             });
           } else {
