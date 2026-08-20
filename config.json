@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-08-20T22:41:30",
+  "_at": "2026-08-20T22:49:48",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -30,5 +30,8 @@
     "rate": 0.2,
     "exch": 7.1
   },
-  "hsLibOverride": {}
+  "hsLibOverride": {},
+  "tier1Suppliers": [
+    "广州自衍空间科创有限公司"
+  ]
 }
