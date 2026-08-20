@@ -421,7 +421,9 @@ const PL_ALIAS=[
   ['box',   ['纸箱规格','紙箱規格','箱规格','箱規格','纸箱','紙箱','箱型','箱规','箱規','cartonsize','箱子规格','外箱规格','boxsize','外箱尺寸','纸箱尺寸','紙箱尺寸']],
   ['boxCnt',['箱数','箱數','总箱数','總箱數','ctns','ctn','箱件数','箱子总数','箱子總數','boxcount','totalboxes','总箱件数','总件箱数','總件箱數']],
   ['boxNo', ['箱号','箱號','箱序号','箱序號','carton','cartonno','箱子编号','外箱号','外箱號','箱唛号','箱嘜號','ctnno','箱号no.','序号','序號','货箱编号']],
-  ['sku',   ['msku','msk','卖家sku','商家sku','卖方sku','amazonsku','sku','款号','款號','货号','貨號','商品编码','商品編碼','款式编码','款式編碼','style','styleno','物料编码','物料編碼','产品编码','產品編碼','商品编号','商品編號','型号','型號','itemcode','artno','商品条码']],
+  ['sku',   ['sku','款号','款號','货号','貨號','商品编码','商品編碼','款式编码','款式編碼','style','styleno','物料编码','物料編碼','产品编码','產品編碼','商品编号','商品編號','型号','型號','itemcode','artno','商品条码']],
+  /* MSKU(Amazon 商家SKU)独立字段：不抢 sku 列，但 SKU 列为空时兜底取它(混箱清单常见) */
+  ['msku',  ['msku','msk','merchantsku','卖家sku','商家sku','卖方sku','amazonsku']],
   ['asin',  ['asin','amazonasin','亚马逊asin','亞馬遜asin','商品asin']],
   ['fnsku', ['fnsku','fba编号','fba編號','亚马逊fnsku','fba货件sku','货件fnsku']],
   ['qty',   ['数量','數量','件数','件數','双数','雙數','对数','對數','qty','quantity','pcs','pairs','出货数量','出貨數量','发货量','發貨量','已装量','已裝量','已装数量','已裝數量','已发数量','已發數量','商品总数','商品總數','totalunits','units','shippedqty','shippedquantity','shipqty','总数量','總數量']],
@@ -492,6 +494,8 @@ function detectHeadRow(grid){
     let sc=PL_KEYS.filter(function(k){return m[k]>=0;}).length;
     if(m.sku>=0) sc+=3;
     if(m.qty>=0) sc+=1;
+    /* Amazon 混箱清单表头(第1箱..第N箱列)加权：避免被货件头信息行(发货量/总重量等)并列分数抢走 */
+    for(let j=0;j<r.length;j++){ if(/^第\d+箱$/.test(normHead(r[j]))) sc+=2; }
     if(sc>bs){bs=sc;best=i;}
   }
   return best<0?0:best;
@@ -527,12 +531,35 @@ function parseGrid(grid,forceSku,opts){
   const head=(grid[hr]||[]).map(function(c){return String(c==null?'':c).trim();});
   const m=mapColumns(head);
   if(forceSku!=null&&forceSku>=0) m.sku=forceSku;
+  /* Amazon 混箱清单(每箱多款)：识别「第N箱」列 + 尾部箱信息块(Box length/width/height (CM))。
+     尾部块行首标签 + 每箱一列(第2列=第1箱)，用于按箱提取纸箱规格。 */
+  const boxCols=[];
+  head.forEach(function(h,j){ if(/^第\d+箱$/.test(normHead(h))) boxCols.push(j); });
+  let lenRow=null,widRow=null,heiRow=null;
+  if(boxCols.length){
+    for(let i=hr+1;i<grid.length;i++){
+      const r=grid[i]||[];
+      /* 尾部块标签在 SKU 列(E列, 合并单元格 E:H)，需扫整行找 'Box length/width/height' */
+      for(let j=0;j<r.length;j++){
+        const lab=normHead(r[j]||'');
+        if(lab.indexOf('boxlength')===0) lenRow=r;
+        else if(lab.indexOf('boxwidth')===0) widRow=r;
+        else if(lab.indexOf('boxheight')===0) heiRow=r;
+      }
+    }
+  }
   const headKey=normHead(head[m.sku]||'');
   const rows=[];
   for(let i=hr+1;i<grid.length;i++){
     const c=grid[i]||[];
     const g=function(k){const j=m[k];return (j>=0&&c[j]!=null)?String(c[j]).trim():'';};
-    const sku=g('sku').split('@')[0].trim();   /* FBA MSKU 站点后缀(如 1C56-2@us) → 只留 1C56-2 */
+    /* 跳过尾部块/合计行(Amazon 混箱清单的合计与箱信息块，非明细)。
+       标签在 SKU 列(E列)且第1列(序号)为空，需同时检查 c[0] 与 SKU/MSKU 列 */
+    const rowLab=normHead(c[0]||'')+normHead(g('sku')||'')+normHead(g('msku')||'');
+    if(/^(合计|weightofbox|boxlength|boxwidth|boxheight|箱号|箱子名称)/.test(rowLab)) continue;
+    let skuRaw=g('sku');
+    if(!skuRaw&&m.msku>=0) skuRaw=g('msku'); /* SKU 列优先；MSKU 列兜底(Amazon 混箱清单 SKU 列常为空) */
+    const sku=skuRaw?skuRaw.split('@')[0].trim():'';   /* FBA MSKU 站点后缀(如 1C56-2@us) → 只留 1C56-2 */
     if(!sku) continue;
     if(headKey&&normHead(sku)===headKey) continue;   /* 跳过重复表头行 */
     let gw=numv(g('gw'));
@@ -567,6 +594,16 @@ function parseGrid(grid,forceSku,opts){
     /* box 缺失但长/宽/高齐全 → 拼 L*W*H */
     let box=g('box');
     if(!box){const L=numv(g('length')),W=numv(g('width')),H=numv(g('height'));if(L&&W&&H) box=L+'*'+W+'*'+H;}
+    /* Amazon 混箱：该 SKU 落在「第N箱」→ 从尾部箱信息块取该箱长宽高拼 box */
+    if(!box&&boxCols.length&&lenRow&&widRow&&heiRow){
+      for(let bi=0;bi<boxCols.length;bi++){
+        if(numv(c[boxCols[bi]])>0){
+          /* 尾部块箱值列与主表头「第N箱」列索引一致(都在第9列起) */
+          const L=numv(lenRow[boxCols[bi]]),W=numv(widRow[boxCols[bi]]),H=numv(heiRow[boxCols[bi]]);
+          if(L&&W&&H){ box=L+'*'+W+'*'+H; break; }
+        }
+      }
+    }
     rows.push({sku:sku,qty:qty,gw:gw,nw:nw,bw:bw,
       box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:bc||numv(g('boxCnt')),
       asin:g('asin'),fnsku:g('fnsku'),name:g('name'),shop:g('shop'),pallet:g('pallet')||g('palletSize')});
