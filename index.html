@@ -1707,7 +1707,7 @@ function xlsCur(d){
   set(r,7,'申报单位（签章）',9);
   r++;
   const cols=[{wch:7.2},{wch:14.6},{wch:17.6},{wch:18.9},{wch:15.8},{wch:0.6},{wch:12.2},{wch:12.5},{wch:9.4},{wch:13.6},{wch:16.4},{wch:14.3},{wch:11.7},{wch:9.0}];
-  const ws=xwsFrom(R,MG,cols,[1]); /* 第2行(预录入编号行)不加边框，与预览一致 */
+  const ws=xwsFrom(R,MG,cols); /* 全部行都有框(thin 细线 0.75pt,Excel 标准);只有纯标签行未来若要无框再传 noBorder */
   /* 标题：16号、加粗、居中 */
   const t=ws['A1'];
   if(t){t.s=t.s||{};t.s.font={sz:16,bold:true,name:'宋体'};t.s.alignment={vertical:'center',horizontal:'center',wrapText:true};}
