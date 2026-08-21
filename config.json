@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-08-20T15:59:31.264Z",
+  "_at": "2026-08-21T10:37:50",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -14,7 +14,24 @@
       "CNY 人民币",
       "EUR 欧元"
     ],
-    "codes": {}
+    "codes": {
+      "井太兰(东莞)贸易有限公司": {
+        "usci": "91441900MAK6NAER11",
+        "reg": "4419963TC4"
+      }
+    },
+    "profiles": {
+      "井太兰(东莞)贸易有限公司": {
+        "addr": "广东省东莞市厚街镇恒通路6号3栋601室",
+        "contact": "曾麗嫻",
+        "email": "zlx@jtl-trade.com"
+      },
+      "Leading Trade One Limited": {
+        "addr": "FLAT/RM 1911 LEE GARDEN ONE 33 HYSAN AVENUE CAUSEWAY BAY，HONGKONG",
+        "contact": "馬金火",
+        "email": "majinhuo@leading-trade.com"
+      }
+    }
   },
   "buyerParties": [
     "井太兰(东莞)贸易有限公司"
@@ -43,5 +60,45 @@
     "销售合同": null,
     "国内采购合同": null
   },
-  "skuOverride": {}
+  "skuOverride": {},
+  "tier1Profiles": {
+    "广州自衍空间科创有限公司": {
+      "addr": "广州市白云区锦石四路57号1801房",
+      "contact": "",
+      "email": "",
+      "usci": "91440111MAEH87G029"
+    }
+  },
+  "bankAccounts": [
+    {
+      "cur": "CNY 人民币",
+      "pay": "T/T",
+      "account": "",
+      "bank": "招商銀行股份有限公司東莞厚街支行",
+      "name": "井太兰(东莞)贸易有限公司",
+      "no": "769914704010008",
+      "owner": "",
+      "swift": "CMBCCNBS195"
+    },
+    {
+      "cur": "USD 美元",
+      "pay": "T/T",
+      "account": "",
+      "bank": "招商銀行股份有限公司東莞厚街支行",
+      "name": "井太兰(东莞)贸易有限公司",
+      "no": "769914704032008",
+      "owner": "",
+      "swift": ""
+    },
+    {
+      "cur": "CNY 人民币",
+      "pay": "T/T",
+      "account": "",
+      "bank": "中国银行广州民营科技园支行",
+      "name": "广州自衍空间科创有限公司",
+      "no": "649680276760",
+      "owner": "广州自衍空间科创有限公司",
+      "swift": ""
+    }
+  ]
 }
