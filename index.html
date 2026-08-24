@@ -1597,8 +1597,29 @@ function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];cons
   if(o.type==='国内采购合同'){data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});dl('采购合同_'+c.supplier,one);});return;}
   dl(o.type,safeRender(o.type,data));}
 function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
-function dl(name,html){const blob=new Blob(['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+name+'</title></head><body>'+html+'</body></html>'],{type:'text/html;charset=utf-8'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name+'.html';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500);}
+/* 通用下载：Chrome 127+ 对 URL.createObjectURL 的 Blob 同步下载会弹"需下载权限"。
+   统一走 DataURL(FileReader)绕过。注：DataURL 不受 URL 长度限制影响（实际可到 50MB+）。 */
+function _dl(blob,fname){
+  try{
+    const fr=new FileReader();
+    fr.onload=function(){
+      const a=document.createElement('a');
+      a.href=fr.result; a.download=fname;
+      a.style.display='none'; document.body.appendChild(a);
+      a.click(); document.body.removeChild(a);
+    };
+    fr.readAsDataURL(blob);
+  }catch(e){
+    /* 回退：老式 BlobURL+revoke（保留兜底） */
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=fname;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }
+}
+function dl(name,html){
+  _dl(new Blob(['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+name+'</title></head><body>'+html+'</body></html>'],{type:'text/html;charset=utf-8'}),name+'.html');
+}
 function downloadAll(){const i=DB.sel.doc;const doc=DB.docs[i];doc.out.forEach((o,idx)=>downloadDoc(i,idx));}
 function printAll(){const doc=DB.docs[DB.sel.doc];let all='';doc.out.forEach(o=>{all+=safeRender(o.type,buildData(doc));});
   const w=window.open('');w.document.write('<html lang="zh-CN"><head><meta charset="UTF-8"><title>整套单据</title></head><body>'+all+'</body></html>');w.document.close();setTimeout(()=>w.print(),400);}
@@ -2130,8 +2151,7 @@ function xlsWorkbookForDoc(doc){
 function xlsDownload(name,wb){
   try{
     const buf=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
-    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.xlsx'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    _dl(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),name+'.xlsx');
   }catch(e){ alert('EXCEL 生成失败：'+e.message); console.error(e); }
 }
 function downloadDocXlsx(docI,idx){
@@ -2156,10 +2176,7 @@ function docFromHtml(html,name){
     +'table{border-collapse:collapse;width:100%;margin:8px 0}'
     +'table,th,td{border:1px solid #000}th,td{padding:4px 8px;font-size:10.5pt}'
     +'@page{size:A4;margin:2cm 1.6cm}</style></head><body>'+html+'</body></html>';
-  try{
-    const blob=new Blob(['\ufeff'+shell],{type:'application/msword'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.doc'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-  }catch(e){ alert('Word 生成失败：'+e.message); console.error(e); }
+  _dl(new Blob(['\ufeff'+shell],{type:'application/msword'}),name+'.doc');
 }
 function downloadDocWord(docI,idx){
   try{
@@ -2180,8 +2197,8 @@ function downloadAllXlsx(){
       const doc=DB.docs[DB.sel.doc]; const wb=xlsWorkbookForDoc(doc);
       if(!wb){alert('暂无可导出的单据');return;}
       const wbout=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
-      const blob=new Blob([wbout],{type:'application/octet-stream'});
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='整套出口单证_多Sheet工作簿.xlsx'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+      _dl(new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),
+          '整套出口单证_多Sheet工作簿.xlsx');
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
 }
@@ -2434,10 +2451,8 @@ function addPref(){const el=document.getElementById('newPrefCode');const v=docum
 function updPrefCode(oldC,newC){const v=String(newC||'').trim().toUpperCase();if(!v){alert('代码不能为空');renderSetBody();return;}if(v!==oldC){if(DB.prefOverride&&DB.prefOverride[oldC]!==undefined){DB.prefOverride[v]=DB.prefOverride[oldC];delete DB.prefOverride[oldC];}else if(COUNTRY_PREF[oldC]!==undefined){DB.prefOverride[v]=COUNTRY_PREF[oldC];}if(DB.prefHidden&&DB.prefHidden.indexOf(oldC)>=0){DB.prefHidden.splice(DB.prefHidden.indexOf(oldC),1);DB.prefHidden.push(v);}}save();}
 function expParty(){
   const data={shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,codes:DB.parties.codes||{},_v:'exp3-party-v1',_exported:new Date().toISOString()};
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-  a.download='出口单证_主体信息_'+new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')+'.json';
-  a.click();URL.revokeObjectURL(a.href);
+  _dl(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),
+      '出口单证_主体信息_'+new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')+'.json');
 }
 /* 组装共享配置对象(导出与发布共用) */
 function buildSharedConfig(){
@@ -2451,10 +2466,7 @@ function buildSharedConfig(){
 /* 导出共享配置(软件级全员共享那份)：维护人导出后交 WorkBuddy 推 GitHub config.json，其他人打开自动拉取 */
 function expSharedConfig(){
   const data=buildSharedConfig();
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-  a.download='export-doc-v3_config.json';
-  a.click();URL.revokeObjectURL(a.href);
+  _dl(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'export-doc-v3_config.json');
 }
 /* GitHub 发布凭证(受限PAT，仅本仓库 contents 写)：保存到本浏览器 */
 function saveGhTokenVal(v){const t=(v==null?'':String(v)).trim();if(t)localStorage.setItem('v3.ghToken',t);else localStorage.removeItem('v3.ghToken');alert(t?'✅ 已保存发布凭证(仅存本浏览器)':'已清除发布凭证');updCloudBadge();}
