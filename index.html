@@ -270,6 +270,8 @@
 <script src="sku_bulk.js"></script>
 <!-- 纸箱规格表（BOX_SPECS：SKU→纸箱重量weight/长宽高；净重兜底数据源。不存在则仅走源文件+固定值） -->
 <script src="box_specs.js?v=20260809_1210"></script>
+<!-- 通用 zip 打包库（WPS/Windows/Python 全兼容，替换旧手写 buildZip 以修复 WPS 报"压缩文件已损坏"） -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 /* ============== 持久化数据层 ============== */
 const LS_KEY='exp3_data_v1';
@@ -721,6 +723,20 @@ function ensureXLSX(cb){
   tryLoad('xlsx.full.min.js',cb,function(){
     tryLoad('https://cdn.jsdelivr.net/npm/xlsx-js-style/dist/xlsx.bundle.js',cb,function(){
       alert('xlsx 库加载失败（本地与 CDN 均不可用）。EXCEL 导入/导出暂不可用，请确认 xlsx.full.min.js 与本文件同目录。');
+    });
+  });
+}
+function ensureJSZip(cb){
+  if(window.JSZip){cb();return;}
+  const tryLoad=function(src,onok,onfail){
+    const s=document.createElement('script');
+    s.src=src; s.onload=onok;
+    s.onerror=function(){document.head.removeChild(s);onfail&&onfail();};
+    document.head.appendChild(s);
+  };
+  tryLoad('jszip.min.js',cb,function(){
+    tryLoad('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',cb,function(){
+      alert('JSZip 库加载失败（本地与 CDN 均不可用）。整套打包(zip)暂不可用，请确认 jszip.min.js 与本文件同目录。');
     });
   });
 }
@@ -1872,73 +1888,68 @@ function xlsSalesContract(d){
   const list=own.filter(a=>String(a.cur||'').toUpperCase().indexOf(cur)>=0);
   const accs=list.length?list:own;
   const bk=acctFor(H.currency)||{};
-  const C=7;
-  const line=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
-  line('合   同');
-  line('合約編號：'+(H.no||'')+'    簽訂地點：'+(H.signPlace||'【東莞】')+'    簽訂日期：'+(fmtDateCN(H.signDate)||'____'));
-  line('');
-  line('第一條 合約當事人');
-  line('甲方（買方）：');
-  line('1. 公司全稱：'+(aName));
-  line('2. 公司地址：'+(A.addr||''));
-  line('3. 聯絡人：'+(A.contact||'')+'    4. 郵箱：'+(A.email||''));
-  line('乙方（賣方）：');
-  line('1. 公司全稱：'+(bName));
-  line('2. 公司地址：'+(B.addr||''));
-  line('3. 聯絡人：'+(B.contact||'')+'    4. 郵箱：'+(B.email||''));
-  line('');
-  line('第二條 合約標的及價格');
-  line('標的貨物：全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。');
-  line('2、合約價格：');
-  line('2.1. 成交價格：'+(H.tradeTerm||'FOB'));
-  line('2.2 合約貨幣：'+(H.currency||''));
-  ['Mark & No','Description','Model','Quantity','Unit price','Amount','金額小計'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  d.lines.forEach(l=>{ ['N/M',fan(l.name),l.style||l.sku,l.qty,l.decl,l.amount,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
-  putCell(R,r,0,'合計'); addMerge(MG,r,0,5); putCell(R,r,6,d.totalAmount); r++;
-  line('');
-  line('第三條 物流及運輸');
-  line('1. 運輸方式：☑ '+(tr||''));
-  line('2. 物流資訊：');
-  line('2.1 最終目的港/收貨地：'+(H.destCountry||''));
-  line('2.2 交貨時間：'+(fmtDateCN(H.deliveryDate)||'____')+'前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。');
-  line('3. 運輸風險轉移');
-  line('按'+(H.tradeTerm||'FOB')+'價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。');
-  line('4. 運輸保險');
-  line('由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。');
-  line('');
-  line('第四條 履約期限及方式');
-  line('一、固定履約期限（均為工作日）');
-  line('1. 貨款：收到提單後7天內付全款。');
-  line('二、固定履約方式');
-  line('1. 付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶，否則視為未付款。');
-  line('銀行資訊：');
-  if(accs.length){ accs.forEach(a=>{ line((a.cur||'')+'賬戶：'); line('開戶行：'+(a.bank||'')+'    戶名：'+(a.name||'')+'    賬號：'+(a.no||'')); }); }
-  else { line('人民幣賬戶：'); line('開戶行：'+(bk.bank||'')+'    戶名：'+(bk.name||'')+'    賬號：'+(bk.no||'')); }
-  line('');
-  line('第五條 質量標準及爭議解決');
-  line('1. 質量判定：以雙方簽字蓋章封樣樣品為準。');
-  line('2. 質量異議：買方發現質量問題，需在【3】個工作日內以合同約定通知方式提出，並附第三方檢測報告，否則視為貨物無質量問題。');
-  line('3. 違約責任：① 輕微問題（不合格率≤0.5%）：賣方【15】個工作日內免費補貨並承擔物流費；② 批次問題（不合格率＞0.5%）：賣方【15】個工作日內更換不合格產品並承擔往返費用。');
-  line('');
-  line('第六條 合同生效與終止');
-  line('1. 生效：雙方加蓋公司公章後生效。');
-  line('2. 終止：雙方履行完本合同全部權利義務（含貨物質保期）後自動終止。');
-  line('');
-  line('第七條 其他約定');
-  line('1. 本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。');
-  line('2. 因履行本合同產生的任何爭議，雙方友好協商解決；協商不成的，提交香港國際仲裁中心（HKIAC），仲裁裁決為終局裁決，對雙方均具有約束力。');
-  line('');
-  line('第八條 合同落款');
-  line('甲方（買方）：'+aName);
-  line('公司公章：________________________');
-  line('法定/授權代表簽字：________________________');
-  line('簽署日期：______年____月____日');
-  line('');
-  line('乙方（賣方）：'+bName);
-  line('公司公章：________________________');
-  line('法定/授權代表簽字：________________________');
-  line('簽署日期：______年____月____日');
-  return xwsFrom(R,MG,[{wch:14},{wch:30},{wch:14},{wch:12},{wch:14},{wch:14},{wch:14}]);
+  const C=8;
+  /* 整行（横跨 A-H） */
+  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
+  /* 两栏：左 A-D(甲方)，右 E-H(乙方) */
+  const two=(lt,rt)=>{ putCell(R,r,0,lt); addMerge(MG,r,0,3); putCell(R,r,4,rt); addMerge(MG,r,4,7); r++; };
+  const lhead=t=>{ putCell(R,r,0,t); addMerge(MG,r,0,3); r++; };
+  const rhead=t=>{ putCell(R,r,4,t); addMerge(MG,r,4,7); r++; };
+  const lrow=t=>{ putCell(R,r,0,t); addMerge(MG,r,0,3); r++; };
+  const rrow=t=>{ putCell(R,r,4,t); addMerge(MG,r,4,7); r++; };
+  row('合   同');
+  row('合約編號：'+(H.no||'')+'    簽訂地點：'+(H.signPlace||'【東莞】')+'    簽訂日期：'+(fmtDateCN(H.signDate)||'____'));
+  row('');
+  row('第一條 合約當事人');
+  two('甲方（買方）','乙方（賣方）');
+  lrow('1. 公司全稱：'+aName);        rrow('1. 公司全稱：'+bName);
+  lrow('2. 公司地址：'+(A.addr||'')); rrow('2. 公司地址：'+(B.addr||''));
+  lrow('3. 聯絡人：'+(A.contact||''));rrow('3. 聯絡人：'+(B.contact||''));
+  lrow('4. 郵箱：'+(A.email||''));    rrow('4. 郵箱：'+(B.email||''));
+  row('');
+  row('第二條 合約標的及價格');
+  lhead('標的貨物：'); rhead('合約價格：');
+  lrow('全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。');
+  rrow('2.1. 成交價格：'+(H.tradeTerm||'FOB'));
+  rrow('2.2 合約貨幣：'+(H.currency||''));
+  row('');
+  ['Mark & No','Description','Model','Quantity','Unit price','Amount','金額小計','備註'].forEach((h,i)=>putCell(R,r,i,h)); r++;
+  d.lines.forEach(l=>{ ['N/M',fan(l.name),l.style||l.sku,l.qty,l.decl,l.amount,l.amount,''].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  putCell(R,r,0,'合計'); addMerge(MG,r,0,6); putCell(R,r,7,d.totalAmount); r++;
+  row('');
+  row('第三條 物流及運輸');
+  two('1. 運輸方式：☑ '+(tr||''),'3. 運輸風險轉移');
+  lrow(''); rrow('按'+(H.tradeTerm||'FOB')+'價格術語約約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。');
+  lhead('2. 物流資訊：'); rhead('4. 運輸保險：');
+  lrow('2.1 最終目的港/收貨地：'+(H.destCountry||''));
+  lrow('2.2 交貨時間：'+(fmtDateCN(H.deliveryDate)||'____')+'前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。');
+  rrow('由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。');
+  row('');
+  row('第四條 履約期限及方式');
+  lhead('一、固定履約期限（均為工作日）'); rhead('二、固定履約方式');
+  lrow('1. 貨款：收到提單後7天內付全款。');   rrow('1. 付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶，否則視為未付款。');
+  rhead('銀行資訊：');
+  if(accs.length){ accs.forEach(a=>{ rrow((a.cur||'')+'賬戶：開戶行：'+(a.bank||'')+'  戶名：'+(a.name||'')+'  賬號：'+(a.no||'')); }); }
+  else { rrow('人民幣賬戶：開戶行：'+(bk.bank||'')+'  戶名：'+(bk.name||'')+'  賬號：'+(bk.no||'')); }
+  row('');
+  row('第五條 質量標準及爭議解決');
+  lhead('1. 質量判定：'); rhead('3. 違約責任：');
+  lrow('以雙方簽字蓋章封樣樣品為準。');
+  lrow('2. 質量異議：買方發現質量問題，需在【3】個工作日內以合同約定通知方式提出，並附第三方檢測報告，否則視為貨物無質量問題。');
+  rrow('① 輕微問題（不合格率≤0.5%）：賣方【15】個工作日內免費補貨並承擔物流費；② 批次問題（不合格率＞0.5%）：賣方【15】個工作日內更換不合格產品並承擔往返費用。');
+  row('');
+  row('第六條 合同生效與終止');
+  two('1. 生效：雙方加蓋公司公章後生效。','2. 終止：雙方履行完本合同全部權利義務（含貨物質保期）後自動終止。');
+  row('');
+  row('第七條 其他約定');
+  two('1. 本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。','2. 因履行本合同產生的任何爭議，雙方友好協商解決；協商不成的，提交香港國際仲裁中心（HKIAC），仲裁裁決為終局裁決，對雙方均具有約束力。');
+  row('');
+  row('第八條 合同落款');
+  two('甲方（買方）：'+aName,'乙方（賣方）：'+bName);
+  two('公司公章：________________________','公司公章：________________________');
+  two('法定/授權代表簽字：________________________','法定/授權代表簽字：________________________');
+  two('簽署日期：______年____月____日','簽署日期：______年____月____日');
+  return xwsFrom(R,MG,[{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:14},{wch:14},{wch:12}]);
 }
 /* 国内采购合同(仿模板 合同编号：HT1781940-1.docx)：
    合同编号=销售合同协议号+'-'+(序号+1)；甲方=发货人(采购方,档案自动引用)；乙方=一级供应商(供货方,档案 tier1Profiles 自动引用)；
@@ -1954,18 +1965,22 @@ function xlsContract(c,d,idx){
   const bName=B.name||H.shipper||'';
   const no=(H.no||'')+'-'+((idx||0)+1);
   const C=8;
-  const line=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
-  line('采购合同');
-  line('合同编号：'+no);
-  line('甲方：'+bName);
-  line('住所/注册地址：'+(B.addr||''));
-  line('乙方：'+supName);
-  line('住所/注册地址：'+(PB.addr||'')+'    聯絡人：'+(PB.contact||'')+'    郵箱：'+(PB.email||''));
-  line('');
-  line('甲方因出口业务需求，向乙方采购商品，双方依据《中华人民共和国民法典》，遵循平等自愿原则，签订本合同，以资共同信守。');
-  line('一、合同标的，名称、数量、价格');
-  line('1.以下为含税交货价：详见下表');
-  line('2.交易币种：'+(H.currency||'人民币（CNY）'));
+  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
+  const two=(lt,rt)=>{ putCell(R,r,0,lt); addMerge(MG,r,0,3); putCell(R,r,4,rt); addMerge(MG,r,4,7); r++; };
+  const lhead=t=>{ putCell(R,r,0,t); addMerge(MG,r,0,3); r++; };
+  const rhead=t=>{ putCell(R,r,4,t); addMerge(MG,r,4,7); r++; };
+  const lrow=t=>{ putCell(R,r,0,t); addMerge(MG,r,0,3); r++; };
+  const rrow=t=>{ putCell(R,r,4,t); addMerge(MG,r,4,7); r++; };
+  row('采购合同');
+  row('合同编号：'+no);
+  row('');
+  two('甲方（采购方）：'+bName,'乙方（供货方）：'+supName);
+  lrow('住所/注册地址：'+(B.addr||'')); rrow('住所/注册地址：'+(PB.addr||''));
+  rrow('聯絡人：'+(PB.contact||'')+'    郵箱：'+(PB.email||''));
+  row('');
+  row('甲方因出口业务需求，向乙方采购商品，双方依据《中华人民共和国民法典》，遵循平等自愿原则，签订本合同，以资共同信守。');
+  row('一、合同标的，名称、数量、价格');
+  lhead('1.以下为含税交货价：详见下表'); rhead('2.交易币种：'+(H.currency||'人民币（CNY）'));
   ['序号','产品名称','型号','材质标准','单位','数量','含税单价','含税总价'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   c.items.forEach((l,i)=>{
     const tp=Math.round((+l.cost||0)*1.13*100)/100;
@@ -1973,42 +1988,39 @@ function xlsContract(c,d,idx){
   });
   const total=c.items.reduce((a,l)=>a+(+l.cost||0)*1.13*(+l.qty||0),0);
   putCell(R,r,0,'合计'); addMerge(MG,r,0,6); putCell(R,r,7,total.toFixed(2)); r++;
-  line('3.本合同价格为指定地点含税交货价，增值税税率 13%，价格已涵盖包装费、运输费。未经双方书面补充约定，甲方对合同外的任何额外费用均有权拒绝支付。');
-  line('4.标准：乙方交付的货物须符合国家相关产品质量标准（如包包/皮具：QB/T 1333-2018）、行业规范，同时严格匹配本合同约定的规格、款式、材质及甲方确认的样品标准，两者不一致时，按更严格标准执行。');
-  line('');
-  line('二、付款时间与方式');
-  line('1.甲方自验收合格10日内通知乙方开具合规增值税专用发票。');
-  line('2.付款时间：甲方收到合规发票后15个工作日内付全款。');
-  line('3.乙方账户信息：');
-  line('开户行：'+(PA.bank||''));
-  line('账号：'+(PA.no||''));
-  line('户名：'+(PA.name||''));
-  line('乙方账户信息应与合同及所开发票信息相一致。若因乙方原因导致合同、发票等信息有误，付款时间做相应顺延，甲方不承担任何责任。');
-  line('');
-  line('三、交货时间、地点');
-  line('1.交货时间：'+(fmtDateCN(H.deliveryDate)||'____')+'前');
-  line('2.交货地点：'+(H.deliveryPlace||''));
-  line('运输及费用：由乙方承担。乙方负责陆运送货至指定地点，承担运输风险，包装需符合国家标准。');
-  line('');
-  line('四、验收及质保');
-  line('1.验收方式：甲方收到货物3日内，完成验收；不合格甲方有权拒收，乙方须3日内更换至合格，逾期按违约处理。');
-  line('2.质量争议由广东省产品质量监督检验研究院检测，责任方承担费用；若乙方货物不合格，需支付合同总价 3% 违约金，不足弥补损失的另行补足。');
-  line('');
-  line('五、违约责任');
-  line('任何一方违反本合同约定，应承担违约责任并赔偿由此给对方造成的直接经济损失。');
-  line('');
-  line('六、争议解决');
-  line('本合同在履行过程中发生的争议，由双方当事人协商解决；协商不成的，任一方可依法向甲方所在地有管辖权的人民法院提起诉讼。');
-  line('');
-  line('七、不可抗力');
-  line('如遇不可抗力因素（包括但不限于恶劣天气、地震、洪水、疫情、政府行为）而使合同不能适当履行的，双方互不追究违约责任，双方可协议解除合同或签订补充协议另行履行合同。');
-  line('');
-  line('八、本合同一式2份，甲方执一份，乙方执一份，经双方盖章后生效。');
-  line('');
-  line('甲方（盖章）：'+bName+'                        乙方（盖章）：'+supName);
-  line('授权代表（签字）：________________________        授权代表（签字）：________________________');
-  line('签署日期：______年____月____日                    签署日期：______年____月____日');
-  return xwsFrom(R,MG,[{wch:8},{wch:28},{wch:14},{wch:14},{wch:8},{wch:10},{wch:12},{wch:12}]);
+  lrow('3.本合同价格为指定地点含税交货价，增值税税率 13%，价格已涵盖包装费、运输费。未经双方书面补充约定，甲方对合同外的任何额外费用均有权拒绝支付。');
+  rrow('4.标准：乙方交付的货物须符合国家相关产品质量标准（如包包/皮具：QB/T 1333-2018）、行业规范，同时严格匹配本合同约定的规格、款式、材质及甲方确认的样品标准，两者不一致时，按更严格标准执行。');
+  row('');
+  row('二、付款时间与方式');
+  lhead('1.甲方自验收合格10日内通知乙方开具合规增值税专用发票。'); rhead('2.付款时间：甲方收到合规发票后15个工作日内付全款。');
+  rhead('3.乙方账户信息：');
+  rrow('开户行：'+(PA.bank||''));
+  rrow('账号：'+(PA.no||''));
+  rrow('户名：'+(PA.name||''));
+  rrow('乙方账户信息应与合同及所开发票信息相一致。若因乙方原因导致合同、发票等信息有误，付款时间做相应顺延，甲方不承担任何责任。');
+  row('');
+  row('三、交货时间、地点');
+  two('1.交货时间：'+(fmtDateCN(H.deliveryDate)||'____')+'前','2.交货地点：'+(H.deliveryPlace||''));
+  lrow('运输及费用：由乙方承担。乙方负责陆运送货至指定地点，承担运输风险，包装需符合国家标准。');
+  row('');
+  row('四、验收及质保');
+  two('1.验收方式：甲方收到货物3日内，完成验收；不合格甲方有权拒收，乙方须3日内更换至合格，逾期按违约处理。','2.质量争议由广东省产品质量监督检验研究院检测，责任方承担费用；若乙方货物不合格，需支付合同总价 3% 违约金，不足弥补损失的另行补足。');
+  row('');
+  row('五、违约责任');
+  row('任何一方违反本合同约定，应承担违约责任并赔偿由此给对方造成的直接经济损失。');
+  row('');
+  row('六、争议解决');
+  row('本合同在履行过程中发生的争议，由双方当事人协商解决；协商不成的，任一方可依法向甲方所在地有管辖权的人民法院提起诉讼。');
+  row('');
+  row('七、不可抗力');
+  row('如遇不可抗力因素（包括但不限于恶劣天气、地震、洪水、疫情、政府行为）而使合同不能适当履行的，双方互不追究违约责任，双方可协议解除合同或签订补充协议另行履行合同。');
+  row('');
+  row('八、本合同一式2份，甲方执一份，乙方执一份，经双方盖章后生效。');
+  row('');
+  two('甲方（盖章）：'+bName,'乙方（盖章）：'+supName);
+  two('授权代表（签字）：________________________','授权代表（签字）：________________________');
+  two('签署日期：______年____月____日','签署日期：______年____月____日');
+  return xwsFrom(R,MG,[{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:14},{wch:14},{wch:14}]);
 }
 function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
 /* 单工作簿：含整套单据（国内采购合同→每个供应商一页） */
@@ -2069,97 +2081,35 @@ function downloadDocWord(docI,idx){
 }
 function downloadAllXlsx(){
   ensureXLSX(function(){
-    try{
-      const doc=DB.docs[DB.sel.doc]; const wb=xlsWorkbookForDoc(doc);
-      if(!wb){alert('暂无可导出的单据');return;}
-      /* 收集所有要打包的文件(Excel 工作簿 + 销售/采购合同 Word) */
-      const files=[];
-      /* 1. 主工作簿 */
-      const wbout=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
-      files.push({name:'整套出口单证.xlsx', data:new Uint8Array(wbout)});
-      /* 2. 销售合同 + 国内采购合同 Word */
-      const d=buildData(doc);
-      let salesHtml=''; let purchHtml='';
-      try{ salesHtml=renderTpl(builtin('销售合同'),d); }catch(e){}
-      if(doc.out.find(o=>o.type==='销售合同')){
-        files.push({name:'销售合同.doc', data:docToBytes(docFromHtmlBytes(salesHtml,'销售合同'))});
-      }
-      if(doc.out.find(o=>o.type==='国内采购合同')){
-        d.contracts.forEach((c,ci)=>{ purchHtml+=(ci?'<br style="page-break-before:always">':'')+renderTpl(builtin('国内采购合同'),Object.assign({},d,{contracts:[c]})); });
-        files.push({name:'国内采购合同.doc', data:docToBytes(docFromHtmlBytes(purchHtml,'国内采购合同'))});
-      }
-      /* 3. 用 JSZip 风格裸实现 zip(无依赖) */
-      const zipBytes=buildZip(files);
-      const blob=new Blob([zipBytes],{type:'application/zip'});
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='整套出口单证_含Word.zip'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
-    }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
+    ensureJSZip(function(){
+      try{
+        const doc=DB.docs[DB.sel.doc]; const wb=xlsWorkbookForDoc(doc);
+        if(!wb){alert('暂无可导出的单据');return;}
+        const zip=new JSZip();
+        /* 1. 主工作簿 */
+        const wbout=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
+        zip.file('整套出口单证.xlsx', wbout);
+        /* 2. 销售合同 + 国内采购合同 → Excel(甲乙方左右两栏) */
+        const d=buildData(doc);
+        if(doc.out.find(o=>o.type==='销售合同')){
+          const swb=XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(swb, xlsSalesContract(d), sheetName('销售合同'));
+          zip.file('销售合同.xlsx', XLSX.write(swb,{type:'array',bookType:'xlsx',cellStyles:true}));
+        }
+        if(doc.out.find(o=>o.type==='国内采购合同')){
+          d.contracts.forEach((c,ci)=>{
+            const pwb=XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(pwb, xlsContract(c,d,ci), sheetName('采购合同_'+c.supplier));
+            zip.file('国内采购合同_'+(ci+1)+'.xlsx', XLSX.write(pwb,{type:'array',bookType:'xlsx',cellStyles:true}));
+          });
+        }
+        zip.generateAsync({type:'blob', compression:'DEFLATE', compressionOptions:{level:6}}).then(function(blob){
+          const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='整套出口单证_含Word.zip'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+        }).catch(function(err){ alert('ZIP 打包失败：'+err.message); console.error(err); });
+      }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
+    });
   });
 }
-/* ========== 最小 zip 打包(无依赖) ========== */
-function docToBytes(str){ const enc=new TextEncoder(); return enc.encode(str); }
-function buildZip(files){
-  const enc=new TextEncoder();
-  const localParts=[]; const centralParts=[]; let offset=0;
-  files.forEach(f=>{
-    const nameBytes=enc.encode(f.name);
-    const crc=crc32(f.data);
-    const size=f.data.length;
-    const local=new Uint8Array(30+nameBytes.length+size);
-    const dv=new DataView(local.buffer);
-    dv.setUint32(0,0x04034b50,true); local[4]=20; local[5]=0;
-    dv.setUint16(6,0x0800,true); dv.setUint16(8,0,true); dv.setUint16(10,0,true); /* local flag=0x0800 UTF-8 文件名 */
-    dv.setUint16(12,0,true); dv.setUint16(14,0,true);
-    dv.setUint32(16,crc,true); dv.setUint32(20,size,true); dv.setUint32(24,size,true);
-    dv.setUint16(26,nameBytes.length,true); dv.setUint16(28,0,true);
-    local.set(nameBytes,30);
-    local.set(f.data,30+nameBytes.length);
-    localParts.push(local);
-
-    const c=new Uint8Array(46+nameBytes.length);
-    const cdv=new DataView(c.buffer);
-    cdv.setUint32(0,0x02014b50,true); cdv.setUint16(4,20,true); cdv.setUint16(6,20,true);
-    cdv.setUint16(8,0x0800,true); cdv.setUint16(10,0,true); /* flag=0x0800 UTF-8 文件名 */
-    cdv.setUint16(12,0,true); cdv.setUint16(14,0,true);
-    cdv.setUint32(16,crc,true); cdv.setUint32(20,size,true); cdv.setUint32(24,size,true);
-    cdv.setUint16(28,nameBytes.length,true); cdv.setUint16(30,0,true); cdv.setUint16(32,0,true);
-    cdv.setUint16(34,0,true); cdv.setUint16(36,0,true); cdv.setUint32(38,0,true);
-    cdv.setUint32(42,offset,true);
-    c.set(nameBytes,46);
-    centralParts.push(c);
-    offset+=local.length;
-  });
-  const centralSize=centralParts.reduce((a,b)=>a+b.length,0);
-  const end=new Uint8Array(22);
-  const edv=new DataView(end.buffer);
-  edv.setUint32(0,0x06054b50,true);
-  edv.setUint16(4,0,true); edv.setUint16(6,0,true);
-  edv.setUint16(8,files.length,true); edv.setUint16(10,files.length,true);
-  edv.setUint32(12,centralSize,true); edv.setUint32(16,offset,true); edv.setUint16(20,0,true);
-  /* 拼装 */
-  const total=localParts.reduce((a,b)=>a+b.length,0)+centralSize+22;
-  const out=new Uint8Array(total);
-  let p=0;
-  localParts.forEach(b=>{ out.set(b,p); p+=b.length; });
-  centralParts.forEach(b=>{ out.set(b,p); p+=b.length; });
-  out.set(end,p);
-  return out;
-}
-const _crcTable=[];
-for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);_crcTable[i]=c>>>0;}
-function crc32(bytes){let c=0xFFFFFFFF;for(let i=0;i<bytes.length;i++)c=_crcTable[(c^bytes[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
-/* 把 doc shell + html 拼成完整 doc html 字符串(供 buildZip 用字节) */
-function docFromHtmlBytes(html,name){
-  return '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
-    +'<head><meta charset="utf-8"><title>'+name+'</title>'
-    +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->'
-    +'<style>body{font-family:宋体,SimSun;font-size:12pt;line-height:1.9;color:#000;margin:24px}'
-    +'h1,h2,h3,h4{font-family:黑体,SimHei;margin:10px 0 6px}'
-    +'p{margin:4px 0}'
-    +'table{border-collapse:collapse;width:100%;margin:8px 0}'
-    +'table,th,td{border:1px solid #000}th,td{padding:4px 8px;font-size:10.5pt}'
-    +'@page{size:A4;margin:2cm 1.6cm}</style></head><body>'+html+'</body></html>';
-}
-
 /* ============== 多整套单据选择/浏览/批量下载 ============== */
 function getSelDocs(){
   if(!DB.sel.docsSet || !Array.isArray(DB.sel.docsSet)) DB.sel.docsSet=DB.docs.map((_,i)=>i);
