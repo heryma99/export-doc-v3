@@ -1566,7 +1566,9 @@ function xwsStyle(ws,st){
       cell.s=cell.s||{};
       if(!noR.has(r)){
         const inMerge=merges.some(mg=>r>=mg.s.r&&r<=mg.e.r&&c>=mg.s.c&&c<=mg.e.c&&!(r===mg.s.r&&c===mg.s.c));
-        cell.s.border=(lrR.has(r)||inMerge)?{left:'thin',right:'thin'}:{top:'thin',bottom:'thin',left:'thin',right:'thin'};
+        /* SheetJS 坑: 顶层字符串 border 会错映射成 medium, 必须用 {style:'thin'} 对象形式 */
+        const _th={style:'thin'};
+        cell.s.border=(lrR.has(r)||inMerge)?{left:_th,right:_th}:{top:_th,bottom:_th,left:_th,right:_th};
       }
       cell.s.alignment=cell.s.alignment||{wrapText:true,vertical:'center',horizontal:'left'};
       cell.s.font={sz:9,name:'宋体'};
