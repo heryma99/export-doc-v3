@@ -359,7 +359,21 @@ function consolidatedSupplier(s){
   const t=DB.supplierMap[v];
   return t?String(t).trim()||v:v;
 }
+/* 同箱多行重量去重归一：供应商混箱清单「每行=某箱某款」，同一箱号的多行重复填整箱重(gw/nw)。
+   若不处理，下游 M0/M5 求和会把整箱重重复累加 N 次（虚高 N 倍）。这里按 boxNo 去重，
+   仅首行保留整箱重，同箱后续行重量归 0，保证装箱清单明细合计=整箱重之和=报关总重。 */
+function dedupeBoxWeight(lines){
+  const seenW=Object.create(null);
+  return lines.map(x=>{
+    const r=Object.assign({},x);
+    const bn=String(r.boxNo||'').trim();
+    if(bn && seenW[bn]){ r.gw=0; r.nw=0; }   // 同箱重复行：重量归零，仅首行计整箱重
+    else { if(bn) seenW[bn]=1; }
+    return r;
+  });
+}
 function mergeLines(lines,mode,sup){
+  lines=dedupeBoxWeight(lines);   // 重量去重（M0/M5 共用，防同箱重复整箱重虚高）
   if(mode==='M0'||!lines.length) return lines.map(x=>{const r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); return r;});
   const m=MODES.find(x=>x.id===mode)||MODES[0];
   // 降级保护：M4/M5 的"款式"维度依赖真SPU；取不到(显式列无值且SKU无法推导)时退化为按SKU分行
