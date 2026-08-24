@@ -656,7 +656,7 @@ function parseGrid(grid,forceSku,opts){
     if(!bw) bw=1.3;
     /* FBA 数量推导：无「数量」列但有 每箱件数×箱子总数 */
     let qty=numv(g('qty'));
-    const qpb=numv(g('qtyPerBox')), bc=numv(g('boxCnt'))||1;
+    const qpb=numv(g('qtyPerBox')), bc=numv(g('boxCnt')); /* boxCnt 不兜底1：无列时保持0，后续 boxCntOf 会回退 boxNo 范围解析，避免"兜底1"抢占箱号口径 */
     if(!qty&&qpb&&bc) qty=qpb*bc;
     /* 「箱子毛重/单箱毛重」列是单箱值 → 乘箱数得该行总毛重 */
     const gwHead=head[m.gw]||'';
@@ -689,7 +689,7 @@ function parseGrid(grid,forceSku,opts){
       }
     }
     rows.push({sku:sku,qty:qty,gw:gw,nw:nw,bw:bw,
-      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:bc||numv(g('boxCnt')),
+      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:bc,
       asin:g('asin'),fnsku:g('fnsku'),name:g('name'),shop:g('shop'),pallet:g('pallet')||g('palletSize')});
   }
   const missing=[];
@@ -708,20 +708,39 @@ function parseBoxNoCount(s){
 /* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计；箱号带范围时按真实箱数统计 */
 function packSummary(items, opts){
   const seen=Object.create(null), boxes=[]; let gw=0,nw=0,conflict=0;
-  (items||[]).forEach(function(it,i){
-    const k=it.boxNo?('B:'+it.boxNo):('R:'+i);
-    if(seen[k]==null){
-      seen[k]={gw:+it.gw||0,nw:+it.nw||0};
-      const cnt=parseBoxNoCount(it.boxNo);
-      for(let c=0;c<cnt;c++) boxes.push(k);
-      gw+=(+it.gw||0); nw+=(+it.nw||0);
+  /* 箱数权威口径（新版，修复"逐箱行重复填总箱数被放大/无箱号漏算"）：
+     ① 若存在任一 boxCnt>0 的行 → 整批总箱数取这些行的 Math.max（避免逐箱重复求和成倍数）；
+        这覆盖"单行汇总填总箱数"与"逐箱行每行误填总箱数"两种结构，结果都=真实总箱数。
+     ② 否则按 boxNo 去重 + 范围展开（原有逻辑）。
+     ③ 既无 boxCnt 也无 boxNo 时 → 按行数（1行1箱）或 qty/qtyPerBox 推算。 */
+  const its=items||[];
+  const anyBoxCnt=its.some(function(it){return (+it.boxCnt||0)>0;});
+  let boxCount;
+  if(anyBoxCnt){
+    boxCount=Math.max.apply(null, its.map(function(it){return +it.boxCnt||0;}));
+    /* 毛净重仍按逐行真实值累加（重量是每行事实，不受 boxCnt 重复填写影响） */
+    its.forEach(function(it){ gw+=(+it.gw||0); nw+=(+it.nw||0); });
+  }else{
+    its.forEach(function(it,i){
+      const k=it.boxNo?('B:'+it.boxNo):('R:'+i);
+      if(seen[k]==null){
+        seen[k]={gw:+it.gw||0,nw:+it.nw||0};
+        const cnt=parseBoxNoCount(it.boxNo);
+        for(let c=0;c<cnt;c++) boxes.push(k);
+        gw+=(+it.gw||0); nw+=(+it.nw||0);
+      }
+      else if(Math.abs((+it.gw||0)-seen[k].gw)>0.001){ conflict++; }
+    });
+    boxCount=boxes.length;
+    /* 无箱号（纯逐行）场景：不盲目按行数=箱数，优先按 boxCntOf 总量对齐报关/装箱口径（含 qty/qpb 推算） */
+    if(!its.some(function(it){return !!it.boxNo;})){
+      boxCount=its.reduce(function(a,it){return a+boxCntOf(it);},0);
     }
-    else if(Math.abs((+it.gw||0)-seen[k].gw)>0.001){ conflict++; }
-  });
+  }
   /* 无净重列场景：皮重统一按箱数扣（perBoxBw），贴合"单位是箱"业务口径，避免空毛重行漏扣 */
   let totalNW=nw;
-  if(opts&&opts.perBoxBw){ totalNW=+(gw - opts.perBoxBw*boxes.length).toFixed(3); if(totalNW<0) totalNW=0; }
-  return {boxCount:boxes.length,totalGW:+gw.toFixed(3),totalNW:+totalNW.toFixed(3),conflict:conflict};
+  if(opts&&opts.perBoxBw){ totalNW=+(gw - opts.perBoxBw*(boxCount||boxes.length)).toFixed(3); if(totalNW<0) totalNW=0; }
+  return {boxCount:boxCount,totalGW:+gw.toFixed(3),totalNW:+totalNW.toFixed(3),conflict:conflict};
 }
 /* 加载 SheetJS：优先本地相对路径（部署包内 xlsx.full.min.js，国内离线可用），失败再回退 CDN */
 function ensureXLSX(cb){
@@ -1425,14 +1444,14 @@ function builtin(name){
 </tr>
 </table></div>`;
   }
-  if(name==='Invoice发票')return head+`<p>Invoice No: {{order.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
+  if(name==='Invoice发票')return head+`<p>Invoice No: {{header.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
     <tr><td colspan="5">总计{{cur}}:</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="5">TOTAL:{{cur}}</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr></table>`;
-  if(name==='客户发票')return head+`<p>Invoice No: {{order.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
+  if(name==='客户发票')return head+`<p>Invoice No: {{header.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
@@ -1443,7 +1462,7 @@ function builtin(name){
     <tr><td colspan="6">Bank: {{bankInfo.bank}}</td></tr>
     <tr><td colspan="6">Account Name: {{bankInfo.name}}</td></tr>
     <tr><td colspan="6">Account Number: {{bankInfo.no}}</td></tr></table>`;
-  if(name==='Packing List装箱单')return head+`<p>Date: {{dates.invoice}} &nbsp; Invoice No: {{order.no}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
+  if(name==='Packing List装箱单')return head+`<p>Date: {{dates.invoice}} &nbsp; Invoice No: {{header.no}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
     <p>Shipped: From 东莞 to {{destCn}} &nbsp; Terms of Pay: {{header.tradeTerm}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
@@ -1701,7 +1720,7 @@ function xlsCur(d){
   /* 顶栏信息（页码/页数 置右上角，与预览一致） */
   set(1,0,'预录入编号：'+(H.preNo||''),1);
   set(1,2,'海关编号：'+(H.customsNo||''),3);
-  set(1,4,'发票号：'+(H.invNo||''),6);
+  set(1,4,'发票号：'+(H.no||H.invNo||''),6); /* 发票号=合同协议号(H.no)，与全系统一致；H.invNo 仅作兜底 */
   set(1,7,'委托协议号：'+(H.entrustNo||''),9);
   set(1,10,'页码/页数：1/1',13);
   /* 境内发货人 / 出境关别 / 出口日期 / 申报日期 / 备案号 */
@@ -1750,7 +1769,7 @@ function xlsCur(d){
   set(10,3,'件数');
   /* 件数 = 箱数，与装箱单同源：优先用 boxCntOf 求和(已贯穿上传箱数→合并累加)；
      无上传箱数时回退 packSummary(d.lines) 的 boxCount(按箱号去重)，保证两文档一致 */
-  const _pieceCnt=(d.lines&&d.lines.length)?d.lines.reduce((a,l)=>a+boxCntOf(l),0):(d.boxCount||0);
+  const _pieceCnt=(d.lines&&d.lines.length)?packSummary(d.lines).boxCount:(d.boxCount||0);
   set(11,3,(_pieceCnt>0?_pieceCnt:(d.boxCount||'')));
   set(10,4,'毛重（千克）',5);
   set(11,4,(d.totalGW||''),5);
@@ -1824,7 +1843,7 @@ function xlsCur(d){
 function xlsTable(type,d){
   const H=d.header; const R=[]; const MG=[]; let r=0;
   const noB=[]; const lrR=[];
-  const no=(d.order&&d.order.no)||H.no||'';
+  const no=H.no||(d.order&&d.order.no)||''; /* 发票号=合同协议号优先(用户语义：发票号必须等于合同协议号)；订单外部单号兜底 */
   const CN=cols=>cols.map(c=>({wch:c[1]||10})); /* 列宽对象 */
   const NC=7; /* 统一 7 列 A-G (PACKING 模板前 6 列明细 + G:H 合并存毛重/净重) */
   /* addRow: 写入当前 r 行, 自动 r++. 第二个参数可指定边框模式: 'noborder'(无框)|'lr'(只左右)|默认(全thin) */
@@ -1927,8 +1946,8 @@ function xlsTable(type,d){
     const ds=r;
     d.lines.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.model,boxCntOf(l),l.qty,'个',l.gw,l.nw]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
-    /* R12 Total */
-    const bc=d.lines.reduce((a,l)=>a+boxCntOf(l),0);
+    /* R12 Total：箱数合计与报关单件数、系统"解析"严格一致，统一取 packSummary 权威箱数，避免两套口径偏差 */
+    const bc=packSummary(d.lines).boxCount;
     putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,bc); putCell(R,r,4,d.totalQty); putCell(R,r,5,''); putCell(R,r,6,d.totalGW); putCell(R,r,7,d.totalNW); r++;
     /* R13 空行 */
     noB.push(r); r++;
@@ -2329,8 +2348,10 @@ function fan(s){return (s==null?'':String(s)).split('').map(ch=>FAN_MAP[ch]||ch)
    关键：mergeLines 聚合时 boxCnt 已在调用侧按"整批总数"语义设置(见 buildData 的 totalBoxes)，
         此处不自行累加，避免逐箱行重复填 7 被求和成 28。 */
 function boxCntOf(l){if(!l)return 1;
-  const up=+l.boxCnt; if(up>0) return Math.round(up);      /* ① 已填的总箱数优先(聚合层语义) */
-  const bc=parseBoxNoCount(l.boxNo); if(bc>1) return bc;   /* ② 箱号范围(如 1~7) */
+  const up=+l.boxCnt;
+  if(up>0 && up!==1) return Math.round(up);                /* ① 真箱数(跳过逐箱行被兜底/误填的 1) */
+  const bc=parseBoxNoCount(l.boxNo); if(bc>1) return bc;   /* ② 箱号范围(如 U0001~U0007 → 7) */
+  if(up===1) return 1;                                     /* ③ 明确单箱 */
   if(!l.boxNo){ const q=+l.qty||0; if(q>0){const qpb=+l.qtyPerBox||0||(+((window.BOX_SPECS||{})[l.sku]||{}).qtyPerBox||0); if(qpb>0)return Math.max(1,Math.ceil(q/qpb));} return 1; } /* 无箱号→1行1箱或按qpb */
   return 1;}                                                /* ④/⑤ 兜底 */
 /* 日期 → 中文格式：2026-04-08 → 2026年4月8日(销售合同模板风格)；无法解析原样返回 */
