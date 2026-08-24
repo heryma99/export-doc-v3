@@ -479,6 +479,12 @@ function opt(list,sel){const s=String(sel==null?'':sel).trim();if(!s)return list
   const code=s.split(' ')[0];
   return list.map(([v,t])=>{const val=v+' '+t;return `<option value="${val}" ${(s===val||code===v)?'selected':''}>${val}</option>`;}).join('')}
 function optStr(list,sel){return list.map(s=>`<option ${sel===s?'selected':''}>${s}</option>`).join('')}
+/* 最终目的国/贸易国只取中文名：兼容 "USA 美国"(下拉回写) / "美国" / "USA"(纯代码查表) */
+function cnCountry(v){
+  const s=String(v==null?'':v).trim(); if(!s) return '';
+  if(/[一-龥]/.test(s)){ return s.replace(/^[A-Z]{2,3}\s*/,'').replace(/\s*[A-Z]{2,3}$/,'').trim(); }
+  const hit=(CODE.country||[]).find(([c,t])=>c===s); return hit?hit[1]:s;
+}
 
 /* ============== 文件解析 v2：同义词字典 + 表头探测 + 引号安全 + 同箱去重 ============== */
 const DEMO_CSV=
@@ -1249,7 +1255,9 @@ function buildData(doc){
     bankInfo:acctFor(d.header.currency)||{},
     bankAccounts:DB.bankAccounts||[],
     signDateCN:fmtDateCN(d.header.signDate),
-    deliveryDateCN:fmtDateCN(d.header.deliveryDate)};
+    deliveryDateCN:fmtDateCN(d.header.deliveryDate),
+    destCn:cnCountry((d.header&&d.header.destCountry)||''),
+    arrivalCn:cnCountry((d.header&&d.header.arrivalCountry)||(d.header&&d.header.destCountry)||'')};
 }
 /* 模板引擎（递归计数，正确处理嵌套 each + 注入 _i 序号） */
 function getPath(o,p){return p.split('.').reduce((a,k)=>a==null?undefined:a[k],o);}
@@ -1381,7 +1389,7 @@ function builtin(name){
 <td>{{amountCur}}</td>
 <td>{{header.currency}}</td>
 <td>{{header.originCountry}}</td>
-<td>{{header.destCountry}}</td>
+<td>{{destCn}}</td>
 <td>{{header.domSrc}}</td>
 <td colspan="2">{{header.levy}}</td>
 </tr>
@@ -1410,14 +1418,14 @@ function builtin(name){
 </tr>
 </table></div>`;
   }
-  if(name==='Invoice发票')return head+`<p>Invoice No：{{order.no}} &nbsp; DATE：{{dates.invoice}} &nbsp; Terms of Pay：{{header.tradeTerm}} &nbsp; To Messrs：{{header.consignee}}</p>
+  if(name==='Invoice发票')return head+`<p>Invoice No: {{order.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
     <tr><td colspan="5">总计{{cur}}:</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="5">TOTAL:{{cur}}</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr></table>`;
-  if(name==='客户发票')return head+`<p>Invoice No：{{order.no}} &nbsp; DATE：{{dates.invoice}} &nbsp; Terms of Pay：{{header.tradeTerm}} &nbsp; To Messrs：{{header.consignee}}</p>
+  if(name==='客户发票')return head+`<p>Invoice No: {{order.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
@@ -1428,8 +1436,8 @@ function builtin(name){
     <tr><td colspan="6">Bank: {{bankInfo.bank}}</td></tr>
     <tr><td colspan="6">Account Name: {{bankInfo.name}}</td></tr>
     <tr><td colspan="6">Account Number: {{bankInfo.no}}</td></tr></table>`;
-  if(name==='Packing List装箱单')return head+`<p>Date：{{dates.invoice}} &nbsp; Invoice No：{{order.no}} &nbsp; To Messrs：{{header.consignee}} &nbsp; Contract No：{{header.no}}</p>
-    <p>Shipped：From 东莞 to {{order.destCountry}} &nbsp; Terms of Pay：{{header.tradeTerm}}</p>
+  if(name==='Packing List装箱单')return head+`<p>Date: {{dates.invoice}} &nbsp; Invoice No: {{order.no}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
+    <p>Shipped: From 东莞 to {{destCn}} &nbsp; Terms of Pay: {{header.tradeTerm}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{boxCnt}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
@@ -1448,7 +1456,7 @@ function builtin(name){
     <tr><td colspan="5">合計</td><td>{{totalAmount}}</td></tr></table>
     <p><b>第三條 物流及運輸</b></p>
     <p>1. 運輸方式：☑ {{header.transMode}}</p>
-    <p>2.1 最終目的港/收貨地：{{header.destCountry}}</p>
+    <p>2.1 最終目的港/收貨地：{{destCn}}</p>
     <p>2.2 交貨時間：{{deliveryDateCN}}前，賣方需及時通知買方運輸工具資訊。</p>
     <p>3. 運輸風險轉移：按{{header.tradeTerm}}價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。</p>
     <p>4. 運輸保險：由買方全權負責貨物投保，保險費由買方承擔。</p>
@@ -1703,7 +1711,7 @@ function xlsCur(d){
   set(8,3,'贸易国（地区）',5);
   set(9,3,(H.tradeCountry||''),5);
   set(8,6,'运抵国（地区）',8);
-  set(9,6,(H.arrivalCountry||H.destCountry||''),8);
+  set(9,6,cnCountry(H.arrivalCountry||H.destCountry||''),8);
   set(8,9,'指运港',10);
   set(9,9,(H.destPort||''),10);
   set(8,11,'离境口岸',13);
@@ -1742,11 +1750,11 @@ function xlsCur(d){
     set(r,2,l.name||'');
     set(r,3,l.en||'');
     set(r,4,(l.qty||'')+(l.unit?(' '+l.unit):''),5);
-    set(r,6,l.declCur);
-    set(r,7,l.amountCur);
+    set(r,6,(+l.declCur).toFixed(4));
+    set(r,7,(+l.amountCur).toFixed(2));
     set(r,8,H.currency);
     set(r,9,H.originCountry);
-    set(r,10,H.destCountry);
+    set(r,10,cnCountry(H.destCountry));
     set(r,11,H.domSrc||'');
     set(r,12,H.levy,13);
     r++;
@@ -1808,15 +1816,15 @@ function xlsTable(type,d){
     /* R3 空行 */ noB.push(r); r++;
     /* R4 发票编号:(16号粗体右对齐)+编号(不合并F:G,便于手动填充) */
     R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
-    R[r][5]={t:'s',v:'发票编号：',s:{alignment:{horizontal:'right',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
+    R[r][5]={t:'s',v:'发票编号：',s:{alignment:{horizontal:'right',vertical:'center'}}};
     putCell(R,r,6,no||''); noB.push(r); r++;
     /* R5 致 / 日期(16号粗体右对齐,G列不合并便于填充) */
     addRow(['致：',H.consignee,'','','','','']); noB.push(r); addMerge(MG,r,1,4);
-    R[r][5]={t:'s',v:'日期：',s:{alignment:{horizontal:'right',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
+    R[r][5]={t:'s',v:'日期：',s:{alignment:{horizontal:'right',vertical:'center'}}};
     putCell(R,r,6,H.invoiceDate||''); r++;
     /* R6 付款方式:(16号粗体右对齐,G列不合并便于填充) */
     R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
-    R[r][5]={t:'s',v:'付款方式：',s:{alignment:{horizontal:'right',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
+    R[r][5]={t:'s',v:'付款方式：',s:{alignment:{horizontal:'right',vertical:'center'}}};
     putCell(R,r,6,H.tradeTerm||''); noB.push(r); r++;
     /* R7 列头(全简中) */ addRow(['唛头','品名','型号','数量','','单价('+d.cur+')','金额('+d.cur+')']); r++;
     /* R8-R12 数据(5行) — A列 N/M 竖排合并(行7~11) */
@@ -1880,7 +1888,7 @@ function xlsTable(type,d){
     /* R4 To Messrs + Contract No */
     addRow2(['To  Messrs: ',H.consignee,'','','','','','Contract No:',H.no||no]); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
     /* R5 Shipped(从东莞 至 最终目的国) + Terms of Payment */
-    const _shipFrom='东莞', _shipTo=(d.order&&d.order.destCountry)||H.destCountry||'';
+    const _shipFrom='东莞', _shipTo=cnCountry((d.order&&d.order.destCountry)||H.destCountry||'');
     addRow2(['Shipped           ','From '+_shipFrom+' to '+_shipTo,'','','','','','','Terms of Payment:',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
     /* R6 列头 */
     addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
@@ -1943,7 +1951,7 @@ function xlsTable(type,d){
   }
 
   /* 销售合同 - 保持原样 */
-  title='销售合同'; const headArr=[['卖方(供货)：'+H.shipper,'买方：'+H.consignee],['合同号：'+(H.no||no)+'  日期：'+d.dates.sales+'  成交方式：'+H.tradeTerm+'  目的国：'+H.destCountry]];
+  title='销售合同'; const headArr=[['卖方(供货)：'+H.shipper,'买方：'+H.consignee],['合同号：'+(H.no||no)+'  日期：'+d.dates.sales+'  成交方式：'+H.tradeTerm+'  目的国：'+cnCountry(H.destCountry)]];
   putCell(R,r,0,title); addMerge(MG,r,0,5); noB.push(r); r++;
   headArr.forEach(line=>{ putCell(R,r,0,line.join('    ')); addMerge(MG,r,0,5); noB.push(r); r++; });
   const cols=[['SKU',18],['品名',28],['HS',14],['数量',10],['单价('+H.currency+')',14],['金额',14]];
@@ -1998,7 +2006,7 @@ function xlsSalesContract(d){
   two('1. 運輸方式：☑ '+(tr||''),'3. 運輸風險轉移');
   lrow(''); rrow('按'+(H.tradeTerm||'FOB')+'價格術語約約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。');
   lhead('2. 物流資訊：'); rhead('4. 運輸保險：');
-  lrow('2.1 最終目的港/收貨地：'+(H.destCountry||''));
+  lrow('2.1 最終目的港/收貨地：'+(cnCountry(H.destCountry)||''));
   lrow('2.2 交貨時間：'+(fmtDateCN(H.deliveryDate)||'____')+'前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。');
   rrow('由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。');
   row('');
@@ -2158,33 +2166,13 @@ function downloadDocWord(docI,idx){
 }
 function downloadAllXlsx(){
   ensureXLSX(function(){
-    ensureJSZip(function(){
-      try{
-        const doc=DB.docs[DB.sel.doc]; const wb=xlsWorkbookForDoc(doc);
-        if(!wb){alert('暂无可导出的单据');return;}
-        const zip=new JSZip();
-        /* 1. 主工作簿 */
-        const wbout=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
-        zip.file('整套出口单证.xlsx', wbout);
-        /* 2. 销售合同 + 国内采购合同 → Excel(甲乙方左右两栏) */
-        const d=buildData(doc);
-        if(doc.out.find(o=>o.type==='销售合同')){
-          const swb=XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(swb, xlsSalesContract(d), sheetName('销售合同'));
-          zip.file('销售合同.xlsx', XLSX.write(swb,{type:'array',bookType:'xlsx',cellStyles:true}));
-        }
-        if(doc.out.find(o=>o.type==='国内采购合同')){
-          d.contracts.forEach((c,ci)=>{
-            const pwb=XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(pwb, xlsContract(c,d,ci), sheetName('采购合同_'+c.supplier));
-            zip.file('国内采购合同_'+(ci+1)+'.xlsx', XLSX.write(pwb,{type:'array',bookType:'xlsx',cellStyles:true}));
-          });
-        }
-        zip.generateAsync({type:'blob', compression:'DEFLATE', compressionOptions:{level:6}}).then(function(blob){
-          const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='整套出口单证_含Word.zip'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
-        }).catch(function(err){ alert('ZIP 打包失败：'+err.message); console.error(err); });
-      }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
-    });
+    try{
+      const doc=DB.docs[DB.sel.doc]; const wb=xlsWorkbookForDoc(doc);
+      if(!wb){alert('暂无可导出的单据');return;}
+      const wbout=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
+      const blob=new Blob([wbout],{type:'application/octet-stream'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='整套出口单证_多Sheet工作簿.xlsx'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+    }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
 }
 /* ============== 多整套单据选择/浏览/批量下载 ============== */
@@ -2733,7 +2721,7 @@ function updRail(){
   /* 渲染子项列表 */
   /* 订单列表 */
   const rl2=document.getElementById('railList2');
-  if(rl2){rl2.innerHTML=DB.orders.map(o=>{const ext=o.no&&o.no!==o.id?o.no:'';return `<div class="subitem${DB.sel.ord===o.id?' on':''}" onclick="event.stopPropagation();switchOrd('${o.id}')"><span class="subid">${ext||o.id}</span><span>${o.destCountry||'?'}/${o.currency||''}${ext?' · '+o.id:''}</span></div>`;}).join('')||(oc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
+  if(rl2){rl2.innerHTML=DB.orders.map(o=>{const ext=o.no&&o.no!==o.id?o.no:'';return `<div class="subitem${DB.sel.ord===o.id?' on':''}" onclick="event.stopPropagation();switchOrd('${o.id}')"><span class="subid">${ext||o.id}</span><span>${cnCountry(o.destCountry)||'?'}/${o.currency||''}${ext?' · '+o.id:''}</span></div>`;}).join('')||(oc>0?'':'<div class="subitem" style="cursor:default;color:var(--mut)">暂无</div>');}
   /* 草单列表（带复选框） */
   const rl3=document.getElementById('railList3');
   if(rl3){
