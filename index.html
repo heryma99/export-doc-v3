@@ -1226,7 +1226,9 @@ function buildData(doc){
       amount:_amt.toFixed(2),
       declCur:decl2cur(l.decl),
       amountCur:decl2cur(_amt).toFixed(2),
-      boxCnt:boxCntOf(l)};});
+      boxCnt:boxCntOf(l),
+      /* Model 列：按款合并时显示该款下全部 SKU(_keys)，与报关草单一致；否则取款号/单SKU */
+      model:(l._keys&&l._keys.length)?l._keys.join(','):(l.style||l.sku)};});
   const base=d.header.declDate||today();
   /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
   const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=Math.round((+l.cost||0)*1.13*100)/100;return {...l,taxPrice:tp.toFixed(2),taxAmount:(tp*(+l.qty||0)).toFixed(2)};});
@@ -1411,14 +1413,14 @@ function builtin(name){
   if(name==='Invoice发票')return head+`<p>Invoice No：{{order.no}} &nbsp; DATE：{{dates.invoice}} &nbsp; Terms of Pay：{{header.tradeTerm}} &nbsp; To Messrs：{{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
-    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
+    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
     <tr><td colspan="5">总计{{cur}}:</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="5">TOTAL:{{cur}}</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr></table>`;
   if(name==='客户发票')return head+`<p>Invoice No：{{order.no}} &nbsp; DATE：{{dates.invoice}} &nbsp; Terms of Pay：{{header.tradeTerm}} &nbsp; To Messrs：{{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
-    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
+    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
     <tr><td colspan="5">TOTAL:({{cur}})</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr>
     <tr><td colspan="6">Payment Method: {{bankInfo.pay}}</td></tr>
@@ -1430,7 +1432,7 @@ function builtin(name){
     <p>Shipped：From 东莞 to {{order.destCountry}} &nbsp; Terms of Pay：{{header.tradeTerm}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
-    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{boxCnt}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
+    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{boxCnt}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
     <tr><td colspan="3">Total</td><td>{{boxCount}}</td><td>{{totalQty}}</td><td>{{totalGW}}</td><td>{{totalNW}}</td></tr></table>`;
   if(name==='销售合同')return `<h2 style="text-align:center;margin:6px 0">合&nbsp;&nbsp;同</h2>
     <p>合約編號：{{header.no}} &nbsp; 簽訂地點：{{header.signPlace}} &nbsp; 簽訂日期：{{signDateCN}}</p>
@@ -1442,7 +1444,7 @@ function builtin(name){
     <p>2.1 成交價格：{{header.tradeTerm}} &nbsp; 2.2 合約貨幣：{{header.currency}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
-    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
+    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
     <tr><td colspan="5">合計</td><td>{{totalAmount}}</td></tr></table>
     <p><b>第三條 物流及運輸</b></p>
     <p>1. 運輸方式：☑ {{header.transMode}}</p>
@@ -1475,7 +1477,7 @@ function builtin(name){
     <p>1.以下为含税交货价：详见下表&nbsp;&nbsp; 2.交易币种：{{header.currency}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>序号</th><th>产品名称</th><th>型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>含税单价</th><th>含税总价</th></tr>
-    {{#each items}}<tr><td>{{_i}}</td><td>{{name}}</td><td>{{style}}</td><td>{{mat}}</td><td>{{unit}}</td><td>{{qty}}</td><td>{{taxPrice}}</td><td>{{taxAmount}}</td></tr>{{/each}}
+    {{#each items}}<tr><td>{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td>{{unit}}</td><td>{{qty}}</td><td>{{taxPrice}}</td><td>{{taxAmount}}</td></tr>{{/each}}
     <tr><td colspan="7">合计</td><td>{{taxTotal}}</td></tr></table>
     <p>3.本合同价格为指定地点含税交货价，增值税税率 13%，价格已涵盖包装费、运输费。</p>
     <p><b>二、付款时间与方式</b></p>
@@ -1819,7 +1821,7 @@ function xlsTable(type,d){
     /* R7 列头(全简中) */ addRow(['唛头','品名','型号','数量','','单价('+d.cur+')','金额('+d.cur+')']); r++;
     /* R8-R12 数据(5行) — A列 N/M 竖排合并(行7~11) */
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.style||l.sku,l.qty,'个',(+l.declCur).toFixed(2),(+l.amountCur).toFixed(2)]); r++; });
+    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.model,l.qty,'个',(+l.declCur).toFixed(2),(+l.amountCur).toFixed(2)]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R13 合计(币种动态): 单行（A13:F13 合并 + G13 金额） */
     putCell(R,r,0,'合计('+d.cur+')：'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.totalAmountCur).toFixed(2)); r++;
@@ -1884,7 +1886,7 @@ function xlsTable(type,d){
     addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
     /* R7-R11 数据(N/M 竖排合并 A7:A11) */
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.style||l.sku,boxCntOf(l),l.qty,'个',l.gw,l.nw]); r++; });
+    d.lines.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.model,boxCntOf(l),l.qty,'个',l.gw,l.nw]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R12 Total */
     const bc=d.lines.reduce((a,l)=>a+boxCntOf(l),0);
@@ -1912,7 +1914,7 @@ function xlsTable(type,d){
     /* R7 列头 */ addRow(['Mark & No','Description','Model','Quantity','','Unit price('+d.cur+')','Amount('+d.cur+')']); r++;
     /* R8-R12 数据 (繁体 fan) */
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',fan(l.name),l.style||l.sku,l.qty,'個',(+l.declCur).toFixed(2),(+l.amountCur).toFixed(2)]); r++; });
+    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',fan(l.name),l.model,l.qty,'個',(+l.declCur).toFixed(2),(+l.amountCur).toFixed(2)]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R13 TOTAL:(币种动态) A13:F13合并 + G13金额 */
     putCell(R,r,0,'TOTAL:('+d.cur+')'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.totalAmountCur).toFixed(2)); r++;
@@ -1989,7 +1991,7 @@ function xlsSalesContract(d){
   rrow('2.2 合約貨幣：'+(H.currency||''));
   row('');
   ['Mark & No','Description','Model','Quantity','Unit price','Amount','金額小計','備註'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  d.lines.forEach(l=>{ ['N/M',fan(l.name),l.style||l.sku,l.qty,l.decl,l.amount,l.amount,''].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  d.lines.forEach(l=>{ ['N/M',fan(l.name),l.model,l.qty,l.decl,l.amount,l.amount,''].forEach((v,i)=>putCell(R,r,i,v)); r++; });
   putCell(R,r,0,'合計'); addMerge(MG,r,0,6); putCell(R,r,7,d.totalAmount); r++;
   row('');
   row('第三條 物流及運輸');
@@ -2059,7 +2061,7 @@ function xlsContract(c,d,idx){
   ['序号','产品名称','型号','材质标准','单位','数量','含税单价','含税总价'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   c.items.forEach((l,i)=>{
     const tp=Math.round((+l.cost||0)*1.13*100)/100;
-    [i+1,l.name,l.style||l.sku,l.mat||'',l.unit||'个',l.qty,tp.toFixed(2),(tp*(+l.qty||0)).toFixed(2)].forEach((v,j)=>putCell(R,r,j,v)); r++;
+    [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,tp.toFixed(2),(tp*(+l.qty||0)).toFixed(2)].forEach((v,j)=>putCell(R,r,j,v)); r++;
   });
   const total=c.items.reduce((a,l)=>a+(+l.cost||0)*1.13*(+l.qty||0),0);
   putCell(R,r,0,'合计'); addMerge(MG,r,0,6); putCell(R,r,7,total.toFixed(2)); r++;
