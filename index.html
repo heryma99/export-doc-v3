@@ -954,6 +954,7 @@ function renderDrafts(){
     <div class="field"><label>运输方式 ☑ ${H.transMode}</label><select onchange="setHeader('${d.id}','transMode',this.value)">${opt(CODE.trans,H.transMode.split(' ')[0])}</select></div>
     <div class="field"><label>成交方式</label><select onchange="setHeader('${d.id}','tradeTerm',this.value)">${opt(CODE.tradeTerm,H.tradeTerm)}</select></div>
     <div class="field"><label>币种</label><input value="${H.currency}" onchange="setHeader('${d.id}','currency',this.value)" placeholder="USD 美元/CNY 人民币/EUR 欧元"></div>
+    <div class="field"><label>汇率(CNY→本币,留空用全局默认 ${DB.price.exch})</label><input type="number" step="0.0001" min="0" value="${H.exch||''}" onchange="setHeader('${d.id}','exch',this.value?+this.value:0)" placeholder="${DB.price.exch}"></div>
     <div class="field"><label>合同簽訂地點</label><input value="${H.signPlace||'【東莞】'}" onchange="setHeader('${d.id}','signPlace',this.value)"></div>
     <div class="field"><label>合同簽訂日期</label><input type="date" value="${H.signDate||''}" onchange="setHeader('${d.id}','signDate',this.value)"></div>
     <div class="field"><label>交货日期</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
@@ -1197,14 +1198,16 @@ function confirmDraft(did){
 }
 function buildData(doc){
   const d=DB.drafts.find(x=>x.id===doc.dftId);
-  /* 币种跟随报关草单：USD 时把单价/金额从 CNY 换算成 USD（除汇率 exch）；CNY 及其他币种保持原值 */
+  /* 币种跟随报关草单：外币(USD/EUR...)时把单价/金额从 CNY 换算成本币（除汇率 exch）；CNY 保持原值
+     汇率优先级：单笔 H.exch 优先（可逐单填），为空才用全局默认 DB.price.exch；都无效则按 1（等同于不换算并预警） */
   const _ccur=(d.header&&d.header.currency)||'CNY 人民币';
   const _curCode=String(_ccur).toUpperCase();
-  const _isUSD=_curCode.indexOf('USD')>=0;
-  const _exch=+(DB.price&&DB.price.exch)||0;
-  const _fx=_isUSD?(_exch>0?_exch:1):1;
-  const _curSym=_isUSD?'USD':(_curCode.indexOf('EUR')>=0?'EUR':'CNY');
-  const decl2cur=v=>(_isUSD? (+v)/_fx : +v);
+  const _isCNY=_curCode.indexOf('CNY')>=0 || _curCode.indexOf('人民币')>=0;
+  const _curSym=_isCNY?'CNY':(_curCode.indexOf('USD')>=0?'USD':(_curCode.indexOf('EUR')>=0?'EUR':_ccur.trim().split(' ')[0]));
+  const _exch=(+(d.header&&d.header.exch)>0)? +(d.header.exch) : (+(DB.price&&DB.price.exch)||0);
+  const _foreign=!_isCNY;
+  const _fx=_foreign?(_exch>0?_exch:1):1;
+  const decl2cur=v=>(_foreign? (+v)/_fx : +v);
   const lines=d.lines.map(l=>{const ent=(mergedHsLib())[(l.hs||'').trim()];
     const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
     /* 申报要素=品牌类型|出口享惠(0)|<HS_LIB.seq 要素按品类管道拼装>
@@ -1751,6 +1754,8 @@ function xlsCur(d){
   /* 合计 */
   set(r,0,'TOTAL：'+(H.currency||'')+' '+(d.totalAmountCur||d.totalAmount||''),7);
   r++;
+  /* 汇率(仅外币显示,可追溯) */
+  if(d.cur!=='CNY'){ set(r,0,'汇率(CNY→'+d.cur+')：'+(+d.exch).toFixed(4),7); r++; }
   /* 特殊关系确认 / 价格影响 / 特许权 / 自报自缴 */
   set(r,0,'特殊关系确认：'+(H.special||'否'),1);
   set(r,3,'价格影响确认：'+(H.priceEff||'否'),5);
@@ -1818,6 +1823,8 @@ function xlsTable(type,d){
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R13 合计(币种动态): 单行（A13:F13 合并 + G13 金额） */
     putCell(R,r,0,'合计('+d.cur+')：'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.totalAmountCur).toFixed(2)); r++;
+    /* R13.5 汇率(仅外币显示,可追溯对账) */
+    if(d.cur!=='CNY'){ putCell(R,r,0,'汇率(CNY→'+d.cur+'):'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.exch).toFixed(4)); r++; }
     /* R14 唛头 + 原产地(中国) */
     putCell(R,r,0,'唛头：'); addMerge(MG,r,0,4); lrR.push(r);
     putCell(R,r,5,'原产地：中国'); addMerge(MG,r,5,6); lrR.push(r); r++;
@@ -1909,6 +1916,8 @@ function xlsTable(type,d){
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R13 TOTAL:(币种动态) A13:F13合并 + G13金额 */
     putCell(R,r,0,'TOTAL:('+d.cur+')'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.totalAmountCur).toFixed(2)); r++;
+    /* R13.5 汇率(仅外币显示) */
+    if(d.cur!=='CNY'){ putCell(R,r,0,'Exchange Rate(CNY→'+d.cur+'):'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.exch).toFixed(4)); r++; }
     /* R14 Marks + Country */
     putCell(R,r,0,'Marks'); addMerge(MG,r,0,4); lrR.push(r);
     putCell(R,r,5,'Country Of Origin: China'); addMerge(MG,r,5,6); lrR.push(r); r++;
