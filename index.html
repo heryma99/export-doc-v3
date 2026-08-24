@@ -1855,8 +1855,8 @@ function xlsTable(type,d){
     const NC2=8;
     const addRow2=(c8,mode)=>{ for(let c=0;c<NC2;c++) putCell(R,r,c,c8[c]!=null?c8[c]:''); if(mode==='noborder') noB.push(r); if(mode==='lr') lrR.push(r); };
     /* R1 PACKING LIST（居中 + 16号粗体） */
-    putCell(R,r,0,'PACKING LIST'); for(let c=1;c<NC2;c++) putCell(R,r,c,'');
-    R[r][0].s=R[r][0].s||{}; R[r][0].s.alignment={horizontal:'center',vertical:'center'}; R[r][0].s.font={sz:16,name:'宋体',bold:true};
+    R[r]=R[r]||[]; for(let c=1;c<NC2;c++) R[r][c]='';
+    R[r][0]={t:'s',v:'PACKING LIST',s:{alignment:{horizontal:'center',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
     addMerge(MG,r,0,NC2-1); noB.push(r); r++;
     /* R2 Date: */
     addRow2(['','','','','','','','Date：',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,7,NC2-1); r++;
