@@ -1576,18 +1576,39 @@ function xwsStyle(ws,st){
   const lrR=new Set((st&&st.lrRows)||[]);
   const hR=new Set((st&&st.headerRows)||[]);
   const merges=ws['!merges']||[];
+  /* 预计算: 每个单元格是否处于某个合并区(任一) */
+  const inAnyMerge=(r,c)=>merges.some(mg=>r>=mg.s.r&&r<=mg.e.r&&c>=mg.s.c&&c<=mg.e.c);
+  /* 预计算: 单元格在某合并区中是否处于"外边缘"——用于精确补外框
+     上边缘=行==mg.s.r ; 下边缘=行==mg.e.r ; 左边缘=列==mg.s.c ; 右边缘=列==mg.e.c */
+  const edgeOf=(r,c)=>{
+    let top=false,bottom=false,left=false,right=false;
+    merges.forEach(mg=>{ if(r>=mg.s.r&&r<=mg.e.r&&c>=mg.s.c&&c<=mg.e.c){
+      if(r===mg.s.r) top=true; if(r===mg.e.r) bottom=true;
+      if(c===mg.s.c) left=true; if(c===mg.e.c) right=true;
+    }});
+    return {top,bottom,left,right};
+  };
   for(let r=rng.s.r;r<=rng.e.r;r++){
     for(let c=rng.s.c;c<=rng.e.c;c++){
       const a=XLSX.utils.encode_cell({r,c}); let cell=ws[a];
       if(!cell){ cell={t:'s',v:''}; ws[a]=cell; }
       cell.s=cell.s||{};
       if(!noR.has(r)){
-        const inMerge=merges.some(mg=>r>=mg.s.r&&r<=mg.e.r&&c>=mg.s.c&&c<=mg.e.c&&!(r===mg.s.r&&c===mg.s.c));
         /* SheetJS 坑: 顶层字符串 border 会错映射成 medium, 必须用 {style:'thin'} 对象形式 */
         const _th={style:'thin'};
-        /* headerRows: 整行画 thin(标题行不论合并内部都画 4 边, 避免"线断") */
-        if(hR.has(r)) cell.s.border={top:_th,bottom:_th,left:_th,right:_th};
-        else cell.s.border=(lrR.has(r)||inMerge)?{left:_th,right:_th}:{top:_th,bottom:_th,left:_th,right:_th};
+        if(inAnyMerge(r,c)){
+          /* 合并区单元格: 只补它所在合并区的外边缘, 内部边不画(合并后不可见, 画了反而溢出) */
+          const e=edgeOf(r,c);
+          const b={};
+          if(e.top) b.top=_th; if(e.bottom) b.bottom=_th; if(e.left) b.left=_th; if(e.right) b.right=_th;
+          cell.s.border=b;
+        } else if(lrR.has(r)){
+          /* 仅横向合并行的非合并单元格: 上下边+左右边(行内普通单元格需要完整框) */
+          cell.s.border={top:_th,bottom:_th,left:_th,right:_th};
+        } else {
+          /* 普通单元格: 4 边全框 */
+          cell.s.border={top:_th,bottom:_th,left:_th,right:_th};
+        }
       }
       cell.s.alignment=cell.s.alignment||{wrapText:true,vertical:'center',horizontal:'left'};
       cell.s.font={sz:9,name:'宋体'};
@@ -1748,12 +1769,14 @@ function xlsTable(type,d){
   const addRow=(cellArr, mode)=>{ for(let c=0;c<NC;c++) putCell(R,r,c,cellArr[c]!=null?cellArr[c]:''); if(mode==='noborder') noB.push(r); if(mode==='lr') lrR.push(r); };
 
   if(type==='Invoice发票'){
-    /* 海关 INVOICE（模板 A2:G18）：
+    /* 海关 INVOICE（模板 A2:G 报送版，1:1 还原）：
        R1=空行无框; R2=标题INVOICE(A2:G2合并)无框; R3=空行无框;
-       R4=A4:E4空+F4=Invoice No:+G4=编号; R5=A5=To Massrs:+B5:E5合并+空+F5=DATE:+G5=日期;
+       R4=A4:E4空+F4=Invoice No:+G4=编号(合并F:G); R5=A5=To Massrs:+B5:E5合并+空+F5=DATE:+G5=日期;
        R6=A6:E6空+F6=Terms of Payment:+G6=FOB; R7=列头(7列); R8-R12=数据(A8:A12竖排合并N/M);
-       R13=总计CNY(A13:E13合并)+金额+B13:E13仅左有框+ F13=TOTAL:CNY(右下) + G13=金额;
-       R14=Marks(A14:E14合并只左右)+Country(F14:G14合并只左右) */
+       R13=TOTAL:(CNY)(A13:F13合并)+G13=金额(单行); R14=Marks(A14:E14合并)+Country(F14:G14合并);
+       R15-R16=空; R17-23=RMB账户区(带框); R24=空; R25-28=USD账户区(带框) */
+    const rmb=acctFor('CNY 人民币')||{}, usd=acctFor('USD 美元')||{};
+    const vv=(x,dft)=>x||dft;
     /* R1 空行(无框) */ noB.push(r); r++;
     /* R2 标题 */ putCell(R,r,0,'INVOICE'); addMerge(MG,r,0,6); noB.push(r); r++;
     /* R3 空行 */ noB.push(r); r++;
@@ -1766,15 +1789,28 @@ function xlsTable(type,d){
     const ds=r;
     d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.style||l.sku,l.qty,'个',l.decl,l.amount]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
-    /* R13 总计CNY + TOTAL:CNY */
-    putCell(R,r,0,'总计CNY:'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++;
-    putCell(R,r,0,'TOTAL:CNY'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++;
+    /* R13 TOTAL:(CNY) 单行（A13:F13 合并 + G13 金额） */
+    putCell(R,r,0,'TOTAL:(CNY)'); addMerge(MG,r,0,5); putCell(R,r,6,d.totalAmount); r++;
     /* R14 Marks + Country Of Orign(C) */
     putCell(R,r,0,'Marks'); addMerge(MG,r,0,4); lrR.push(r);
     putCell(R,r,5,'Country Of Orign：C'); addMerge(MG,r,5,6); lrR.push(r); r++;
-    /* R15-R18 空白预留（无框，避免影响边框线） */
-    for(let i=0;i<4;i++){ noB.push(r); r++; }
-    return xwsFrom(R,MG,[{wch:13},{wch:14},{wch:13},{wch:8},{wch:6},{wch:13},{wch:15}],{noBorderRows:noB,lrRows:lrR});
+    /* R15-R16 空白预留（无框） */
+    noB.push(r); r++; noB.push(r); r++;
+    /* R17-23 RMB 账户区（带框表格：标签 A:C 合并，值 D:G 合并） */
+    const acctB=(label,val)=>{ putCell(R,r,0,label); addMerge(MG,r,0,2); putCell(R,r,3,val||''); addMerge(MG,r,3,6); r++; };
+    acctB('Payment Method: ', vv(rmb.pay,'T/T'));
+    acctB('RMB Account: ', rmb.account);
+    acctB('Bank: ', vv(rmb.bank,'China Merchants Bank Dongguan Houjie Branch'));
+    acctB('Account Name: ', vv(rmb.name,'Jingtailan (Dongguan) Trading Co., Ltd.'));
+    acctB('Account Number (CNY): ', rmb.no);
+    acctB('Bank Code (SWIFT): ', rmb.swift||'CMBCCNBS195');
+    noB.push(r); r++; /* R24 空 */
+    /* R25-28 USD 账户区 */
+    acctB('USD Account: ', usd.account);
+    acctB('Bank: ', vv(usd.bank,'China Merchants Bank Dongguan Houjie Branch'));
+    acctB('Account Name: ', vv(usd.name,'Jingtailan (Dongguan) Trading Co., Ltd.'));
+    acctB('Account Number (USD): ', usd.no);
+    return xwsFrom(R,MG,[{wch:14},{wch:16},{wch:13},{wch:10},{wch:6},{wch:14},{wch:16}],{noBorderRows:noB,lrRows:lrR});
   }
 
   if(type==='Packing List装箱单'){
