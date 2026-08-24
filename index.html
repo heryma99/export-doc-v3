@@ -700,51 +700,74 @@ function parseGrid(grid,forceSku,opts){
   if(m.bw<0) missing.push('bw');                    /* bw 缺失仅提示（有 box_specs/固定值兜底），不阻断 */
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
 }
-/* 箱号范围解析：支持 FBA 常见写法 ——
-   U0001~U0007 / U0001-7 / 1~7 / 001-007 / 1～7(中文波浪号) 等；
-   识别"两段数字 + 中间非数字分隔"即视为范围，返回 (末-首+1) 真实箱数。
-   若仅为单值箱号(如 U0001、005)或无法解析，返回 1（代表该字符串指代 1 箱）。 */
+/* 箱号范围解析：支持 FBA / 通用写法 ——
+   U0001~U0007 / U0001-7 / 1~7 / 001-007 / 1～7 / FBA 'FBA19M2JYF8SU000001～4'(简写末号);
+   FBA 箱号里既有 FBA 单号段(19/2/8)又有真序(000001/4)，需：
+     a = 最长数字段 (前缀序)
+     b = 末段 (末号，若位数 < a 位数则左侧补 0 到 a 位数 — FBA 简写末号补零)
+   返回 (b-a+1) 真实箱数；单值/无法解析返 1 */
 function parseBoxNoCount(s){
   const str=String(s==null?'':s).trim();
   if(!str) return 1;
-  /* 提取所有连续数字段（忽略 U/箱 等前缀字母与分隔符） */
   const nums=str.match(/\d+/g);
   if(nums&&nums.length>=2){
-    const a=+nums[0], b=+nums[nums.length-1];
-    if(b>=a && (b-a+1)<=2000) return (b-a+1);   /* 范围：如 1~7 → 7；U0001~U0007 → 7 */
+    let aStr=nums[0];
+    for(let i=1;i<nums.length;i++){ if(nums[i].length>aStr.length) aStr=nums[i]; }
+    const bStr=nums[nums.length-1];
+    const bFix=bStr.length<aStr.length?bStr.padStart(aStr.length,'0'):bStr;
+    const a=+aStr, b=+bFix;
+    if(b>=a && (b-a+1)<=2000) return (b-a+1);   /* 范围：如 1~7→7；U0001~U0007→7；FBA '...U000001～4'→(000004-000001+1)=4 */
   }
   return 1;                                       /* 单值箱号或无数字 → 1 箱 */
 }
-/* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计；箱号带范围时按真实箱数统计 */
+/* 同箱重量去重：毛/净重按箱号只计一次；箱号带范围时按真实箱数统计。
+   箱数权威口径（v2026-08-24 三级降级）：
+     ① boxNo 范围权威：若存在任一行的 boxNo 是"带范围的箱号"(如 FBA 'FBA...U000001～4'，parseBoxNoCount>1)，
+        把这些行的「范围累加」作为总箱数。覆盖 FBA「单行汇总 boxNo 范围 + 多行不同 SKU」批量场景，
+        解决"箱数 = Math.max(boxCnt) 丢行"问题。
+     ② 否则按 boxCnt 取 max（避免"逐箱重复填总箱数"被求和成倍数 = 49）；
+     ③ 否则按 boxNo 去重单值 + qpb 兜底。 */
 function packSummary(items, opts){
   const seen=Object.create(null), boxes=[]; let gw=0,nw=0,conflict=0;
-  /* 箱数权威口径（新版，修复"逐箱行重复填总箱数被放大/无箱号漏算"）：
-     ① 若存在任一 boxCnt>0 的行 → 整批总箱数取这些行的 Math.max（避免逐箱重复求和成倍数）；
-        这覆盖"单行汇总填总箱数"与"逐箱行每行误填总箱数"两种结构，结果都=真实总箱数。
-     ② 否则按 boxNo 去重 + 范围展开（原有逻辑）。
-     ③ 既无 boxCnt 也无 boxNo 时 → 按行数（1行1箱）或 qty/qtyPerBox 推算。 */
   const its=items||[];
-  const anyBoxCnt=its.some(function(it){return (+it.boxCnt||0)>0;});
+  /* 收集 boxNo 范围贡献（boxNo 去重 + parseBoxNoCount 求和；空箱号跳过） */
+  const seenBN=Object.create(null);
+  let boxNoSum=0, hasBNRange=false;
+  for(let i=0;i<its.length;i++){
+    const bn=String(its[i].boxNo||'').trim();
+    if(!bn||seenBN[bn]) continue;
+    seenBN[bn]=1;
+    const c=parseBoxNoCount(bn);
+    if(c>1){ hasBNRange=true; boxNoSum+=c; }
+    else if(c>=1){ boxNoSum+=1; }
+  }
   let boxCount;
-  if(anyBoxCnt){
-    boxCount=Math.max.apply(null, its.map(function(it){return +it.boxCnt||0;}));
-    /* 毛净重仍按逐行真实值累加（重量是每行事实，不受 boxCnt 重复填写影响） */
+  if(hasBNRange){
+    /* ① boxNo 范围权威 */
+    boxCount=boxNoSum;
     its.forEach(function(it){ gw+=(+it.gw||0); nw+=(+it.nw||0); });
   }else{
-    its.forEach(function(it,i){
-      const k=it.boxNo?('B:'+it.boxNo):('R:'+i);
-      if(seen[k]==null){
-        seen[k]={gw:+it.gw||0,nw:+it.nw||0};
-        const cnt=parseBoxNoCount(it.boxNo);
-        for(let c=0;c<cnt;c++) boxes.push(k);
-        gw+=(+it.gw||0); nw+=(+it.nw||0);
+    const anyBoxCnt=its.some(function(it){return (+it.boxCnt||0)>0;});
+    if(anyBoxCnt){
+      /* ② boxCnt 取 max（防"逐箱行重复填总箱数"求和成倍数） */
+      boxCount=Math.max.apply(null, its.map(function(it){return +it.boxCnt||0;}));
+      its.forEach(function(it){ gw+=(+it.gw||0); nw+=(+it.nw||0); });
+    }else{
+      /* ③ boxNo 去重 + 范围展开 */
+      its.forEach(function(it,i){
+        const k=it.boxNo?('B:'+it.boxNo):('R:'+i);
+        if(seen[k]==null){
+          seen[k]={gw:+it.gw||0,nw:+it.nw||0};
+          const cnt=parseBoxNoCount(it.boxNo);
+          for(let c=0;c<cnt;c++) boxes.push(k);
+          gw+=(+it.gw||0); nw+=(+it.nw||0);
+        }
+        else if(Math.abs((+it.gw||0)-seen[k].gw)>0.001){ conflict++; }
+      });
+      boxCount=boxNoSum;
+      if(!its.some(function(it){return !!it.boxNo;})){
+        boxCount=its.reduce(function(a,it){return a+boxCntOf(it);},0);
       }
-      else if(Math.abs((+it.gw||0)-seen[k].gw)>0.001){ conflict++; }
-    });
-    boxCount=boxes.length;
-    /* 无箱号（纯逐行）场景：不盲目按行数=箱数，优先按 boxCntOf 总量对齐报关/装箱口径（含 qty/qpb 推算） */
-    if(!its.some(function(it){return !!it.boxNo;})){
-      boxCount=its.reduce(function(a,it){return a+boxCntOf(it);},0);
     }
   }
   /* 无净重列场景：皮重统一按箱数扣（perBoxBw），贴合"单位是箱"业务口径，避免空毛重行漏扣 */
