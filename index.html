@@ -374,11 +374,11 @@ function mergeLines(lines,mode,sup){
     rep.qty=g.reduce((a,x)=>a+(+x.qty||0),0);
     rep.gw=g.reduce((a,x)=>a+(+x.gw||0),0);
     rep.nw=g.reduce((a,x)=>a+(+x.nw||0),0);
-    /* 箱数(总箱数)口径：与 packSummary 同源，不盲目求和(逐箱行 boxCnt 常重复填总箱数会成倍放大)。
-       优先取"已聚合的总箱数"(组内任一行的 boxCnt>0 且代表整批)；否则按 boxNo 去重行数(无箱号→行数)。 */
-    const anyBoxCnt=g.reduce((a,x)=>a+(+x.boxCnt||0),0);
-    if(anyBoxCnt>0) rep.boxCnt=Math.max.apply(null,g.map(x=>+x.boxCnt||0)); /* 同款箱数一致，取最大值即总箱数 */
-    else rep.boxCnt=g.filter(x=>!x.boxNo).length + g.reduce((a,x)=>a+(x.boxNo?parseBoxNoCount(x.boxNo):0),0); /* 按箱号去重/范围 */
+    /* 箱号：合并后保留组内全部不重复 boxNo（分号拼接），避免 M5 合并时丢第二行箱号导致 packSummary 漏算。
+       出口单据箱数统一由 packSummary(d.lines) 按 boxNo 范围权威计算，无需在此重复聚合。 */
+    rep.boxNo=[...new Set(g.map(x=>String(x.boxNo||'').trim()).filter(Boolean))].join(';');
+    /* boxCnt：合并后取组内最大值作为兜底(防"逐箱行重复填总箱数"被 packSummary 误算)；真箱数场景 packSummary 优先 boxNo 范围。 */
+    rep.boxCnt=g.reduce((a,x)=>Math.max(a,(+x.boxCnt||0)),0);
     rep.qtyPerBox=g[0].qtyPerBox||0;
     rep._merged=g.length>1; rep._cnt=g.length; rep._keys=g.map(x=>x.sku);
     /* 组内全部二级供应商(去重)，供合同「供货工厂(原)」列完整显示 */
@@ -1309,7 +1309,7 @@ function buildData(doc){
     totalAmountCur:lines.reduce((a,l)=>a+decl2cur((+l.decl)*(+l.qty)),0).toFixed(2),
     totalGW:packSummary(lines).totalGW.toFixed(2),
     totalNW:packSummary(lines).totalNW.toFixed(2),
-    boxCount:packSummary(lines).boxCount,
+    boxCount:totalBoxCount(lines),
     contractCount:contracts.length,
     bankInfo:acctFor(d.header.currency)||{},
     bankAccounts:DB.bankAccounts||[],
@@ -1802,7 +1802,7 @@ function xlsCur(d){
   set(10,3,'件数');
   /* 件数 = 箱数，与装箱单同源：优先用 boxCntOf 求和(已贯穿上传箱数→合并累加)；
      无上传箱数时回退 packSummary(d.lines) 的 boxCount(按箱号去重)，保证两文档一致 */
-  const _pieceCnt=(d.lines&&d.lines.length)?packSummary(d.lines).boxCount:(d.boxCount||0);
+  const _pieceCnt=(d.lines&&d.lines.length)?totalBoxCount(d.lines):(d.boxCount||0);
   set(11,3,(_pieceCnt>0?_pieceCnt:(d.boxCount||'')));
   set(10,4,'毛重（千克）',5);
   set(11,4,(d.totalGW||''),5);
@@ -1980,7 +1980,7 @@ function xlsTable(type,d){
     d.lines.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.model,boxCntOf(l),l.qty,'个',l.gw,l.nw]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R12 Total：箱数合计与报关单件数、系统"解析"严格一致，统一取 packSummary 权威箱数，避免两套口径偏差 */
-    const bc=packSummary(d.lines).boxCount;
+    const bc=totalBoxCount(d.lines);
     putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,bc); putCell(R,r,4,d.totalQty); putCell(R,r,5,''); putCell(R,r,6,d.totalGW); putCell(R,r,7,d.totalNW); r++;
     /* R13 空行 */
     noB.push(r); r++;
@@ -2387,6 +2387,11 @@ function boxCntOf(l){if(!l)return 1;
   if(up===1) return 1;                                     /* ③ 明确单箱 */
   if(!l.boxNo){ const q=+l.qty||0; if(q>0){const qpb=+l.qtyPerBox||0||(+((window.BOX_SPECS||{})[l.sku]||{}).qtyPerBox||0); if(qpb>0)return Math.max(1,Math.ceil(q/qpb));} return 1; } /* 无箱号→1行1箱或按qpb */
   return 1;}                                                /* ④/⑤ 兜底 */
+/* 出口单据(报关件数/装箱合计)权威箱数：统一走 packSummary —— 现已修复 M5 合并时保留全部 boxNo，
+   故 packSummary 能按 boxNo 范围正确累加(如 FBA 4+3=7)，与"解析"严格一致。 */
+function totalBoxCount(lines){
+  return packSummary(lines||[]).boxCount;
+}
 /* 日期 → 中文格式：2026-04-08 → 2026年4月8日(销售合同模板风格)；无法解析原样返回 */
 function fmtDateCN(s){if(!s)return '';const m=String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(!m)return String(s);return (+m[1])+'年'+(+m[2])+'月'+(+m[3])+'日';}
 function skuList(){const b=window.__SKU_BULK__||[];if(b.length){const have=new Set(b.map(x=>x.sku));return b.concat((DB.sku||[]).filter(x=>!have.has(x.sku)));}return DB.sku||[];}
