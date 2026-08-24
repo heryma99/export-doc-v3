@@ -1611,7 +1611,8 @@ function xwsStyle(ws,st){
         }
       }
       cell.s.alignment=cell.s.alignment||{wrapText:true,vertical:'center',horizontal:'left'};
-      cell.s.font={sz:9,name:'宋体'};
+      /* 保留 cell 单独设置的 font（如标题/字段标签用 16 号、18 号），默认 9 号 */
+      cell.s.font=Object.assign({name:'宋体',sz:9}, cell.s.font||{});
       if(typeof cell.v==='string'&&cell.v.indexOf('\n')>=0){ ws['!rows']=ws['!rows']||[]; ws['!rows'][r]=ws['!rows'][r]||{}; ws['!rows'][r].hpt=Math.max(ws['!rows'][r].hpt||0,30); }
     }
   }
@@ -1769,48 +1770,58 @@ function xlsTable(type,d){
   const addRow=(cellArr, mode)=>{ for(let c=0;c<NC;c++) putCell(R,r,c,cellArr[c]!=null?cellArr[c]:''); if(mode==='noborder') noB.push(r); if(mode==='lr') lrR.push(r); };
 
   if(type==='Invoice发票'){
-    /* 海关 INVOICE（模板 A2:G 报送版，1:1 还原）：
-       R1=空行无框; R2=标题INVOICE(A2:G2合并)无框; R3=空行无框;
-       R4=A4:E4空+F4=Invoice No:+G4=编号(合并F:G); R5=A5=To Massrs:+B5:E5合并+空+F5=DATE:+G5=日期;
-       R6=A6:E6空+F6=Terms of Payment:+G6=FOB; R7=列头(7列); R8-R12=数据(A8:A12竖排合并N/M);
-       R13=TOTAL:(CNY)(A13:F13合并)+G13=金额(单行); R14=Marks(A14:E14合并)+Country(F14:G14合并);
-       R15-R16=空; R17-23=RMB账户区(带框); R24=空; R25-28=USD账户区(带框) */
+    /* 海关 INVOICE（模板 A2:G 报送版，1:1 还原 + 简中）：
+       R1=空行无框; R2=标题INVOICE(A2:G2合并,居中+18号粗体)无框; R3=空行无框;
+       R4=A4:E4空+F4=发票编号:(16号粗体右对齐)+G4=编号(不合并,便于填充); R5=A5=致:+B5:E5合并+空+F5=日期:(16号)+G5=日期;
+       R6=A6:E6空+F6=付款方式:(16号)+G6=成交方式; R7=列头(7列,全简中); R8-R12=数据(A8:A12竖排合并N/M);
+       R13=合计(CNY):(A13:F13合并)+G13=金额(单行); R14=唛头(A14:E14合并)+原产地(F14:G14合并);
+       R15-R16=空; R17-23=RMB账户区(带框,简中); R24=空; R25-28=USD账户区(带框,简中) */
     const rmb=acctFor('CNY 人民币')||{}, usd=acctFor('USD 美元')||{};
     const vv=(x,dft)=>x||dft;
     /* R1 空行(无框) */ noB.push(r); r++;
-    /* R2 标题 */ putCell(R,r,0,'INVOICE'); addMerge(MG,r,0,6); noB.push(r); r++;
+    /* R2 标题 INVOICE(居中+18号粗体) */ 
+    R[r]=R[r]||[]; R[r][0]={t:'s',v:'INVOICE',s:{alignment:{horizontal:'center',vertical:'center'},font:{sz:18,name:'宋体',bold:true}}};
+    addMerge(MG,r,0,6); noB.push(r); r++;
     /* R3 空行 */ noB.push(r); r++;
-    /* R4 Invoice No */ addRow(['','','','','','Invoice No: ',no]); noB.push(r); addMerge(MG,r,5,6); r++;
-    /* R5 To Massrs / DATE */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,1,4); addMerge(MG,r,5,6); r++;
-    /* R6 Terms of Payment */ addRow(['','','','','','Terms of Payment: ',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,5,6); r++;
-    /* R7 列头（7列 A:Mark&No B:Description C:Model D:Quantity E:空 F:Unit price G:Amount） */
-    addRow(['Mark & No','Description','Model','Quantity','','Unit price','Amount']); r++;
+    /* R4 发票编号:(16号粗体右对齐)+编号(不合并F:G,便于手动填充) */
+    R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
+    R[r][5]={t:'s',v:'发票编号：',s:{alignment:{horizontal:'right',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
+    putCell(R,r,6,no||''); noB.push(r); r++;
+    /* R5 致 / 日期(16号粗体右对齐,G列不合并便于填充) */
+    addRow(['致：',H.consignee,'','','','','']); noB.push(r); addMerge(MG,r,1,4);
+    R[r][5]={t:'s',v:'日期：',s:{alignment:{horizontal:'right',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
+    putCell(R,r,6,H.invoiceDate||''); r++;
+    /* R6 付款方式:(16号粗体右对齐,G列不合并便于填充) */
+    R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
+    R[r][5]={t:'s',v:'付款方式：',s:{alignment:{horizontal:'right',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
+    putCell(R,r,6,H.tradeTerm||''); noB.push(r); r++;
+    /* R7 列头(全简中) */ addRow(['唛头','品名','型号','数量','','单价','金额']); r++;
     /* R8-R12 数据(5行) — A列 N/M 竖排合并(行7~11) */
     const ds=r;
     d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.style||l.sku,l.qty,'个',l.decl,l.amount]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
-    /* R13 TOTAL:(CNY) 单行（A13:F13 合并 + G13 金额） */
-    putCell(R,r,0,'TOTAL:(CNY)'); addMerge(MG,r,0,5); putCell(R,r,6,d.totalAmount); r++;
-    /* R14 Marks + Country Of Orign(C) */
-    putCell(R,r,0,'Marks'); addMerge(MG,r,0,4); lrR.push(r);
-    putCell(R,r,5,'Country Of Orign：C'); addMerge(MG,r,5,6); lrR.push(r); r++;
-    /* R15-R16 空白预留（无框） */
+    /* R13 合计(CNY): 单行（A13:F13 合并 + G13 金额） */
+    putCell(R,r,0,'合计(CNY)：'); addMerge(MG,r,0,5); putCell(R,r,6,d.totalAmount); r++;
+    /* R14 唛头 + 原产地(中国) */
+    putCell(R,r,0,'唛头：'); addMerge(MG,r,0,4); lrR.push(r);
+    putCell(R,r,5,'原产地：中国'); addMerge(MG,r,5,6); lrR.push(r); r++;
+    /* R15-R16 空白预留(无框) */
     noB.push(r); r++; noB.push(r); r++;
-    /* R17-23 RMB 账户区（带框表格：标签 A:C 合并，值 D:G 合并） */
+    /* R17-23 RMB 账户区(带框表格,标签 A:C 合并,值 D:G 合并,全简中) */
     const acctB=(label,val)=>{ putCell(R,r,0,label); addMerge(MG,r,0,2); putCell(R,r,3,val||''); addMerge(MG,r,3,6); r++; };
-    acctB('Payment Method: ', vv(rmb.pay,'T/T'));
-    acctB('RMB Account: ', rmb.account);
-    acctB('Bank: ', vv(rmb.bank,'China Merchants Bank Dongguan Houjie Branch'));
-    acctB('Account Name: ', vv(rmb.name,'Jingtailan (Dongguan) Trading Co., Ltd.'));
-    acctB('Account Number (CNY): ', rmb.no);
-    acctB('Bank Code (SWIFT): ', rmb.swift||'CMBCCNBS195');
+    acctB('付款方式：', vv(rmb.pay,'T/T'));
+    acctB('人民币账户：', rmb.account);
+    acctB('开户行：', vv(rmb.bank,'招商银行股份有限公司东莞厚街支行'));
+    acctB('户名：', vv(rmb.name,'井太兰（东莞）贸易有限公司'));
+    acctB('账号：', rmb.no);
+    acctB('SWIFT代码：', rmb.swift||'CMBCCNBS195');
     noB.push(r); r++; /* R24 空 */
     /* R25-28 USD 账户区 */
-    acctB('USD Account: ', usd.account);
-    acctB('Bank: ', vv(usd.bank,'China Merchants Bank Dongguan Houjie Branch'));
-    acctB('Account Name: ', vv(usd.name,'Jingtailan (Dongguan) Trading Co., Ltd.'));
-    acctB('Account Number (USD): ', usd.no);
-    return xwsFrom(R,MG,[{wch:14},{wch:16},{wch:13},{wch:10},{wch:6},{wch:14},{wch:16}],{noBorderRows:noB,lrRows:lrR});
+    acctB('美元账户：', usd.account);
+    acctB('开户行：', vv(usd.bank,'招商银行股份有限公司东莞厚街支行'));
+    acctB('户名：', vv(usd.name,'井太兰（东莞）贸易有限公司'));
+    acctB('账号：', usd.no);
+    return xwsFrom(R,MG,[{wch:14},{wch:16},{wch:13},{wch:10},{wch:6},{wch:18},{wch:16}],{noBorderRows:noB,lrRows:lrR});
   }
 
   if(type==='Packing List装箱单'){
