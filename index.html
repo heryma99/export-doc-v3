@@ -700,10 +700,20 @@ function parseGrid(grid,forceSku,opts){
   if(m.bw<0) missing.push('bw');                    /* bw 缺失仅提示（有 box_specs/固定值兜底），不阻断 */
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
 }
-/* 箱号范围解析：如 FBA 箱号 «U000002～3» 表示 2~3 号共 2 箱，计为真实箱数 */
+/* 箱号范围解析：支持 FBA 常见写法 ——
+   U0001~U0007 / U0001-7 / 1~7 / 001-007 / 1～7(中文波浪号) 等；
+   识别"两段数字 + 中间非数字分隔"即视为范围，返回 (末-首+1) 真实箱数。
+   若仅为单值箱号(如 U0001、005)或无法解析，返回 1（代表该字符串指代 1 箱）。 */
 function parseBoxNoCount(s){
-  const mm=String(s||'').match(/[Uu](\d+)[^\d]+(\d+)/);
-  return mm?(+mm[2]-+mm[1]+1):1;
+  const str=String(s==null?'':s).trim();
+  if(!str) return 1;
+  /* 提取所有连续数字段（忽略 U/箱 等前缀字母与分隔符） */
+  const nums=str.match(/\d+/g);
+  if(nums&&nums.length>=2){
+    const a=+nums[0], b=+nums[nums.length-1];
+    if(b>=a && (b-a+1)<=2000) return (b-a+1);   /* 范围：如 1~7 → 7；U0001~U0007 → 7 */
+  }
+  return 1;                                       /* 单值箱号或无数字 → 1 箱 */
 }
 /* 同箱重量去重：毛/净重按箱号只计一次；无箱号则按行计；箱号带范围时按真实箱数统计 */
 function packSummary(items, opts){
