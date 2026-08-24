@@ -270,8 +270,8 @@
 <script src="sku_bulk.js"></script>
 <!-- 纸箱规格表（BOX_SPECS：SKU→纸箱重量weight/长宽高；净重兜底数据源。不存在则仅走源文件+固定值） -->
 <script src="box_specs.js?v=20260809_1210"></script>
-<!-- 通用 zip 打包库（WPS/Windows/Python 全兼容，替换旧手写 buildZip 以修复 WPS 报"压缩文件已损坏"） -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- 通用 zip 打包库（WPS/Windows/Python 全兼容，替换旧手写 buildZip 以修复 WPS 报"压缩文件已损坏"；本地优先，CDN 兜底） -->
+<script src="jszip.min.js"></script>
 <script>
 /* ============== 持久化数据层 ============== */
 const LS_KEY='exp3_data_v1';
