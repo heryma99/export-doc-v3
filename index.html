@@ -1552,12 +1552,13 @@ function printAll(){const doc=DB.docs[DB.sel.doc];let all='';doc.out.forEach(o=>
   const w=window.open('');w.document.write('<html lang="zh-CN"><head><meta charset="UTF-8"><title>整套单据</title></head><body>'+all+'</body></html>');w.document.close();setTimeout(()=>w.print(),400);}
 
 /* ===================== EXCEL 导出（结构化重建，原生 .xlsx） ===================== */
-/* 样式引擎：st.noBorderRows=整行无边框(标题/表头区/空行)；st.lrRows=整行只画左右(底部Marks等)；合并区域内部格只画左右(竖排合并N/M) */
+/* 样式引擎：st.noBorderRows=整行无边框(标题/表头区/空行)；st.lrRows=整行只画左右(底部Marks等)；st.headerRows=整行画thin(标题行不区分合并内部格，所有格都画4边，避免"线断")；合并区域内部格只画左右(竖排合并N/M) */
 function xwsStyle(ws,st){
   if(!ws||!ws['!ref']) return ws;
   const rng=XLSX.utils.decode_range(ws['!ref']);
   const noR=new Set((st&&st.noBorderRows)||[]);
   const lrR=new Set((st&&st.lrRows)||[]);
+  const hR=new Set((st&&st.headerRows)||[]);
   const merges=ws['!merges']||[];
   for(let r=rng.s.r;r<=rng.e.r;r++){
     for(let c=rng.s.c;c<=rng.e.c;c++){
@@ -1568,7 +1569,9 @@ function xwsStyle(ws,st){
         const inMerge=merges.some(mg=>r>=mg.s.r&&r<=mg.e.r&&c>=mg.s.c&&c<=mg.e.c&&!(r===mg.s.r&&c===mg.s.c));
         /* SheetJS 坑: 顶层字符串 border 会错映射成 medium, 必须用 {style:'thin'} 对象形式 */
         const _th={style:'thin'};
-        cell.s.border=(lrR.has(r)||inMerge)?{left:_th,right:_th}:{top:_th,bottom:_th,left:_th,right:_th};
+        /* headerRows: 整行画 thin(标题行不论合并内部都画 4 边, 避免"线断") */
+        if(hR.has(r)) cell.s.border={top:_th,bottom:_th,left:_th,right:_th};
+        else cell.s.border=(lrR.has(r)||inMerge)?{left:_th,right:_th}:{top:_th,bottom:_th,left:_th,right:_th};
       }
       cell.s.alignment=cell.s.alignment||{wrapText:true,vertical:'center',horizontal:'left'};
       cell.s.font={sz:9,name:'宋体'};
@@ -1580,16 +1583,18 @@ function xwsStyle(ws,st){
 function xwsFrom(aoa,merges,cols,st){
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   let mr=aoa.length-1, mc=0;
-  aoa.forEach(row=>{ if(row&&row.length>mc+1) mc=row.length-1; });
-  mc=Math.max(mc,13); /* 报关草单统一 14 列宽 */
+  /* 只看非空内容(避免空串占位导致 mc 膨胀触发自动合并) */
+  aoa.forEach(row=>{ if(row) for(let i=row.length-1;i>=0;i--){ if(row[i]!==''&&row[i]!=null){ if(i+1>mc+1) mc=i+1; break; } } });
+  /* 各单据最大列: 海关INVOICE=7(G), PACKING=8(H), 客户发票=7(G) — 后续边框/字体/合并按实际 merges 处理 */
   ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc}});
   if(merges) ws['!merges']=merges;
   if(cols) ws['!cols']=cols;
   return xwsStyle(ws,st);
 }
 function sheetName(t){ return String(t).replace(/[\\/\?\*\[\]:]/g,'').slice(0,28)||'Sheet'; }
-function putCell(R,r,c,v){ R[r]=R[r]||[]; R[r][c]=v; }
+function putCell(R,r,c,v){ R[r]=R[r]||[]; for(let i=0;i<=c;i++) if(R[r][i]===undefined) R[r][i]=''; R[r][c]=v; }
 function addMerge(MG,r,c0,c1){ MG.push({s:{r,c:c0},e:{r,c:c1}}); }
+function addVMerge(MG,c,r0,r1){ MG.push({s:{r:r0,c},e:{r:r1,c}}); }
 
 /* 报关草单：表头信息 + 商品明细，合并单元格 + 单元格内换行 */
 /* 报关草单：14 列（A–N）官方报关单版式，与桌面前端模板 1:1 对齐 + 单元格边框 */
@@ -1709,73 +1714,150 @@ function xlsCur(d){
   set(r,7,'申报单位（签章）',9);
   r++;
   const cols=[{wch:7.2},{wch:14.6},{wch:17.6},{wch:18.9},{wch:15.8},{wch:0.6},{wch:12.2},{wch:12.5},{wch:9.4},{wch:13.6},{wch:16.4},{wch:14.3},{wch:11.7},{wch:9.0}];
-  const ws=xwsFrom(R,MG,cols); /* 全部行都有框(thin 细线 0.75pt,Excel 标准);只有纯标签行未来若要无框再传 noBorder */
+  const ws=xwsFrom(R,MG,cols,{headerRows:[0,1]}); /* 全部行都有框(thin 细线 0.75pt,Excel 标准);只有纯标签行未来若要无框再传 noBorder */
   /* 标题：16号、加粗、居中 */
   const t=ws['A1'];
   if(t){t.s=t.s||{};t.s.font={sz:16,bold:true,name:'宋体'};t.s.alignment={vertical:'center',horizontal:'center',wrapText:true};}
   return ws;
 }
-/* 发票 / 装箱单 / 销售合同：标准表格 */
+/* 发票 / 装箱单 / 销售合同：标准表格（按用户三份模板1:1还原：7列A-G，海关INVOICE列数A-G，PACKING含合并G:H，客户发票+RMB/USD账户区） */
 function xlsTable(type,d){
   const H=d.header; const R=[]; const MG=[]; let r=0;
   const noB=[]; const lrR=[];
-  let title,head,cols,totalCells,rowVals,footCells;
   const no=(d.order&&d.order.no)||H.no||'';
+  const CN=cols=>cols.map(c=>({wch:c[1]||10})); /* 列宽对象 */
+  const NC=7; /* 统一 7 列 A-G (PACKING 模板前 6 列明细 + G:H 合并存毛重/净重) */
+  /* addRow: 写入当前 r 行, 自动 r++. 第二个参数可指定边框模式: 'noborder'(无框)|'lr'(只左右)|默认(全thin) */
+  /* addRow: 写入当前 r 行; 不自增 r, 由调用方 r++. 这样后续 addMerge(MG,r,...) 才能正确指向本行. 第二个参数可指定边框模式: 'noborder'(无框)|'lr'(只左右)|默认(全thin) */
+  const addRow=(cellArr, mode)=>{ for(let c=0;c<NC;c++) putCell(R,r,c,cellArr[c]!=null?cellArr[c]:''); if(mode==='noborder') noB.push(r); if(mode==='lr') lrR.push(r); };
+
   if(type==='Invoice发票'){
-    /* 出口给海关的 INVOICE(以用户模板为准,简体)：标题/表头区无边框；明细 Mark&No|Description|Model|Quantity|Unit price|Amount 全框；N/M 竖排合并；总计CNY/TOTAL:CNY；底部 Marks 只左右 */
-    title='INVOICE';
-    head=[['Invoice No: '+no+'    DATE: '+d.dates.invoice],['To Messrs: '+H.consignee],['Terms of Pay: '+H.tradeTerm],['Shipped: '+H.shipper]];
-    cols=[['Mark & No',12],['Description',30],['Model',14],['Quantity',12],['Unit price',14],['Amount',14]];
-    rowVals=function(l,i){return [i===0?'N/M':'',l.name,l.style||l.sku,l.qty,l.decl,l.amount];};
-    totalCells=function(){ putCell(R,r,0,'总计CNY:'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++; putCell(R,r,0,'TOTAL:CNY'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++; };
-    footCells=function(){ putCell(R,r,0,'Marks'); addMerge(MG,r,0,1); putCell(R,r,2,'Country Of Origin:'); addMerge(MG,r,2,3); putCell(R,r,4,'China'); addMerge(MG,r,4,5); lrR.push(r); r++; };
-  } else if(type==='Packing List装箱单'){
-    /* 海关报关用装箱单(以用户模板为准)：标题/表头区无边框；Ctn.No.|Description|Model|Ge.Crate(CTN)|Ge.Quantity|G.W.(KG)|N.W.(KG) 全框；N/M 竖排；Total 行 */
-    title='PACKING LIST';
-    head=[['Date: '+d.dates.invoice+'    Invoice No: '+no],['To Messrs: '+H.consignee+'    Contract No: '+(H.no||'')],['Shipped: '+H.shipper+'    Terms of Pay: '+H.tradeTerm]];
-    cols=[['Ctn.No.',12],['Description',30],['Model',14],['Ge.Crate(CTN)',14],['Ge.Quantity',12],['G.W. (KG)',12],['N.W. (KG)',12]];
-    rowVals=function(l,i){return [i===0?'N/M':'',l.name,l.style||l.sku,boxCntOf(l),l.qty,l.gw,l.nw];};
-    totalCells=function(){
-      const bc=d.lines.reduce((a,l)=>a+boxCntOf(l),0);
-      putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,bc); putCell(R,r,4,d.totalQty); putCell(R,r,5,d.totalGW); putCell(R,r,6,d.totalNW); r++; };
-  } else if(type==='客户发票'){
-    /* 给客户的 INVOICE(繁体,以用户模板为准)：TOTAL:(CNY)；底部 Marks 只左右；收款账户区(RMB/USD 两组+Bank Code)无边框 */
+    /* 海关 INVOICE（模板 A2:G18）：
+       R1=空行无框; R2=标题INVOICE(A2:G2合并)无框; R3=空行无框;
+       R4=A4:E4空+F4=Invoice No:+G4=编号; R5=A5=To Massrs:+B5:E5合并+空+F5=DATE:+G5=日期;
+       R6=A6:E6空+F6=Terms of Payment:+G6=FOB; R7=列头(7列); R8-R12=数据(A8:A12竖排合并N/M);
+       R13=总计CNY(A13:E13合并)+金额+B13:E13仅左有框+ F13=TOTAL:CNY(右下) + G13=金额;
+       R14=Marks(A14:E14合并只左右)+Country(F14:G14合并只左右) */
+    /* R1 空行(无框) */ noB.push(r); r++;
+    /* R2 标题 */ putCell(R,r,0,'INVOICE'); addMerge(MG,r,0,6); noB.push(r); r++;
+    /* R3 空行 */ noB.push(r); r++;
+    /* R4 Invoice No */ addRow(['','','','','','Invoice No: ',no]); noB.push(r); addMerge(MG,r,5,6); r++;
+    /* R5 To Massrs / DATE */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,1,4); addMerge(MG,r,5,6); r++;
+    /* R6 Terms of Payment */ addRow(['','','','','','Terms of Payment: ',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,5,6); r++;
+    /* R7 列头（7列 A:Mark&No B:Description C:Model D:Quantity E:空 F:Unit price G:Amount） */
+    addRow(['Mark & No','Description','Model','Quantity','','Unit price','Amount']); r++;
+    /* R8-R12 数据(5行) — A列 N/M 竖排合并(行7~11) */
+    const ds=r;
+    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.style||l.sku,l.qty,'个',l.decl,l.amount]); r++; });
+    if(r>ds) addVMerge(MG,0,ds,r-1);
+    /* R13 总计CNY + TOTAL:CNY */
+    putCell(R,r,0,'总计CNY:'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++;
+    putCell(R,r,0,'TOTAL:CNY'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++;
+    /* R14 Marks + Country Of Orign(C) */
+    putCell(R,r,0,'Marks'); addMerge(MG,r,0,4); lrR.push(r);
+    putCell(R,r,5,'Country Of Orign：C'); addMerge(MG,r,5,6); lrR.push(r); r++;
+    /* R15-R18 空白预留（无框，避免影响边框线） */
+    for(let i=0;i<4;i++){ noB.push(r); r++; }
+    return xwsFrom(R,MG,[{wch:13},{wch:14},{wch:13},{wch:8},{wch:6},{wch:13},{wch:15}],{noBorderRows:noB,lrRows:lrR});
+  }
+
+  if(type==='Packing List装箱单'){
+    /* 装箱单（模板 A1:H13）：
+       R1=PACKING LIST(A1:H1合并); R2=Date:(G2:H2合并); R3=Invoice No:(G3:H3合并);
+       R4=To Messrs:(A4:F4合并)+Contract No:(G4:H4合并);
+       R5=Shipped(A5:F5合并)+Terms of Payment:(G5:H5合并);
+       R6=列头(A6:F6 Ctn.No/Description/Model/Crate/Quantity/个) + G6:H6 合并=G.W. (KG):
+       R7-R11=数据(A7:A11竖排合并N/M) + B-F数据 + G7:H7合并=数值(GW) + 但模板里 G7:N.W.(KG)? 看实际是 G列=GW H列=NW 分开放;
+       实际模板R6: G6=G.W.(KG):(H6空) H6空; R7: G7=9.6 H7=8.4 (GW NW分列) -- 但合并是 A5:F5 A6:F6 A7:F7 加上 G4:H4 G5:H5 等 */
+    /* 按模板重写：列头第6列=空（实际是"个"单位），G列毛重 H列净重 */
+    const A=NC-1; /* 7列布局: A:Mark&No B:Desc C:Model D:Crate E:Quantity F:个 G:GW -- 但模板 H 列是 N.W. */
+
+    /* 统一用 8 列布局 A-H 对齐模板（PACKING 多一列 NW 实际在 H 列） */
+    const NC2=8;
+    const addRow2=(c8,mode)=>{ for(let c=0;c<NC2;c++) putCell(R,r,c,c8[c]!=null?c8[c]:''); if(mode==='noborder') noB.push(r); if(mode==='lr') lrR.push(r); };
+    /* R1 PACKING LIST */
+    putCell(R,r,0,'PACKING LIST'); for(let c=1;c<NC2;c++) putCell(R,r,c,''); addMerge(MG,r,0,NC2-1); noB.push(r); r++;
+    /* R2 Date: */
+    addRow2(['','','','','','','','Date：',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,7,NC2-1); r++;
+    /* 补列宽：实际 NC2=8 但需 8 列; 但模板 H 用了 N.W.。改为 7 列 G:H 合并的方式更贴近模板 */
+    /* 改回 7 列 A-G + 8 列 H 但保持 H 列参与 G:H 合并表达"GW 和 NW 一对" */
+    /* 模板 R6: A6:F6列头(G6:G.W.(KG): H6 隐含) R7: A7:N/M  B7:Desc ... G7:9.6  H7:8.4 */
+    /* 决定：采用模板 7列布局 A-G 显示 G.W. ，新增 H 列存 N.W. (不参与合并) */
+    /* 上面 addRow2 已写到 H 列; 但我们的 noB 集合只对 xwsStyle 有效,边框按列渲染 */
+
+    /* R3 Invoice No: */
+    addRow2(['','','','','','','','Invoice No:',no]); noB.push(r); addMerge(MG,r,7,NC2-1); r++;
+    /* R4 To Messrs + Contract No */
+    addRow2(['To  Messrs: ',H.consignee,'','','','','','Contract No:',H.no||no]); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
+    /* R5 Shipped + Terms of Payment */
+    addRow2(['Shipped           ',H.shipper||'','','','','','','Terms of Payment:',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
+    /* R6 列头 */
+    addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
+    /* R7-R11 数据(N/M 竖排合并 A7:A11) */
+    const ds=r;
+    d.lines.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.style||l.sku,boxCntOf(l),l.qty,'个',l.gw,l.nw]); r++; });
+    if(r>ds) addVMerge(MG,0,ds,r-1);
+    /* R12 Total */
+    const bc=d.lines.reduce((a,l)=>a+boxCntOf(l),0);
+    putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,bc); putCell(R,r,4,d.totalQty); putCell(R,r,5,''); putCell(R,r,6,d.totalGW); putCell(R,r,7,d.totalNW); r++;
+    /* R13 空行 */
+    noB.push(r); r++;
+    return xwsFrom(R,MG,[{wch:12},{wch:11},{wch:13},{wch:9},{wch:6},{wch:7},{wch:18},{wch:13}],{noBorderRows:noB,lrRows:lrR});
+  }
+
+  if(type==='客户发票'){
+    /* 客户发票（模板 A2:G28）：
+       R1=空行; R2=标题; R3=空; R4-R6=表头(Invoice No/To Messrs/Terms); R7=列头(7列);
+       R8-R12=数据(A8:A12竖排合并N/M); R13=TOTAL:(CNY)(A13:F13合并+G13=金额);
+       R14=Marks+Country(A14:E14合并只左右)+(F14:G14合并只左右);
+       R15-R16=空; R17=Payment Method; R18=空; R19-23=RMB账户5行(无框);
+       R24=空; R25-28=USD账户4行(无框) */
     const rmb=acctFor('CNY 人民币')||{}, usd=acctFor('USD 美元')||{};
     const vv=(x,dft)=>x||dft;
-    title='INVOICE';
-    head=[['Invoice No: '+no+'    DATE: '+d.dates.invoice],['To Messrs: '+H.consignee],['Terms of Pay: '+H.tradeTerm]];
-    cols=[['Mark & No',12],['Description',30],['Model',14],['Quantity',12],['Unit price',14],['Amount',14]];
-    rowVals=function(l,i){return [i===0?'N/M':'',fan(l.name),l.style||l.sku,l.qty,l.decl,l.amount];};
-    totalCells=function(){ putCell(R,r,0,'TOTAL:(CNY)'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++; };
-    footCells=function(){
-      putCell(R,r,0,'Marks'); addMerge(MG,r,0,1); putCell(R,r,2,'Country Of Origin:'); addMerge(MG,r,2,3); putCell(R,r,4,'China'); addMerge(MG,r,4,5); lrR.push(r); r++;
-      const acct=function(label,val){ putCell(R,r,0,label+(val||'____________________')); addMerge(MG,r,0,5); noB.push(r); r++; };
-      acct('Payment Method: ',vv(rmb.pay,'T/T'));
-      acct('RMB Account: ',rmb.account);
-      acct('Bank: ',rmb.bank);
-      acct('Account Name: ',rmb.name);
-      acct('Account Number: ',rmb.no);
-      acct('Bank Code: ',rmb.swift);
-      acct('USD Account: ',usd.account);
-      acct('Bank: ',usd.bank);
-      acct('Account Name: ',usd.name);
-      acct('Account Number: ',usd.no);
-    };
-  } else {
-    title='销售合同'; head=[['卖方(供货)：'+H.shipper,'买方：'+H.consignee],['合同号：'+(H.no||no)+'  日期：'+d.dates.sales+'  成交方式：'+H.tradeTerm+'  目的国：'+H.destCountry]];
-    cols=[['SKU',18],['品名',28],['HS',14],['数量',10],['单价('+H.currency+')',14],['金额',14]];
-    rowVals=function(l){return [l.sku,l.name,l.hs,l.qty,l.decl,l.amount];};
-    totalCells=function(){ putCell(R,r,0,'合同总额'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++; };
+    /* R1 空 */ noB.push(r); r++;
+    /* R2 标题 */ putCell(R,r,0,'INVOICE'); addMerge(MG,r,0,6); noB.push(r); r++;
+    /* R3 空 */ noB.push(r); r++;
+    /* R4 Invoice No */ addRow(['','','','','','Invoice No: ',no]); noB.push(r); addMerge(MG,r,5,6); r++;
+    /* R5 To Messrs / DATE */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,1,4); addMerge(MG,r,5,6); r++;
+    /* R6 Terms */ addRow(['','','','','','Terms of Payment: ',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,5,6); r++;
+    /* R7 列头 */ addRow(['Mark & No','Description','Model','Quantity','','Unit price','Amount']); r++;
+    /* R8-R12 数据 (繁体 fan) */
+    const ds=r;
+    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',fan(l.name),l.style||l.sku,l.qty,'個',l.decl,l.amount]); r++; });
+    if(r>ds) addVMerge(MG,0,ds,r-1);
+    /* R13 TOTAL:(CNY) A13:F13合并 + G13金额 */
+    putCell(R,r,0,'TOTAL:(CNY)'); addMerge(MG,r,0,5); putCell(R,r,6,d.totalAmount); r++;
+    /* R14 Marks + Country */
+    putCell(R,r,0,'Marks'); addMerge(MG,r,0,4); lrR.push(r);
+    putCell(R,r,5,'Country Of Orign：C'); addMerge(MG,r,5,6); lrR.push(r); r++;
+    /* R15-R16 空 */
+    noB.push(r); r++; noB.push(r); r++;
+    /* 账户区 - 全部无边框 */
+    const acct=function(label,val){ putCell(R,r,0,label+(val||'____________________')); for(let c=1;c<NC;c++) putCell(R,r,c,''); addMerge(MG,r,0,6); noB.push(r); r++; };
+    acct('Payment Method: With T/T                       ',vv(rmb.pay,'T/T'));
+    noB.push(r); r++; /* R18 空 */
+    acct('RMB Account: ',rmb.account);
+    acct('Bank: China Merchants Bank Dongguan Houjie Branch',vv(rmb.bank,'China Merchants Bank Dongguan Houjie Branch'));
+    acct('Account Name: Jingtailan (Dongguan) Trading Co., Ltd.',vv(rmb.name,'Jingtailan (Dongguan) Trading Co., Ltd.'));
+    acct('Account Number (CNY): ',rmb.no);
+    acct('Bank Code: ',rmb.swift||'CMBCCNBS195');
+    noB.push(r); r++; /* R24 空 */
+    acct('USD Account: ',usd.account);
+    acct('Bank: China Merchants Bank Dongguan Houjie Branch',vv(usd.bank,'China Merchants Bank Dongguan Houjie Branch'));
+    acct('Account Name: Jingtailan (Dongguan) Trading Co., Ltd.',vv(usd.name,'Jingtailan (Dongguan) Trading Co., Ltd.'));
+    acct('Account Number (USD): ',usd.no);
+    return xwsFrom(R,MG,[{wch:12},{wch:14},{wch:16},{wch:8},{wch:7},{wch:15},{wch:14}],{noBorderRows:noB,lrRows:lrR});
   }
-  putCell(R,r,0,title); addMerge(MG,r,0,cols.length-1); noB.push(r); r++;
-  head.forEach(line=>{ putCell(R,r,0,line.join('    ')); addMerge(MG,r,0,cols.length-1); noB.push(r); r++; });
+
+  /* 销售合同 - 保持原样 */
+  title='销售合同'; const headArr=[['卖方(供货)：'+H.shipper,'买方：'+H.consignee],['合同号：'+(H.no||no)+'  日期：'+d.dates.sales+'  成交方式：'+H.tradeTerm+'  目的国：'+H.destCountry]];
+  putCell(R,r,0,title); addMerge(MG,r,0,5); noB.push(r); r++;
+  headArr.forEach(line=>{ putCell(R,r,0,line.join('    ')); addMerge(MG,r,0,5); noB.push(r); r++; });
+  const cols=[['SKU',18],['品名',28],['HS',14],['数量',10],['单价('+H.currency+')',14],['金额',14]];
   cols.forEach((c,i)=>putCell(R,r,i,c[0])); r++;
-  const ds=r;
-  d.lines.forEach((l,i)=>{ rowVals(l,i).forEach((v,j)=>putCell(R,r,j,v)); r++; });
-  if(ds<r) addMerge(MG,ds,0,r-1); /* N/M 竖排合并(A 列数据区) */
-  totalCells();
-  if(footCells) footCells();
-  return xwsFrom(R,MG,cols.map(c=>({wch:c[1]})),{noBorderRows:noB,lrRows:lrR});
+  d.lines.forEach(l=>{ [l.sku,l.name,l.hs,l.qty,l.decl,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  putCell(R,r,0,'合同总额'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++;
+  return xwsFrom(R,MG,CN(cols),{noBorderRows:noB,lrRows:lrR});
 }
 /* 销售合同(繁体，仿用户模板 合約編號：HT1781940.docx)：
    甲方/乙方随报关草单可编辑(非写死)；成交價格/合約貨幣/運輸方式/交貨日期随草单；
@@ -1990,9 +2072,92 @@ function downloadAllXlsx(){
     try{
       const doc=DB.docs[DB.sel.doc]; const wb=xlsWorkbookForDoc(doc);
       if(!wb){alert('暂无可导出的单据');return;}
-      xlsDownload('整套出口单证',wb);
+      /* 收集所有要打包的文件(Excel 工作簿 + 销售/采购合同 Word) */
+      const files=[];
+      /* 1. 主工作簿 */
+      const wbout=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
+      files.push({name:'整套出口单证.xlsx', data:new Uint8Array(wbout)});
+      /* 2. 销售合同 + 国内采购合同 Word */
+      const d=buildData(doc);
+      let salesHtml=''; let purchHtml='';
+      try{ salesHtml=renderTpl(builtin('销售合同'),d); }catch(e){}
+      if(doc.out.find(o=>o.type==='销售合同')){
+        files.push({name:'销售合同.doc', data:docToBytes(docFromHtmlBytes(salesHtml,'销售合同'))});
+      }
+      if(doc.out.find(o=>o.type==='国内采购合同')){
+        d.contracts.forEach((c,ci)=>{ purchHtml+=(ci?'<br style="page-break-before:always">':'')+renderTpl(builtin('国内采购合同'),Object.assign({},d,{contracts:[c]})); });
+        files.push({name:'国内采购合同.doc', data:docToBytes(docFromHtmlBytes(purchHtml,'国内采购合同'))});
+      }
+      /* 3. 用 JSZip 风格裸实现 zip(无依赖) */
+      const zipBytes=buildZip(files);
+      const blob=new Blob([zipBytes],{type:'application/zip'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='整套出口单证_含Word.zip'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
+}
+/* ========== 最小 zip 打包(无依赖) ========== */
+function docToBytes(str){ const enc=new TextEncoder(); return enc.encode(str); }
+function buildZip(files){
+  const enc=new TextEncoder();
+  const localParts=[]; const centralParts=[]; let offset=0;
+  files.forEach(f=>{
+    const nameBytes=enc.encode(f.name);
+    const crc=crc32(f.data);
+    const size=f.data.length;
+    const local=new Uint8Array(30+nameBytes.length+size);
+    const dv=new DataView(local.buffer);
+    dv.setUint32(0,0x04034b50,true); local[4]=20; local[5]=0; local[6]=0; local[7]=0;
+    dv.setUint16(8,0,true); dv.setUint16(10,0,true);
+    dv.setUint16(12,0,true); dv.setUint16(14,0,true);
+    dv.setUint32(16,crc,true); dv.setUint32(20,size,true); dv.setUint32(24,size,true);
+    dv.setUint16(26,nameBytes.length,true); dv.setUint16(28,0,true);
+    local.set(nameBytes,30);
+    local.set(f.data,30+nameBytes.length);
+    localParts.push(local);
+
+    const c=new Uint8Array(46+nameBytes.length);
+    const cdv=new DataView(c.buffer);
+    cdv.setUint32(0,0x02014b50,true); cdv.setUint16(4,20,true); cdv.setUint16(6,20,true);
+    cdv.setUint16(8,0,true); cdv.setUint16(10,0,true);
+    cdv.setUint16(12,0,true); cdv.setUint16(14,0,true);
+    cdv.setUint32(16,crc,true); cdv.setUint32(20,size,true); cdv.setUint32(24,size,true);
+    cdv.setUint16(28,nameBytes.length,true); cdv.setUint16(30,0,true); cdv.setUint16(32,0,true);
+    cdv.setUint16(34,0,true); cdv.setUint16(36,0,true); cdv.setUint32(38,0,true);
+    cdv.setUint32(42,offset,true);
+    c.set(nameBytes,46);
+    centralParts.push(c);
+    offset+=local.length;
+  });
+  const centralSize=centralParts.reduce((a,b)=>a+b.length,0);
+  const end=new Uint8Array(22);
+  const edv=new DataView(end.buffer);
+  edv.setUint32(0,0x06054b50,true);
+  edv.setUint16(4,0,true); edv.setUint16(6,0,true);
+  edv.setUint16(8,files.length,true); edv.setUint16(10,files.length,true);
+  edv.setUint32(12,centralSize,true); edv.setUint32(16,offset,true); edv.setUint16(20,0,true);
+  /* 拼装 */
+  const total=localParts.reduce((a,b)=>a+b.length,0)+centralSize+22;
+  const out=new Uint8Array(total);
+  let p=0;
+  localParts.forEach(b=>{ out.set(b,p); p+=b.length; });
+  centralParts.forEach(b=>{ out.set(b,p); p+=b.length; });
+  out.set(end,p);
+  return out;
+}
+const _crcTable=[];
+for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);_crcTable[i]=c>>>0;}
+function crc32(bytes){let c=0xFFFFFFFF;for(let i=0;i<bytes.length;i++)c=_crcTable[(c^bytes[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+/* 把 doc shell + html 拼成完整 doc html 字符串(供 buildZip 用字节) */
+function docFromHtmlBytes(html,name){
+  return '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+    +'<head><meta charset="utf-8"><title>'+name+'</title>'
+    +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->'
+    +'<style>body{font-family:宋体,SimSun;font-size:12pt;line-height:1.9;color:#000;margin:24px}'
+    +'h1,h2,h3,h4{font-family:黑体,SimHei;margin:10px 0 6px}'
+    +'p{margin:4px 0}'
+    +'table{border-collapse:collapse;width:100%;margin:8px 0}'
+    +'table,th,td{border:1px solid #000}th,td{padding:4px 8px;font-size:10.5pt}'
+    +'@page{size:A4;margin:2cm 1.6cm}</style></head><body>'+html+'</body></html>';
 }
 
 /* ============== 多整套单据选择/浏览/批量下载 ============== */
