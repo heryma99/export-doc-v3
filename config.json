@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-08-21T10:37:50",
+  "_at": "2026-08-24T10:10:09.446Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -44,23 +44,6 @@
   "tier1Suppliers": [
     "广州自衍空间科创有限公司"
   ],
-  "extraSup2": [],
-  "brandTypeMap": {
-    "JW PEI": "4"
-  },
-  "price": {
-    "rate": 0.2,
-    "exch": 7.1
-  },
-  "hsLibOverride": {},
-  "templates": {
-    "报关草单": null,
-    "Invoice发票": null,
-    "Packing List装箱单": null,
-    "销售合同": null,
-    "国内采购合同": null
-  },
-  "skuOverride": {},
   "tier1Profiles": {
     "广州自衍空间科创有限公司": {
       "addr": "广州市白云区锦石四路57号1801房",
@@ -68,6 +51,35 @@
       "email": "",
       "usci": "91440111MAEH87G029"
     }
+  },
+  "extraSup2": [],
+  "hiddenParties": [],
+  "hiddenSup2": [],
+  "prefOverride": {},
+  "prefHidden": [],
+  "brandTypeMap": {
+    "JW PEI": "4"
+  },
+  "price": {
+    "rate": 0.2,
+    "exch": 6.8
+  },
+  "hsLibOverride": {},
+  "templates": {
+    "报关草单": null,
+    "Invoice发票": null,
+    "Packing List装箱单": null,
+    "销售合同": null,
+    "国内采购合同": null,
+    "客户发票": null
+  },
+  "skuOverride": {},
+  "bankInfo": {
+    "pay": "",
+    "account": "",
+    "bank": "",
+    "name": "",
+    "no": ""
   },
   "bankAccounts": [
     {
