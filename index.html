@@ -1197,6 +1197,14 @@ function confirmDraft(did){
 }
 function buildData(doc){
   const d=DB.drafts.find(x=>x.id===doc.dftId);
+  /* 币种跟随报关草单：USD 时把单价/金额从 CNY 换算成 USD（除汇率 exch）；CNY 及其他币种保持原值 */
+  const _ccur=(d.header&&d.header.currency)||'CNY 人民币';
+  const _curCode=String(_ccur).toUpperCase();
+  const _isUSD=_curCode.indexOf('USD')>=0;
+  const _exch=+(DB.price&&DB.price.exch)||0;
+  const _fx=_isUSD?(_exch>0?_exch:1):1;
+  const _curSym=_isUSD?'USD':(_curCode.indexOf('EUR')>=0?'EUR':'CNY');
+  const decl2cur=v=>(_isUSD? (+v)/_fx : +v);
   const lines=d.lines.map(l=>{const ent=(mergedHsLib())[(l.hs||'').trim()];
     const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
     /* 申报要素=品牌类型|出口享惠(0)|<HS_LIB.seq 要素按品类管道拼装>
@@ -1209,7 +1217,13 @@ function buildData(doc){
     if(ent) ent.seq.forEach(k=>parts.push(map[k]));
     while(parts.length&&(parts[parts.length-1]==null||String(parts[parts.length-1]).trim()===''))parts.pop();
     const spec=parts.join('|')||('⚠ 要素序列待填('+(l.hs||'?')+')');
-    return {...l,spec,en:l.en||'',unit:l.unit||'',amount:((+l.decl)*(+l.qty)).toFixed(2),boxCnt:boxCntOf(l)};});
+    const _amt=((+l.decl)*(+l.qty));
+    return {...l,spec,en:l.en||'',unit:l.unit||'',
+      decl:l.decl,
+      amount:_amt.toFixed(2),
+      declCur:decl2cur(l.decl),
+      amountCur:decl2cur(_amt).toFixed(2),
+      boxCnt:boxCntOf(l)};});
   const base=d.header.declDate||today();
   /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
   const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=Math.round((+l.cost||0)*1.13*100)/100;return {...l,taxPrice:tp.toFixed(2),taxAmount:(tp*(+l.qty||0)).toFixed(2)};});
@@ -1218,9 +1232,11 @@ function buildData(doc){
     return {supplier:s,items,_no:((d.header&&d.header.no)||'')+'-'+(ci+1),taxTotal:items.reduce((a,l)=>a+(+l.taxAmount||0),0).toFixed(2),amount:items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0).toFixed(2),count:items.length,
       purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
+    cur:_curSym,curCode:_curCode,currencyRaw:_ccur,exch:_exch,
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
     totalAmount:lines.reduce((a,l)=>a+(+l.decl)*(+l.qty),0).toFixed(2),
+    totalAmountCur:lines.reduce((a,l)=>a+decl2cur((+l.decl)*(+l.qty)),0).toFixed(2),
     totalGW:packSummary(lines).totalGW.toFixed(2),
     totalNW:packSummary(lines).totalNW.toFixed(2),
     boxCount:packSummary(lines).boxCount,
@@ -1356,8 +1372,8 @@ function builtin(name){
 <td>{{name}}</td>
 <td>{{en}}</td>
 <td colspan="2">{{qty}} {{unit}}</td>
-<td>{{decl}}</td>
-<td>{{amount}}</td>
+<td>{{declCur}}</td>
+<td>{{amountCur}}</td>
 <td>{{header.currency}}</td>
 <td>{{header.originCountry}}</td>
 <td>{{header.destCountry}}</td>
@@ -1365,7 +1381,7 @@ function builtin(name){
 <td colspan="2">{{header.levy}}</td>
 </tr>
 <tr><td colspan="2"></td><td colspan="12">{{spec}}</td></tr>{{/each}}
-<tr><td colspan="8">TOTAL：{{header.currency}} {{totalAmount}}</td><td colspan="6"></td></tr>
+<tr><td colspan="8">TOTAL：{{header.currency}} {{totalAmountCur}}</td><td colspan="6"></td></tr>
 <tr>
 <td colspan="2">特殊关系确认：<b>{{header.special||'否'}}</b></td>
 <td></td>
@@ -1392,15 +1408,15 @@ function builtin(name){
   if(name==='Invoice发票')return head+`<p>Invoice No：{{order.no}} &nbsp; DATE：{{dates.invoice}} &nbsp; Terms of Pay：{{header.tradeTerm}} &nbsp; To Messrs：{{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
-    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
-    <tr><td colspan="5">总计CNY:</td><td>{{totalAmount}}</td></tr>
-    <tr><td colspan="5">TOTAL:CNY</td><td>{{totalAmount}}</td></tr>
+    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
+    <tr><td colspan="5">总计{{cur}}:</td><td>{{totalAmountCur}}</td></tr>
+    <tr><td colspan="5">TOTAL:{{cur}}</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr></table>`;
   if(name==='客户发票')return head+`<p>Invoice No：{{order.no}} &nbsp; DATE：{{dates.invoice}} &nbsp; Terms of Pay：{{header.tradeTerm}} &nbsp; To Messrs：{{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
-    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
-    <tr><td colspan="5">TOTAL:(CNY)</td><td>{{totalAmount}}</td></tr>
+    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
+    <tr><td colspan="5">TOTAL:({{cur}})</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr>
     <tr><td colspan="6">Payment Method: {{bankInfo.pay}}</td></tr>
     <tr><td colspan="6">RMB Account: {{bankInfo.account}}</td></tr>
@@ -1408,7 +1424,7 @@ function builtin(name){
     <tr><td colspan="6">Account Name: {{bankInfo.name}}</td></tr>
     <tr><td colspan="6">Account Number: {{bankInfo.no}}</td></tr></table>`;
   if(name==='Packing List装箱单')return head+`<p>Date：{{dates.invoice}} &nbsp; Invoice No：{{order.no}} &nbsp; To Messrs：{{header.consignee}} &nbsp; Contract No：{{header.no}}</p>
-    <p>Shipped：{{header.shipper}} &nbsp; Terms of Pay：{{header.tradeTerm}}</p>
+    <p>Shipped：From 东莞 to {{order.destCountry}} &nbsp; Terms of Pay：{{header.tradeTerm}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{style}}</td><td>{{boxCnt}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
@@ -1721,8 +1737,8 @@ function xlsCur(d){
     set(r,2,l.name||'');
     set(r,3,l.en||'');
     set(r,4,(l.qty||'')+(l.unit?(' '+l.unit):''),5);
-    set(r,6,l.decl);
-    set(r,7,l.amount);
+    set(r,6,l.declCur);
+    set(r,7,l.amountCur);
     set(r,8,H.currency);
     set(r,9,H.originCountry);
     set(r,10,H.destCountry);
@@ -1733,7 +1749,7 @@ function xlsCur(d){
     r++;
   });
   /* 合计 */
-  set(r,0,'TOTAL：'+(H.currency||'')+' '+(d.totalAmount||''),7);
+  set(r,0,'TOTAL：'+(H.currency||'')+' '+(d.totalAmountCur||d.totalAmount||''),7);
   r++;
   /* 特殊关系确认 / 价格影响 / 特许权 / 自报自缴 */
   set(r,0,'特殊关系确认：'+(H.special||'否'),1);
@@ -1795,13 +1811,13 @@ function xlsTable(type,d){
     R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
     R[r][5]={t:'s',v:'付款方式：',s:{alignment:{horizontal:'right',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
     putCell(R,r,6,H.tradeTerm||''); noB.push(r); r++;
-    /* R7 列头(全简中) */ addRow(['唛头','品名','型号','数量','','单价','金额']); r++;
+    /* R7 列头(全简中) */ addRow(['唛头','品名','型号','数量','','单价('+d.cur+')','金额('+d.cur+')']); r++;
     /* R8-R12 数据(5行) — A列 N/M 竖排合并(行7~11) */
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.style||l.sku,l.qty,'个',l.decl,l.amount]); r++; });
+    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.style||l.sku,l.qty,'个',(+l.declCur).toFixed(2),(+l.amountCur).toFixed(2)]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
-    /* R13 合计(CNY): 单行（A13:F13 合并 + G13 金额） */
-    putCell(R,r,0,'合计(CNY)：'); addMerge(MG,r,0,5); putCell(R,r,6,d.totalAmount); r++;
+    /* R13 合计(币种动态): 单行（A13:F13 合并 + G13 金额） */
+    putCell(R,r,0,'合计('+d.cur+')：'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.totalAmountCur).toFixed(2)); r++;
     /* R14 唛头 + 原产地(中国) */
     putCell(R,r,0,'唛头：'); addMerge(MG,r,0,4); lrR.push(r);
     putCell(R,r,5,'原产地：中国'); addMerge(MG,r,5,6); lrR.push(r); r++;
@@ -1838,8 +1854,10 @@ function xlsTable(type,d){
     /* 统一用 8 列布局 A-H 对齐模板（PACKING 多一列 NW 实际在 H 列） */
     const NC2=8;
     const addRow2=(c8,mode)=>{ for(let c=0;c<NC2;c++) putCell(R,r,c,c8[c]!=null?c8[c]:''); if(mode==='noborder') noB.push(r); if(mode==='lr') lrR.push(r); };
-    /* R1 PACKING LIST */
-    putCell(R,r,0,'PACKING LIST'); for(let c=1;c<NC2;c++) putCell(R,r,c,''); addMerge(MG,r,0,NC2-1); noB.push(r); r++;
+    /* R1 PACKING LIST（居中 + 16号粗体） */
+    putCell(R,r,0,'PACKING LIST'); for(let c=1;c<NC2;c++) putCell(R,r,c,'');
+    R[r][0].s=R[r][0].s||{}; R[r][0].s.alignment={horizontal:'center',vertical:'center'}; R[r][0].s.font={sz:16,name:'宋体',bold:true};
+    addMerge(MG,r,0,NC2-1); noB.push(r); r++;
     /* R2 Date: */
     addRow2(['','','','','','','','Date：',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,7,NC2-1); r++;
     /* 补列宽：实际 NC2=8 但需 8 列; 但模板 H 用了 N.W.。改为 7 列 G:H 合并的方式更贴近模板 */
@@ -1852,8 +1870,9 @@ function xlsTable(type,d){
     addRow2(['','','','','','','','Invoice No:',no]); noB.push(r); addMerge(MG,r,7,NC2-1); r++;
     /* R4 To Messrs + Contract No */
     addRow2(['To  Messrs: ',H.consignee,'','','','','','Contract No:',H.no||no]); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
-    /* R5 Shipped + Terms of Payment */
-    addRow2(['Shipped           ',H.shipper||'','','','','','','Terms of Payment:',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
+    /* R5 Shipped(从东莞 至 最终目的国) + Terms of Payment */
+    const _shipFrom='东莞', _shipTo=(d.order&&d.order.destCountry)||H.destCountry||'';
+    addRow2(['Shipped           ','From '+_shipFrom+' to '+_shipTo,'','','','','','','Terms of Payment:',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
     /* R6 列头 */
     addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
     /* R7-R11 数据(N/M 竖排合并 A7:A11) */
@@ -1883,16 +1902,16 @@ function xlsTable(type,d){
     /* R4 Invoice No */ addRow(['','','','','','Invoice No: ',no]); noB.push(r); addMerge(MG,r,5,6); r++;
     /* R5 To Messrs / DATE */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,1,4); addMerge(MG,r,5,6); r++;
     /* R6 Terms */ addRow(['','','','','','Terms of Payment: ',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,5,6); r++;
-    /* R7 列头 */ addRow(['Mark & No','Description','Model','Quantity','','Unit price','Amount']); r++;
+    /* R7 列头 */ addRow(['Mark & No','Description','Model','Quantity','','Unit price('+d.cur+')','Amount('+d.cur+')']); r++;
     /* R8-R12 数据 (繁体 fan) */
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',fan(l.name),l.style||l.sku,l.qty,'個',l.decl,l.amount]); r++; });
+    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',fan(l.name),l.style||l.sku,l.qty,'個',(+l.declCur).toFixed(2),(+l.amountCur).toFixed(2)]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
-    /* R13 TOTAL:(CNY) A13:F13合并 + G13金额 */
-    putCell(R,r,0,'TOTAL:(CNY)'); addMerge(MG,r,0,5); putCell(R,r,6,d.totalAmount); r++;
+    /* R13 TOTAL:(币种动态) A13:F13合并 + G13金额 */
+    putCell(R,r,0,'TOTAL:('+d.cur+')'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.totalAmountCur).toFixed(2)); r++;
     /* R14 Marks + Country */
     putCell(R,r,0,'Marks'); addMerge(MG,r,0,4); lrR.push(r);
-    putCell(R,r,5,'Country Of Orign：C'); addMerge(MG,r,5,6); lrR.push(r); r++;
+    putCell(R,r,5,'Country Of Origin: China'); addMerge(MG,r,5,6); lrR.push(r); r++;
     /* R15-R16 空 */
     noB.push(r); r++; noB.push(r); r++;
     /* 账户区 - 全部无边框 */
@@ -2276,8 +2295,15 @@ function escQ(s){return esc(s).replace(/'/g,'\\u0027');}
 /* 简→繁(给客户发票用)：常用商贸字映射，覆盖品名/单位/常用词 */
 const FAN_MAP={'单':'單','个':'個','数':'數','长':'長','宽':'寬','卖':'賣','买':'買','购':'購','销':'銷','货':'貨','费':'費','额':'額','计':'計','总':'總','关':'關','报':'報','汇':'匯','银':'銀','账':'帳','户':'戶','币':'幣','价':'價','税':'稅','据':'據','号':'號','码':'碼','检':'檢','验':'驗','认':'認','证':'證','签':'簽','运':'運','输':'輸','装':'裝','袜':'襪','裤':'褲','裙':'裙','连':'連','针':'針','织':'織','涤':'滌','纶':'綸','胶':'膠','机':'機','镜':'鏡','链':'鏈','环':'環','钮':'鈕','饰':'飾','表':'錶','钟':'鐘','伞':'傘','垫':'墊','帘':'簾','双':'雙','对':'對','组':'組','批':'批','条':'條','块':'塊','张':'張','顶':'頂','台':'臺','辆':'輛','层':'層','盘':'盤','准':'準','确':'確','标':'標','简':'簡','体':'體','称':'稱','这':'這','为':'為','与':'與','无':'無','发':'發','产':'產','业':'業','东':'東','国':'國','区':'區','时':'時','间':'間','门':'門','开':'開','阳':'陽','电':'電','话':'話','语':'語','读':'讀','写':'寫','书':'書','处':'處','车':'車','风':'風','飞':'飛','马':'馬','见':'見','观':'觀','觉':'覺','视':'視','亲':'親','旧':'舊','进':'進','过':'過','还':'還','里':'裏','头':'頭','点':'點','齐':'齊','后':'後','给':'給','纸':'紙','线':'線','绳':'繩','网':'網','红':'紅','绿':'綠','蓝':'藍','黄':'黃','铁':'鐵','钢':'鋼','铝':'鋁','铜':'銅','锌':'鋅','镍':'鎳','铬':'鉻','钛':'鈦','镁':'鎂','铅':'鉛','金':'金','银':'銀','钱':'錢','元':'元','块':'塊','角':'角','分':'分','毛':'毛','收':'收','款':'款','支':'支','付':'付','方':'方','式':'式','开':'開','户':'戶','行':'行','名':'名','称':'稱','号':'號','数':'數','量':'量','额':'額','合':'合','计':'計','币':'幣','种':'種','类':'類','型':'型','号':'號','格':'格','纸':'紙','规':'規','格':'格','净':'淨','重':'重','毛':'毛','尺':'尺','寸':'寸','高':'高','厚':'厚','圆':'圓','角':'角','分':'分','件':'件','套':'套','组':'組','箱':'箱','袋':'袋','瓶':'瓶','罐':'罐','盒':'盒','桶':'桶','支':'支','把':'把','幅':'幅','艘':'艘','排':'排','串':'串','枚':'枚','根':'根','束':'束','捆':'捆','卷':'卷','包':'包','只':'隻','双':'雙','个':'個','条':'條','张':'張','片':'片','块':'塊','顶':'頂','条':'條','根':'根','支':'支','枚':'枚','辆':'輛','台':'臺','架':'架','艘':'艘','层':'層','匹':'匹','斤':'斤','公':'公','吨':'噸','克':'克','千':'千','米':'米','厘':'釐','毫':'毫','码':'碼','尺':'尺','寸':'寸','英':'英','磅':'磅','盎':'盎','司':'司','加':'加','仑':'侖','升':'升','毫':'毫','瓦':'瓦','伏':'伏','安':'安','欧':'歐','赫':'赫','兹':'茲','焦':'焦','卡':'卡','路':'路','里':'裏','海':'海','关':'關','口':'口','岸':'岸','港':'港','澳':'澳','台':'臺','湾':'灣','岛':'島','南':'南','北':'北','京':'京','上':'上','海':'海','广':'廣','州':'州','深':'深','圳':'圳','东':'東','莞':'莞','珠':'珠','澳':'澳','香':'香','港':'港','美':'美','国':'國','英':'英','国':'國','法':'法','国':'國','德':'德','国':'國','日':'日','本':'本','韩':'韓','国':'國','澳':'澳','洲':'洲','新':'新','加':'加','坡':'坡','马':'馬','来':'來','西':'西','亚':'亞','泰':'泰','国':'國','越':'越','南':'南','印':'印','度':'度','尼':'尼','菲':'菲','律':'律','宾':'賓','柬':'柬','埔':'埔','寨':'寨','缅':'緬','甸':'甸','老':'老','挝':'寮','文':'文','莱':'萊','巴':'巴','西':'西','墨':'墨','西':'西','哥':'哥','加':'加','拿':'拿','大':'大','澳':'澳','大':'大','利':'利','亚':'亞','新':'新','西':'西','兰':'蘭','荷':'荷','兰':'蘭','比':'比','利':'利','时':'時','瑞':'瑞','士':'士','奥':'奧','地':'地','利':'利','丹':'丹','麦':'麥','芬':'芬','兰':'蘭','挪':'挪','威':'威','瑞':'瑞','典':'典','波':'波','兰':'蘭','捷':'捷','克':'克','匈':'匈','牙':'牙','利':'利','希':'希','腊':'臘','葡':'葡','萄':'萄','牙':'牙','意':'意','大':'大','利':'利','西':'西','班':'班','牙':'牙','俄':'俄','罗':'羅','斯':'斯','乌':'烏','克':'克','兰':'蘭','土':'土','耳':'耳','其':'其','沙':'沙','特':'特','阿':'阿','拉':'拉','伯':'伯','联':'聯','酋':'酋','长':'長','国':'國','以':'以','色':'色','列':'列','埃':'埃','及':'及','南':'南','非':'非','摩':'摩','洛':'洛','哥':'哥','尼':'尼','日':'日','利':'利','亚':'亞','肯':'肯','尼':'尼','亚':'亞','坦':'坦','桑':'桑','尼':'尼','亚':'亞','乌':'烏','干':'干','达':'達','加':'加','纳':'納','塞':'塞','内':'內','加':'加','尔':'爾','象':'象','牙':'牙','海':'海','岸':'岸','卢':'盧','旺':'旺','达':'達','布':'布','隆':'隆','迪':'迪','刚':'剛','果':'果','金':'金','萨':'薩','赫':'赫','尔':'爾','苏':'蘇','丹':'丹','利':'利','比':'比','亚':'亞','乍':'乍','得':'得','中':'中','非':'非','共':'共','和':'和','国':'國','卡':'卡','麦':'麥','隆':'隆','加':'加','蓬':'蓬','赤':'赤','道':'道','几':'幾','内':'內','亚':'亞','圣':'聖','多':'多','美':'美','和':'和','普':'普','林':'林','西':'西','比':'比','奥':'奧'};
 function fan(s){return (s==null?'':String(s)).split('').map(ch=>FAN_MAP[ch]||ch).join('');}
-/* 箱数(Ge.Crate)：qtyPerBox(每箱件数)可算则 ceil(qty/每箱件数)，否则行内 boxCnt，兜底 1 */
-function boxCntOf(l){if(!l)return 1;const q=+l.qty||0;if(q<=0)return 1;const qpb=+l.qtyPerBox||0||(+((window.BOX_SPECS||{})[l.sku]||{}).qtyPerBox||0);if(qpb>0)return Math.max(1,Math.ceil(q/qpb));return +l.boxCnt||1;}
+/* 箱数(Ge.Crate)：优先取上传装箱清单的 boxCnt（源文件「箱数/CTNS」列），
+   其次 qtyPerBox(每箱件数) 推算 ceil(qty/每箱件数)，兜底 1。
+   注意：BOX_SPECS 的 qtyPerBox 仅作兜底推算，不覆盖已上传的箱数。 */
+function boxCntOf(l){if(!l)return 1;
+  const up=+l.boxCnt; if(up>0) return Math.round(up);      /* 上传装箱清单的箱数优先 */
+  const q=+l.qty||0; if(q<=0)return 1;
+  const qpb=+l.qtyPerBox||0||(+((window.BOX_SPECS||{})[l.sku]||{}).qtyPerBox||0);
+  if(qpb>0)return Math.max(1,Math.ceil(q/qpb));
+  return 1;}
 /* 日期 → 中文格式：2026-04-08 → 2026年4月8日(销售合同模板风格)；无法解析原样返回 */
 function fmtDateCN(s){if(!s)return '';const m=String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(!m)return String(s);return (+m[1])+'年'+(+m[2])+'月'+(+m[3])+'日';}
 function skuList(){const b=window.__SKU_BULK__||[];if(b.length){const have=new Set(b.map(x=>x.sku));return b.concat((DB.sku||[]).filter(x=>!have.has(x.sku)));}return DB.sku||[];}
