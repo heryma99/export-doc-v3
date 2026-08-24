@@ -360,7 +360,7 @@ function consolidatedSupplier(s){
   return t?String(t).trim()||v:v;
 }
 function mergeLines(lines,mode,sup){
-  if(mode==='M0'||!lines.length) return lines.map(x=>Object.assign({},x));
+  if(mode==='M0'||!lines.length) return lines.map(x=>{const r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); return r;});
   const m=MODES.find(x=>x.id===mode)||MODES[0];
   // 降级保护：M4/M5 的"款式"维度依赖真SPU；取不到(显式列无值且SKU无法推导)时退化为按SKU分行
   const hasStyle=lines.some(l=>getSpu(l));
@@ -374,11 +374,13 @@ function mergeLines(lines,mode,sup){
     rep.qty=g.reduce((a,x)=>a+(+x.qty||0),0);
     rep.gw=g.reduce((a,x)=>a+(+x.gw||0),0);
     rep.nw=g.reduce((a,x)=>a+(+x.nw||0),0);
-    /* 箱号：合并后保留组内全部不重复 boxNo（分号拼接），避免 M5 合并时丢第二行箱号导致 packSummary 漏算。
-       出口单据箱数统一由 packSummary(d.lines) 按 boxNo 范围权威计算，无需在此重复聚合。 */
+    /* 箱号：合并后保留组内全部不重复 boxNo（分号拼接），避免 M5 合并时丢第二行箱号导致 packSummary 漏算。 */
     rep.boxNo=[...new Set(g.map(x=>String(x.boxNo||'').trim()).filter(Boolean))].join(';');
-    /* boxCnt：合并后取组内最大值作为兜底(防"逐箱行重复填总箱数"被 packSummary 误算)；真箱数场景 packSummary 优先 boxNo 范围。 */
-    rep.boxCnt=g.reduce((a,x)=>Math.max(a,(+x.boxCnt||0)),0);
+    /* boxCnt：合并行 = 组内各型号箱数求和（用户铁律：装箱清单合并行箱数 = 合并型号箱数之和）。
+       M0 不合并时 g 仅 1 行，求和=原值；若该行无 boxCnt（如 FBA 仅靠 boxNo 范围）→ 回退 boxNo 范围累加。
+       报关件数恒定走 totalBoxCount，与此口径统一（均为求和）。 */
+    const _sum=g.reduce((a,x)=>a+(+x.boxCnt||0),0);
+    rep.boxCnt=_sum>0?_sum:g.reduce((a,x)=>a+parseBoxNoCount(String(x.boxNo||'').trim()),0);
     rep.qtyPerBox=g[0].qtyPerBox||0;
     rep._merged=g.length>1; rep._cnt=g.length; rep._keys=g.map(x=>x.sku);
     /* 组内全部二级供应商(去重)，供合同「供货工厂(原)」列完整显示 */
@@ -725,7 +727,7 @@ function parseBoxNoCount(s){
      ① boxNo 范围权威：若存在任一行的 boxNo 是"带范围的箱号"(如 FBA 'FBA...U000001～4'，parseBoxNoCount>1)，
         把这些行的「范围累加」作为总箱数。覆盖 FBA「单行汇总 boxNo 范围 + 多行不同 SKU」批量场景，
         解决"箱数 = Math.max(boxCnt) 丢行"问题。
-     ② 否则按 boxCnt 取 max（避免"逐箱重复填总箱数"被求和成倍数 = 49）；
+     ② 否则按 boxCnt 求和（用户铁律：报关件数=总箱数=各行箱数之和；装箱清单合并行=组内求和，口径统一）；
      ③ 否则按 boxNo 去重单值 + qpb 兜底。 */
 function packSummary(items, opts){
   const seen=Object.create(null), boxes=[]; let gw=0,nw=0,conflict=0;
@@ -749,8 +751,8 @@ function packSummary(items, opts){
   }else{
     const anyBoxCnt=its.some(function(it){return (+it.boxCnt||0)>0;});
     if(anyBoxCnt){
-      /* ② boxCnt 取 max（防"逐箱行重复填总箱数"求和成倍数） */
-      boxCount=Math.max.apply(null, its.map(function(it){return +it.boxCnt||0;}));
+      /* ② boxCnt 求和（总箱数=各行箱数之和；与装箱清单合并行口径统一） */
+      boxCount=its.reduce(function(a,it){return a+(+it.boxCnt||0);},0);
       its.forEach(function(it){ gw+=(+it.gw||0); nw+=(+it.nw||0); });
     }else{
       /* ③ boxNo 去重 + 范围展开 */
@@ -1291,7 +1293,7 @@ function buildData(doc){
       amount:_amt.toFixed(2),
       declCur:decl2cur(l.decl),
       amountCur:decl2cur(_amt).toFixed(2),
-      boxCnt:boxCntOf(l),
+      boxCnt:(+l.boxCnt||0),
       /* Model 列：按款合并时显示该款下全部 SKU(_keys)，与报关草单一致；否则取款号/单SKU */
       model:(l._keys&&l._keys.length)?l._keys.join(','):(l.style||l.sku)};});
   const base=d.header.declDate||today();
@@ -1977,7 +1979,7 @@ function xlsTable(type,d){
     addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
     /* R7-R11 数据(N/M 竖排合并 A7:A11) */
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.model,boxCntOf(l),l.qty,'个',l.gw,l.nw]); r++; });
+    d.lines.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.model,(+l.boxCnt||0),l.qty,'个',l.gw,l.nw]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R12 Total：箱数合计与报关单件数、系统"解析"严格一致，统一取 packSummary 权威箱数，避免两套口径偏差 */
     const bc=totalBoxCount(d.lines);
