@@ -382,6 +382,8 @@ function mergeLines(lines,mode,sup){
     const _sum=g.reduce((a,x)=>a+(+x.boxCnt||0),0);
     rep.boxCnt=_sum>0?_sum:g.reduce((a,x)=>a+parseBoxNoCount(String(x.boxNo||'').trim()),0);
     rep.qtyPerBox=g[0].qtyPerBox||0;
+    /* 混箱：合并组内 boxSeq（占箱序号去重），供装箱清单展示该合并款落哪几箱 */
+    rep.boxSeq=[...new Set([].concat.apply([],g.map(x=>x.boxSeq||[])))].sort((a,b)=>a-b);
     rep._merged=g.length>1; rep._cnt=g.length; rep._keys=g.map(x=>x.sku);
     /* 组内全部二级供应商(去重)，供合同「供货工厂(原)」列完整显示 */
     rep._supers=[...new Set(g.map(x=>x.supplier).filter(Boolean))].join(';');
@@ -690,8 +692,16 @@ function parseGrid(grid,forceSku,opts){
         }
       }
     }
+    /* 混箱占箱数：该 SKU 在「第N箱」列中非零列数 = 该 SKU 占用几个箱(如 4B73-2 占第9+10箱 = 2)。
+       仅当识别到混箱结构(boxCols>=2)且无单SKU箱号范围时采用，避免干扰普通箱号范围文件。 */
+    let mixBoxCnt=bc, boxSeq=[];
+    if(boxCols.length>=2 && !g('boxNo')){
+      boxSeq=boxCols.filter(function(j){ return numv(c[j])>0; })
+                    .map(function(j){ return boxCols.indexOf(j)+1; }); /* 第N箱序号(1-based) */
+      mixBoxCnt=boxSeq.length;
+    }
     rows.push({sku:sku,qty:qty,gw:gw,nw:nw,bw:bw,
-      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:bc,
+      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:mixBoxCnt,boxSeq:boxSeq,
       asin:g('asin'),fnsku:g('fnsku'),name:g('name'),shop:g('shop'),pallet:g('pallet')||g('palletSize')});
   }
   const missing=[];
@@ -700,7 +710,11 @@ function parseGrid(grid,forceSku,opts){
   if(m.box<0 && (m.length<0 || m.width<0 || m.height<0)) missing.push('box'); /* 有长/宽/高即可拼箱规，不再报缺失 */
   if(m.no<0) missing.push('no');                    /* 单号缺失仅提示，不阻断；下游表头可补 */
   if(m.bw<0) missing.push('bw');                    /* bw 缺失仅提示（有 box_specs/固定值兜底），不阻断 */
-  return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4)};
+  /* 混箱标志：识别到「第N箱」列且行级无箱号范围 → 判定为 Amazon 混箱(每箱多款)。
+     混箱总箱数 = boxCols.length(第N箱列数)，不能对 SKU 行箱数求和(一箱多SKU会虚高)。 */
+  const mixedBox = boxCols.length>=2 && !rows.some(function(r){ return /\d+[~\-～]\d+/.test(String(r.boxNo||'')); });
+  return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4),
+          boxCols:boxCols,mixedBox:mixedBox};
 }
 /* 箱号范围解析：支持 FBA / 通用写法 ——
    U0001~U0007 / U0001-7 / 1~7 / 001-007 / 1～7 / FBA 'FBA19M2JYF8SU000001～4'(简写末号);
@@ -732,6 +746,17 @@ function parseBoxNoCount(s){
 function packSummary(items, opts){
   const seen=Object.create(null), boxes=[]; let gw=0,nw=0,conflict=0;
   const its=items||[];
+  /* ０ 混箱优先（Amazon 每箱多款清单）：总箱数 = 所有 SKU 占用箱序号的最大值(=最大箱序)。
+     混箱识别：存在 boxSeq 数组(解析阶段对「第N箱」列非零计数生成) 且无单SKU箱号范围。
+     绝对不能对 SKU 行箱数求和(一箱多SKU会虚高，如本例48SKU占箱和=50≠真实14箱)。 */
+  const hasMixed=its.some(function(it){ return Array.isArray(it.boxSeq)&&it.boxSeq.length; })
+                && !its.some(function(it){ return /\d+[~\-～]\d+/.test(String(it.boxNo||'')); });
+  if(hasMixed){
+    let maxSeq=0;
+    its.forEach(function(it){ (it.boxSeq||[]).forEach(function(s){ if(s>maxSeq) maxSeq=s; }); gw+=(+it.gw||0); nw+=(+it.nw||0); });
+    return {boxCount:maxSeq,totalGW:Math.round(gw*1000)/1000,totalNW:Math.round(nw*1000)/1000,
+            boxes:[],conflict:0,mixedBox:true};
+  }
   /* 收集 boxNo 范围贡献（boxNo 去重 + parseBoxNoCount 求和；空箱号跳过） */
   const seenBN=Object.create(null);
   let boxNoSum=0, hasBNRange=false;
@@ -847,7 +872,9 @@ function ingestGrid(src,grid,forceSku){
   if(!r.rows.length){ PEND={src:src,grid:grid}; showDiag(r); return; }
   const ps=packSummary(r.rows, (r.missing||[]).indexOf('nw')>=0 ? {perBoxBw:(fixed||1.3)} : null);
   const rec={id:uid('R'),fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
-    sum:ps,head:r.head,missing:r.missing};
+    sum:ps,head:r.head,missing:r.missing,
+    boxCols:r.boxCols||[],mixedBox:!!r.mixedBox,
+    boxCountMixed:(r.mixedBox&&r.boxCols)?r.boxCols.length:null};
   DB.records.push(rec);DB.sel.rec=rec.id;save();renderRecords();
   showOk(r,ps);
 }
