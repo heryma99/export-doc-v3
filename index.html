@@ -1035,13 +1035,13 @@ function delRec(id){
 /* ============== 阶段2 订单 ============== */
 function genOrder(recId){
   const rec=DB.records.find(r=>r.id===recId);if(!rec)return;
-  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i}))};
+  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',consignee:'',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i}))};
   DB.orders.push(ord);DB.sel.ord=ord.id;save();renderOrders();
 }
 function renderOrders(){
   document.getElementById('ordCount').textContent=DB.orders.length+' 个订单';
   if(!DB.orders.length){document.getElementById('ordTable').innerHTML='<p class="muted">勾选上方记录并点「生单→」生成订单。</p>';return;}
-  let h='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>收货人*</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
   DB.orders.forEach(o=>{const ok=o.destCountry&&o.currency;
     h+=`<tr class="${DB.sel.ord===o.id?'sel':''}">
       <td><input type="checkbox" ${DB.sel.ord===o.id?'checked':''} onchange="pickOrd('${o.id}')"></td>
@@ -1054,6 +1054,7 @@ function renderOrders(){
       <td><select style="width:110px" onchange="setOrd('${o.id}','transMode',this.value)"><option value="">运输</option>${opt(CODE.trans,o.transMode.split(' ')[0])}</select></td>
       <td><select style="width:120px" onchange="setOrd('${o.id}','tradeMode',this.value)"><option value="">监管</option>${opt(CODE.tradeMode,o.tradeMode.split(' ')[0])}</select></td>
       <td><select style="width:90px" onchange="setOrd('${o.id}','tradeTerm',this.value)"><option value="">成交</option>${opt(CODE.tradeTerm,o.tradeTerm)}</select></td>
+      <td><select class="req" style="width:160px" onchange="setOrd('${o.id}','consignee',this.value)"><option value="">选收货人</option>${optStr(DB.parties.consignees,o.consignee)}</select></td>
       <td>${o.items.length}</td>
       <td><button class="primary" ${ok?'':'disabled'} onclick="genDraft('${o.id}')">生成草单→</button> <button class="ghost small" onclick="delOrd('${o.id}')">删</button></td></tr>`;});
   h+='</tbody></table><p class="seq">* 红框=必填红线；贸易国=买方所在地(如HK→110)、运抵国=货物实际到达国、产终国=中国、最终目的国=订单红线。四者独立录入。</p>';
@@ -1076,7 +1077,7 @@ function setOrd(id,k,v){const o=DB.orders.find(x=>x.id===id);if(o){o[k]=v;save()
 
 /* ============== 阶段3 草单 ============== */
 function defaultHeader(o){
-  return {no:o.no||'',shipper:DB.parties.shippers[0],buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
+  return {no:o.no||'',shipper:DB.parties.shippers[0],buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:o.consignee||DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
     partyA:{name:'',addr:'',contact:'',email:''},partyB:{name:'',addr:'',contact:'',email:''},
     signPlace:'【東莞】',signDate:today(),deliveryDate:'',
     deliveryPlace:'',tradeMode:o.tradeMode||'0110 一般贸易',transMode:o.transMode||'2 水路运输',tradeTerm:o.tradeTerm||'FOB',port:'',levy:'1 照章征税',
@@ -1095,7 +1096,7 @@ function buildRawLines(items,destCountry){
       supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||it.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
 }
-function bucketDims(){return [['destCountry','目的国'],['transMode','运输方式'],['currency','币制'],['tradeMode','监管方式'],['tradeTerm','成交方式']];}
+function bucketDims(){return [['destCountry','目的国'],['transMode','运输方式'],['currency','币制'],['tradeMode','监管方式'],['tradeTerm','成交方式'],['consignee','收货人']];}
 function bucketKey(o){return bucketDims().map(d=>String(o[d[0]]||'')).join('|');}
 function describeDiff(a,b){return bucketDims().filter(d=>String(a[d[0]]||'')!==String(b[d[0]]||'')).map(d=>d[1]).join('、')||'未知';}
 function genDraft(ordId){
@@ -1148,7 +1149,7 @@ function renderMergePanel(){
   let h='<div class="merge-panel"><h3 style="font-size:14px;margin:14px 0 8px">合并单证（按红线维度自动分桶，跨桶不可同选）</h3>';
   Object.keys(groups).forEach(k=>{
     const gs=groups[k]; const dims=k.split('|');
-    const label='目的国 '+(dims[0]||'?')+' · 运输 '+(dims[1]||'?')+' · 币制 '+(dims[2]||'?')+' · 监管 '+(dims[3]||'?')+' · 成交 '+(dims[4]||'?');
+    const label='目的国 '+(dims[0]||'?')+' · 运输 '+(dims[1]||'?')+' · 币制 '+(dims[2]||'?')+' · 监管 '+(dims[3]||'?')+' · 成交 '+(dims[4]||'?')+' · 收货人 '+(dims[5]||'?');
     h+='<div class="bucket" style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:12px;margin-bottom:12px">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="th" style="font-size:14px">'+esc(label)+'</span><span class="ts">'+gs.length+' 单</span></div>';
     gs.forEach(o=>{const on=DB.mergeSel.indexOf(o.id)>=0?'checked':'';
