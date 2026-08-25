@@ -202,6 +202,7 @@
           <div class="bd">
             <div class="note">双红线 = <b>最终目的国</b> + <b>币种</b>，缺任一不允许生成草单。四国各自独立录入（贸易国=买方地 / 运抵国=货物到达 / 产终国=中国 / 最终目的国=订单红线）。</div>
             <div id="ordTable"></div>
+            <div id="mergePanel"></div>
           </div>
         </div>
       </div>
@@ -1034,13 +1035,13 @@ function delRec(id){
 /* ============== 阶段2 订单 ============== */
 function genOrder(recId){
   const rec=DB.records.find(r=>r.id===recId);if(!rec)return;
-  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'',arrivalCountry:'',originCountry:'中国',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i}))};
+  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i}))};
   DB.orders.push(ord);DB.sel.ord=ord.id;save();renderOrders();
 }
 function renderOrders(){
   document.getElementById('ordCount').textContent=DB.orders.length+' 个订单';
   if(!DB.orders.length){document.getElementById('ordTable').innerHTML='<p class="muted">勾选上方记录并点「生单→」生成订单。</p>';return;}
-  let h='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
   DB.orders.forEach(o=>{const ok=o.destCountry&&o.currency;
     h+=`<tr class="${DB.sel.ord===o.id?'sel':''}">
       <td><input type="checkbox" ${DB.sel.ord===o.id?'checked':''} onchange="pickOrd('${o.id}')"></td>
@@ -1050,10 +1051,14 @@ function renderOrders(){
       <td><select style="width:100px" onchange="setOrd('${o.id}','tradeCountry',this.value)"><option value="">买方地</option>${opt(CODE.country,o.tradeCountry)}</select></td>
       <td><select style="width:100px" onchange="setOrd('${o.id}','arrivalCountry',this.value)"><option value="">货物到达</option>${opt(CODE.country,o.arrivalCountry)}</select></td>
       <td><input style="width:80px" value="${o.originCountry}" onchange="setOrd('${o.id}','originCountry',this.value)"></td>
+      <td><select style="width:110px" onchange="setOrd('${o.id}','transMode',this.value)"><option value="">运输</option>${opt(CODE.trans,o.transMode.split(' ')[0])}</select></td>
+      <td><select style="width:120px" onchange="setOrd('${o.id}','tradeMode',this.value)"><option value="">监管</option>${opt(CODE.tradeMode,o.tradeMode.split(' ')[0])}</select></td>
+      <td><select style="width:90px" onchange="setOrd('${o.id}','tradeTerm',this.value)"><option value="">成交</option>${opt(CODE.tradeTerm,o.tradeTerm)}</select></td>
       <td>${o.items.length}</td>
       <td><button class="primary" ${ok?'':'disabled'} onclick="genDraft('${o.id}')">生成草单→</button> <button class="ghost small" onclick="delOrd('${o.id}')">删</button></td></tr>`;});
   h+='</tbody></table><p class="seq">* 红框=必填红线；贸易国=买方所在地(如HK→110)、运抵国=货物实际到达国、产终国=中国、最终目的国=订单红线。四者独立录入。</p>';
   document.getElementById('ordTable').innerHTML=h;
+  renderMergePanel();
   updRail();
 }
 function pickOrd(id){DB.sel.ord=DB.sel.ord===id?null:id;save();renderOrders();}
@@ -1070,33 +1075,36 @@ function delOrd(id){
 function setOrd(id,k,v){const o=DB.orders.find(x=>x.id===id);if(o){o[k]=v;save();renderOrders();}}
 
 /* ============== 阶段3 草单 ============== */
-function genDraft(ordId){
-  const o=DB.orders.find(x=>x.id===ordId);if(!o)return;
-  const locked=!(o.destCountry&&o.currency);
-  const e0=enjoysOf(o.destCountry);
-  const rawLines=o.items.map(it=>{const s=getSku(it.sku)||{};
+function defaultHeader(o){
+  return {no:o.no||'',shipper:DB.parties.shippers[0],buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
+    partyA:{name:'',addr:'',contact:'',email:''},partyB:{name:'',addr:'',contact:'',email:''},
+    signPlace:'【東莞】',signDate:today(),deliveryDate:'',
+    deliveryPlace:'',tradeMode:o.tradeMode||'0110 一般贸易',transMode:o.transMode||'2 水路运输',tradeTerm:o.tradeTerm||'FOB',port:'',levy:'1 照章征税',
+    currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today(),
+    preNo:'',customsNo:'',vehicle:'',billNo:'',levyNature:'',license:'',
+    destPort:o.destCountry,exitPort:'',packKind:'纸箱',
+    freight:'/O/',premium:'/O/',misc:'/O/',container:'',attach:'合同；发票；装箱单',marks:'',special:'/',priceEff:'/',royalty:'/',
+    declarer:DB.parties.shippers[0],declUnit:DB.parties.shippers[0]};
+}
+function buildRawLines(items,destCountry){
+  const e0=enjoysOf(destCountry||'');
+  return items.map(it=>{const s=getSku(it.sku)||{};
     return {sku:it.sku,name:s.cn||it.name,en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:resolveBrandType(s),enjoys:e0,
       decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',
       boxCnt:it.boxCnt||0,qtyPerBox:it.qtyPerBox||0,boxSeq:it.boxSeq||[],boxSeqW:it.boxSeqW||[],
       supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||it.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
+}
+function bucketDims(){return [['destCountry','目的国'],['transMode','运输方式'],['currency','币制'],['tradeMode','监管方式'],['tradeTerm','成交方式']];}
+function bucketKey(o){return bucketDims().map(d=>String(o[d[0]]||'')).join('|');}
+function describeDiff(a,b){return bucketDims().filter(d=>String(a[d[0]]||'')!==String(b[d[0]]||'')).map(d=>d[1]).join('、')||'未知';}
+function genDraft(ordId){
+  const o=DB.orders.find(x=>x.id===ordId);if(!o)return;
+  const locked=!(o.destCountry&&o.currency);
+  const e0=enjoysOf(o.destCountry);
+  const rawLines=buildRawLines(o.items,o.destCountry);
   const dft={id:uid('D'),ordId,locked,
-    header:{no:o.no||'',shipper:DB.parties.shippers[0],buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
-      /* 销售合同(繁体)甲乙双方：按主体档案自动引用(甲方=境外收货人, 乙方=境内发货人)，随草单主体变化自动更新 */
-      partyA:{name:'',addr:'',contact:'',email:''},
-      partyB:{name:'',addr:'',contact:'',email:''},
-      signPlace:'【東莞】',signDate:today(),deliveryDate:'',
-      /* 国内采购合同：乙方=一级供应商/乙方账户=该供应商账户，均由 buildData/xlsContract 按规则现取，不落表头 */
-      deliveryPlace:'',
-      tradeMode:'0110 一般贸易',transMode:'2 水路运输',tradeTerm:'FOB',port:'',levy:'1 照章征税',
-      currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today(),
-      /* 报关草单扩展字段（草单可留空，打印前补全） */
-      preNo:'',customsNo:'',vehicle:'',billNo:'',levyNature:'',license:'',
-      destPort:o.destCountry,exitPort:'',packKind:'纸箱',
-      freight:'/O/',premium:'/O/',misc:'/O/',
-      container:'',attach:'合同；发票；装箱单',marks:'',
-      special:'/',priceEff:'/',royalty:'/',
-      declarer:DB.parties.shippers[0],declUnit:DB.parties.shippers[0]},
+    header:defaultHeader(o),
     rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false};
   /* 自动补全报关草单编码：从主体信息维护(发货人档案)取 信用代码/海关注册编码，改发货人时 setHeader 也会联动 */
   const _cd=(DB.parties.codes&&DB.parties.codes[dft.header.shipper])||{};
@@ -1108,6 +1116,74 @@ function genDraft(ordId){
   dft.header.partyB={name:dft.header.shipper||'',addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''};
   DB.drafts.push(dft);DB.sel.dft=dft.id;save();renderDrafts();
 }
+function genMergedDraft(ids){
+  ids=(ids||[]).filter(Boolean);
+  if(ids.length<2){alert('合并需至少 2 个订单');return;}
+  const ords=ids.map(id=>DB.orders.find(o=>o.id===id)).filter(Boolean);
+  if(ords.length<2){alert('未找到足够订单');return;}
+  const base=ords[0];
+  const bad=ords.find(o=>bucketKey(o)!==bucketKey(base));
+  if(bad){alert('合并拦截：订单 '+bad.id+' 的「'+describeDiff(base,bad)+'」与其它单不一致，禁止同桶合并。请只选同红线维度的订单。');return;}
+  const destCountry=base.destCountry;
+  const items=[]; ords.forEach(o=>o.items.forEach(i=>items.push(Object.assign({},i))));
+  const rawLines=buildRawLines(items,destCountry);
+  const dft={id:uid('D'),ordId:'__merged__',isMerged:true,sourceOrderIds:ords.map(o=>o.id),bucketKey:bucketKey(base),locked:false,
+    header:defaultHeader(base),rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false};
+  dft.header.no=ords.map(o=>o.no||o.id).join(',');
+  const _cd=(DB.parties.codes&&DB.parties.codes[dft.header.shipper])||{};
+  dft.header.shipperUSCI=_cd.usci||''; dft.header.shipperReg=_cd.reg||'';
+  dft.header.prodUSCI=_cd.usci||''; dft.header.prodReg=_cd.reg||'';
+  const _pa=partyProfile(dft.header.consignee),_pb=partyProfile(dft.header.shipper);
+  dft.header.partyA={name:dft.header.consignee||'',addr:_pa.addr||'',contact:_pa.contact||'',email:_pa.email||''};
+  dft.header.partyB={name:dft.header.shipper||'',addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''};
+  DB.drafts.push(dft);DB.sel.dft=dft.id;DB.mergeSel=[];save();renderDrafts();
+  alert('已合并 '+ords.length+' 个订单为草单 '+dft.id+'（'+rawLines.length+' 项源明细，'+dft.lines.length+' 行聚合）。源订单原样保留，可继续单独用。');
+}
+function renderMergePanel(){
+  const wrap=document.getElementById('mergePanel'); if(!wrap)return;
+  if(!DB.orders.length){wrap.innerHTML='';return;}
+  DB.mergeSel=DB.mergeSel||[];
+  const groups={};
+  DB.orders.forEach(o=>{const k=bucketKey(o);(groups[k]=groups[k]||[]).push(o);});
+  let h='<div class="merge-panel"><h3 style="font-size:14px;margin:14px 0 8px">合并单证（按红线维度自动分桶，跨桶不可同选）</h3>';
+  Object.keys(groups).forEach(k=>{
+    const gs=groups[k]; const dims=k.split('|');
+    const label='目的国 '+(dims[0]||'?')+' · 运输 '+(dims[1]||'?')+' · 币制 '+(dims[2]||'?')+' · 监管 '+(dims[3]||'?')+' · 成交 '+(dims[4]||'?');
+    h+='<div class="bucket" style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:12px;margin-bottom:12px">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="th" style="font-size:14px">'+esc(label)+'</span><span class="ts">'+gs.length+' 单</span></div>';
+    gs.forEach(o=>{const on=DB.mergeSel.indexOf(o.id)>=0?'checked':'';
+      h+='<label class="oc" style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" '+on+' onchange="toggleMergeSel(\''+o.id+'\',this.checked)"> <span>'+o.id+' · '+esc(o.no||'(无单号)')+' · '+o.items.length+'项</span></span></label>';});
+    h+='<button class="btn merge" style="background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)" onclick="mergeBucket(\''+escQ(k)+'\')">合并本桶选中单 →</button></div>';
+  });
+  h+='</div>';
+  wrap.innerHTML=h;
+}
+function toggleMergeSel(id,on){DB.mergeSel=DB.mergeSel||[];const i=DB.mergeSel.indexOf(id);if(on&&i<0)DB.mergeSel.push(id);if(!on&&i>=0)DB.mergeSel.splice(i,1);save();renderMergePanel();}
+function mergeBucket(k){const sel=DB.mergeSel||[];const ids=DB.orders.filter(o=>bucketKey(o)===k&&sel.indexOf(o.id)>=0).map(o=>o.id);if(ids.length<2){alert('本桶至少勾选 2 个订单才能合并');return;}genMergedDraft(ids);}
+function openRevoke(id){
+  const d=DB.drafts.find(x=>x.id===id);if(!d||!d.isMerged)return;
+  const dcs=DB.docs.filter(c=>c.dftId===id);
+  const srcs=(d.sourceOrderIds||[]).join(', ');
+  const info=document.getElementById('revokeInfo'); if(!info)return;
+  info.innerHTML='<p class="th" style="font-size:14px;margin:0 0 6px">确认撤销合并？</p>'
+    +'<p style="color:var(--color-text-danger);font-size:13px;margin:0 0 6px">将删除：合并草单 '+d.id+'</p>'
+    +'<p class="ts" style="margin:0 0 4px">受影响单证：'+dcs.length+' 套（报关/发票/箱单/合同，由该草单生成，一并删除）</p>'
+    +'<p class="ts" style="margin:0 0 10px">源订单 '+esc(srcs)+' 及各自原有草单：<b>原样保留，不受影响</b></p>';
+  DB._revokeId=id;
+  document.getElementById('revokeModal').classList.add('open');
+}
+function confirmRevoke(){
+  const id=DB._revokeId;if(!id)return;
+  const dcs=DB.docs.filter(c=>c.dftId===id);
+  DB.drafts=DB.drafts.filter(d=>d.id!==id);
+  DB.docs=DB.docs.filter(c=>c.dftId!==id);
+  if(DB.sel.dft===id)DB.sel.dft=null;
+  DB._revokeId=null;
+  document.getElementById('revokeModal').classList.remove('open');
+  purgeOrphans();save();renderDrafts();
+  alert('已撤销合并，删除草单 '+id+' 及 '+dcs.length+' 套单证；源订单保留。');
+}
+function closeRevoke(){document.getElementById('revokeModal').classList.remove('open');DB._revokeId=null;}
 function renderDrafts(){
   document.getElementById('dftCount').textContent=DB.drafts.length+' 张草单';
   const d=DB.drafts.find(x=>x.id===DB.sel.dft)||DB.drafts[DB.drafts.length-1];
@@ -1204,7 +1280,7 @@ function renderDrafts(){
       <button onclick="runMonitor('${d.id}')">运行监控体系</button>
       <button class="primary" ${d.monitor&&d.monitor.block?'disabled':''} onclick="confirmDraft('${d.id}')">${d.confirmed?'✓已锁定':'确认/锁定草单 → 输出'}</button>
       ${d.monitor&&d.monitor.block?'<span class="badge bad">有阻断项，未通过不可锁定</span>':''}
-      <button class="ghost small" onclick="delDraft('${d.id}')">删除草单</button>
+      ${d.isMerged?`<button class="ghost small" onclick="openRevoke('${d.id}')">撤销合并</button>`:''}<button class="ghost small" onclick="delDraft('${d.id}')">删除草单</button>
     </div>${mh}</div></div>`;
   updRail();
 }
