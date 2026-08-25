@@ -382,6 +382,32 @@ function dedupeBoxWeight(lines){
 }
 function mergeLines(lines,mode,sup){
   lines=dedupeBoxWeight(lines);   // 重量去重（M0/M5 共用，防同箱重复整箱重虚高）
+  /* A去重(共享箱)：横向混箱(每行 boxSeq 带物理箱序号) → 按物理箱分组，PACKING LIST 一行一箱。
+     仅当存在 boxSeq 时生效；纵向混箱/单SKU FBA 无 boxSeq，走原逻辑。报关件数取 totalBoxCount(packSummary) 不受影响。 */
+  const hasBoxSeq=lines.some(function(l){ return Array.isArray(l.boxSeq)&&l.boxSeq.length; });
+  if(hasBoxSeq){
+    const byBox=Object.create(null);
+    lines.forEach(function(l){
+      const seqs=(l.boxSeq&&l.boxSeq.length)?l.boxSeq:[0];
+      seqs.forEach(function(s){ (byBox[s]=byBox[s]||[]).push(l); });
+    });
+    return Object.keys(byBox).map(Number).sort(function(a,b){return a-b;}).map(function(s){
+      const g=byBox[s], rep=Object.assign({},g[0]);
+      rep.boxNo=String(s); rep.boxCnt=1; rep.boxSeq=[+s];
+      const _skus=[...new Set(g.map(function(x){return x.sku;}))].filter(Boolean);
+      /* 品名/型号为空(如 FBA 横向表无品名列)时，回退用 SKU 代码，避免 PL 两列空白 */
+      rep.name=[...new Set(g.map(function(x){return x.name;}))].filter(Boolean).join(' / ')||_skus.join(' / ');
+      rep.model=[...new Set(g.map(function(x){return x.model;}))].filter(Boolean).join(' / ')||_skus.join(' / ');
+      rep.sku=_skus.join(',');
+      rep.qty=g.reduce(function(a,x){return a+(+x.qty||0);},0);
+      /* 重量：直接取该物理箱(s)整重 = 组内任一行 boxSeqW 中序号 s 对应值（同箱多SKU不重复计） */
+      let bw=0;
+      for(const x of g){ const w=x.boxSeqW||[], i=(x.boxSeq||[]).indexOf(+s); if(i>=0 && +w[i]>0){ bw=+w[i]; break; } }
+      rep.gw=bw; rep.nw=Math.max(0, Math.round((bw-1.3)*1000)/1000);
+      rep.boxSeqW=[bw];   /* 同步整箱重，供 packSummary(hasMixed) 求报关总重不丢 */
+      return rep;
+    });
+  }
   if(mode==='M0'||!lines.length) return lines.map(x=>{const r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); return r;});
   const m=MODES.find(x=>x.id===mode)||MODES[0];
   // 降级保护：M4/M5 的"款式"维度依赖真SPU；取不到(显式列无值且SKU无法推导)时退化为按SKU分行
@@ -734,9 +760,15 @@ function parseGrid(grid,forceSku,opts){
         if(!gw && wsum>0) gw=Math.round(wsum*1000)/1000;
       }
     }
+    /* 修复装箱清单 PL 两列空白：name(Description) 空时回退 商品库cn/en → SKU代码；
+       补 model 字段(款号/商品库style → SKU代码)。解析阶段即填好，所有消费路径(记录/草单/PL)都受益。 */
+    const _name0=g('name');
+    const _sm0=skuList().find(function(x){return x&&x.sku===sku;});
+    const _name=_name0||(_sm0?(_sm0.cn||_sm0.name||''):'')||sku;
+    const _model=(_sm0?(_sm0.style||''):'')||sku;
     rows.push({sku:sku,qty:qty,gw:gw,nw:nw,bw:bw,
       box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:mixBoxCnt,boxSeq:boxSeq,boxSeqW:boxSeqW,
-      asin:g('asin'),fnsku:g('fnsku'),name:g('name'),shop:g('shop'),pallet:g('pallet')||g('palletSize')});
+      asin:g('asin'),fnsku:g('fnsku'),name:_name,model:_model,shop:g('shop'),pallet:g('pallet')||g('palletSize')});
   }
   const missing=[];
   ['sku','qty','gw','boxNo'].forEach(function(k){ if(m[k]<0) missing.push(k); });
@@ -1043,10 +1075,10 @@ function genDraft(ordId){
   const locked=!(o.destCountry&&o.currency);
   const e0=enjoysOf(o.destCountry);
   const rawLines=o.items.map(it=>{const s=getSku(it.sku)||{};
-    return {sku:it.sku,name:s.cn||'⚠未匹配商品库',en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:resolveBrandType(s),enjoys:e0,
+    return {sku:it.sku,name:s.cn||it.name,en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:resolveBrandType(s),enjoys:e0,
       decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',
-      boxCnt:it.boxCnt||0,qtyPerBox:it.qtyPerBox||0,
-      supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
+      boxCnt:it.boxCnt||0,qtyPerBox:it.qtyPerBox||0,boxSeq:it.boxSeq||[],boxSeqW:it.boxSeqW||[],
+      supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||it.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
   const dft={id:uid('D'),ordId,locked,
     header:{no:o.no||'',shipper:DB.parties.shippers[0],buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
@@ -1370,7 +1402,7 @@ function buildData(doc){
       amountCur:decl2cur(_amt).toFixed(2),
       boxCnt:(+l.boxCnt||0),
       /* Model 列：按款合并时显示该款下全部 SKU(_keys)，与报关草单一致；否则取款号/单SKU */
-      model:(l._keys&&l._keys.length)?l._keys.join(','):(l.style||l.sku)};});
+      model:l.model||(l._keys&&l._keys.length?l._keys.join(','):(l.style||l.sku))};});
   const base=d.header.declDate||today();
   /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
   const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=Math.round((+l.cost||0)*1.13*100)/100;return {...l,taxPrice:tp.toFixed(2),taxAmount:(tp*(+l.qty||0)).toFixed(2)};});
