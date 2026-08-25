@@ -409,25 +409,6 @@ function mergeLines(lines,mode,sup){
       return rep;
     });
   }
-  /* VBM(纵向混箱)：无 boxSeq、boxNo 被多行共享(非范围) → 保持 per-SKU 行(与报关草单同结构，不做 per-box 归集)，
-     仅把每SKU行的 boxCnt 改为「该SKU占用几个物理箱(对 boxNo 去重)」，使 PL Ge.Crate 明细正确；
-     总箱数由 packSummary 按唯一 boxNo 数(=真实物理箱)计，与报关草单件数一致。 */
-  const _vbmRows=lines.filter(function(l){return !!String(l.boxNo||'').trim();});
-  const _vbmUniq=new Set(_vbmRows.map(function(l){return String(l.boxNo||'').trim();}));
-  const _isVBM = !lines.some(function(l){return Array.isArray(l.boxSeq)&&l.boxSeq.length;})
-              && _vbmRows.length>1 && _vbmUniq.size<_vbmRows.length
-              && !_vbmRows.some(function(l){return /\d+[~\-～]\d+/.test(String(l.boxNo||''));});
-  if(_isVBM){
-    const bySku=Object.create(null);
-    lines.forEach(function(l){ (bySku[l.sku]=bySku[l.sku]||[]).push(l); });
-    return lines.map(function(x){
-      const r=Object.assign({},x);
-      const sibs=bySku[x.sku]||[x];
-      const boxes=new Set(sibs.map(function(s){return String(s.boxNo||'').trim();}).filter(Boolean));
-      r.boxCnt=boxes.size||1;
-      return r;
-    });
-  }
   if(mode==='M0'||!lines.length) return lines.map(x=>{const r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); return r;});
   const m=MODES.find(x=>x.id===mode)||MODES[0];
   // 降级保护：M4/M5 的"款式"维度依赖真SPU；取不到(显式列无值且SKU无法推导)时退化为按SKU分行
@@ -868,18 +849,9 @@ function packSummary(items, opts){
     if(c>1){ hasBNRange=true; boxNoSum+=c; }
     else if(c>=1){ boxNoSum+=1; }
   }
-  /* 纵向混箱VBM：无 boxSeq、无范围箱号、boxNo 被多行共享(唯一boxNo数<有boxNo行数) →
-     总箱数=唯一boxNo数(=真实物理箱数)，与报关草单件数一致；不按 boxCnt 求和(会虚高，因一箱多SKU被多行计)。 */
-  const _bnRows=its.filter(function(it){return !!String(it.boxNo||'').trim();});
-  const _uniqBn=new Set(_bnRows.map(function(it){return String(it.boxNo||'').trim();}));
-  const _isVBM = !hasBNRange && !isBoxIdList && _bnRows.length>1 && _uniqBn.size<_bnRows.length;
   let boxCount;
   if(hasBNRange){
     /* ① boxNo 范围权威 */
-    boxCount=boxNoSum;
-    its.forEach(function(it){ gw+=(+it.gw||0); nw+=(+it.nw||0); });
-  }else if(_isVBM){
-    /* VBM：唯一boxNo数=真实物理箱数(如 CARTON-1~10 共享→10箱)，件数须与此一致、与报关草单同口径 */
     boxCount=boxNoSum;
     its.forEach(function(it){ gw+=(+it.gw||0); nw+=(+it.nw||0); });
   }else{
