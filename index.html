@@ -1817,11 +1817,57 @@ function renderOut(){
 }
 let _cur={doc:0,idx:0};
 /* 安全渲染：模板渲染后检测残留标签，自定义模板失败时自动降级内置版 */
+/* PL 专用视图（仅 PACKING LIST 视图层，不碰 buildData/packSummary/mergeLines）：
+   按物理箱(boxNo)分组，每箱整重(毛/净)按箱内各 model 数量占比分摊到每行，
+   Total 箱数=唯一物理箱数（避免按行累加虚高，如 wh14172 应为 10 而非 69）。
+   注意：此改动只影响 PL，报关草单/发票/合同仍按 M0-M6 归并口径(件数=69)，
+   两者箱数不一致属已知差异（用户已确认仅改 PL）。 */
+function plView(lines){
+  const byBox=Object.create(null);
+  (lines||[]).forEach(function(l){
+    const bn=String(l.boxNo||'').trim();
+    if(!bn) return;
+    const g=byBox[bn]||(byBox[bn]={boxNo:bn,gw:0,nw:0,items:[]});
+    if(g.gw===0 && (+l.gw>0)){ g.gw=+l.gw; g.nw=+l.nw; }   // 取整箱重(每箱首行)，兼容是否预先 dedupe
+    g.items.push(l);
+  });
+  const boxNos=Object.keys(byBox);
+  const rows=[];
+  boxNos.forEach(function(bn){
+    const g=byBox[bn];
+    const totQty=g.items.reduce(function(a,x){return a+(+x.qty||0);},0);
+    let first=true;
+    g.items.forEach(function(l){
+      const q=+l.qty||0;
+      const share= totQty>0 ? q/totQty : 0;
+      rows.push({
+        boxNo:bn,
+        name:l.name,
+        model:l.model||l.sku||'',
+        boxCnt: first?1:'',          // 仅每箱首行标 1，避免同箱多 model 时箱数视觉重复累加
+        qty:q,
+        gw:Math.round(g.gw*share*1000)/1000,
+        nw:Math.round(g.nw*share*1000)/1000
+      });
+      first=false;
+    });
+  });
+  const totalGW=Math.round(boxNos.reduce(function(a,bn){return a+byBox[bn].gw;},0)*1000)/1000;
+  const totalNW=Math.round(boxNos.reduce(function(a,bn){return a+byBox[bn].nw;},0)*1000)/1000;
+  return {rows:rows, boxCount:boxNos.length,
+    totalQty:rows.reduce(function(a,r){return a+r.qty;},0),
+    totalGW:totalGW, totalNW:totalNW};
+}
 function safeRender(type,data,extraData){
+  let _data=data;
+  if(type==='Packing List装箱单'){
+    const pv=plView(data.lines||[]);
+    _data=Object.assign({},data,{lines:pv.rows, boxCount:pv.boxCount, totalQty:pv.totalQty, totalGW:pv.totalGW.toFixed(2), totalNW:pv.totalNW.toFixed(2)});
+  }
   const tpl=DB.templates[type]||builtin(type);
-  let html=renderTpl(tpl,data);
+  let html=renderTpl(tpl,_data);
   if(/\{\{[\/#]|\{\{each/.test(html)&&DB.templates[type]){
-    html=renderTpl(builtin(type),data);
+    html=renderTpl(builtin(type),_data);
   }
   return extraData?renderTpl(html,extraData):html;
 }
@@ -2161,13 +2207,13 @@ function xlsTable(type,d){
     addRow2(['Shipped           ','From '+_shipFrom+' to '+_shipTo,'','','','','','','Terms of Payment:',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
     /* R6 列头 */
     addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
-    /* R7-R11 数据(N/M 竖排合并 A7:A11) */
+    /* R7-R11 数据(N/M 竖排合并 A7:A11) —— 改用 plView：按物理箱×model 分摊重量，箱数=唯一物理箱数 */
+    const _pv=plView(d.lines||[]);
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.model,(+l.boxCnt||0),l.qty,'个',l.gw,l.nw]); r++; });
+    _pv.rows.forEach((l,i)=>{ addRow2([i===0?'N/M':'',l.name,l.model,(+l.boxCnt||0),l.qty,'个',l.gw,l.nw]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
-    /* R12 Total：箱数合计与报关单件数、系统"解析"严格一致，统一取 packSummary 权威箱数，避免两套口径偏差 */
-    const bc=totalBoxCount(d.lines);
-    putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,bc); putCell(R,r,4,d.totalQty); putCell(R,r,5,''); putCell(R,r,6,d.totalGW); putCell(R,r,7,d.totalNW); r++;
+    /* R12 Total：PL 专用口径——箱数=唯一物理箱数(plView)，毛净总重与报关口径一致 */
+    putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,_pv.boxCount); putCell(R,r,4,_pv.totalQty); putCell(R,r,5,''); putCell(R,r,6,_pv.totalGW); putCell(R,r,7,_pv.totalNW); r++;
     /* R13 空行 */
     noB.push(r); r++;
     return xwsFrom(R,MG,[{wch:12},{wch:11},{wch:13},{wch:9},{wch:6},{wch:7},{wch:18},{wch:13}],{noBorderRows:noB,lrRows:lrR});
