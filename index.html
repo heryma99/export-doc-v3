@@ -1640,6 +1640,7 @@ function builtin(name){
 </tr>
 <tr><td colspan="2"></td><td colspan="12">{{spec}}</td></tr>{{/each}}
 <tr><td colspan="8">TOTAL：{{header.currency}} {{totalAmountCur}}</td><td colspan="6"></td></tr>
+<tr><td colspan="14" style="background:#1D9E75;color:#fff;font-weight:500">数据 TOTAL：件数 {{boxCount}}　数量 {{totalQty}} 件　毛重 {{totalGW}} kg　净重 {{totalNW}} kg</td></tr>
 <tr>
 <td colspan="2">特殊关系确认：<b>{{header.special||'否'}}</b></td>
 <td></td>
@@ -1863,6 +1864,9 @@ function safeRender(type,data,extraData){
   if(type==='Packing List装箱单'){
     const pv=plView(data.lines||[]);
     _data=Object.assign({},data,{lines:pv.rows, boxCount:pv.boxCount, totalQty:pv.totalQty, totalGW:pv.totalGW.toFixed(2), totalNW:pv.totalNW.toFixed(2)});
+  }else if(type==='报关草单'){
+    /* 报关件数与 PL 同源：按物理箱号去重，不再取归并的 boxCnt 求和(wh14172 由 69→10) */
+    _data=Object.assign({},data,{boxCount:physicalBoxCount(data.lines||[])});
   }
   const tpl=DB.templates[type]||builtin(type);
   let html=renderTpl(tpl,_data);
@@ -2034,7 +2038,7 @@ function xlsCur(d){
   set(10,3,'件数');
   /* 件数 = 箱数，与装箱单同源：优先用 boxCntOf 求和(已贯穿上传箱数→合并累加)；
      无上传箱数时回退 packSummary(d.lines) 的 boxCount(按箱号去重)，保证两文档一致 */
-  const _pieceCnt=(d.lines&&d.lines.length)?totalBoxCount(d.lines):(d.boxCount||0);
+  const _pieceCnt=(d.lines&&d.lines.length)?physicalBoxCount(d.lines):(d.boxCount||0);
   set(11,3,(_pieceCnt>0?_pieceCnt:(d.boxCount||'')));
   set(10,4,'毛重（千克）',5);
   set(11,4,(d.totalGW||''),5);
@@ -2079,6 +2083,8 @@ function xlsCur(d){
   /* 合计 */
   set(r,0,'TOTAL：'+(H.currency||'')+' '+(d.totalAmountCur||d.totalAmount||''),7);
   r++;
+  /* 数据 TOTAL（件数/数量/毛重/净重，与 PL 对齐；件数取物理箱号去重，wh14172 由 69→10） */
+  set(r,0,'数据 TOTAL：件数 '+(_pieceCnt>0?_pieceCnt:(d.boxCount||''))+'　数量 '+(d.totalQty||'')+' 件　毛重 '+(d.totalGW||'')+' kg　净重 '+(d.totalNW||'')+' kg',13); r++;
   /* 汇率(仅外币显示,可追溯) */
   if(d.cur!=='CNY'){ set(r,0,'汇率(CNY→'+d.cur+')：'+(+d.exch).toFixed(4),7); r++; }
   /* 特殊关系确认 / 价格影响 / 特许权 / 自报自缴 */
@@ -2623,6 +2629,13 @@ function boxCntOf(l){if(!l)return 1;
    故 packSummary 能按 boxNo 范围正确累加(如 FBA 4+3=7)，与"解析"严格一致。 */
 function totalBoxCount(lines){
   return packSummary(lines||[]).boxCount;
+}
+/* 报关草单/装箱单「件数」权威物理箱数：按箱号去重计唯一物理箱(与 PL plView 同源)；
+   无箱号时回退 totalBoxCount(boxCnt 求和)，避免无箱号订单显示 0 */
+function physicalBoxCount(lines){
+  const seen=Object.create(null); let n=0;
+  (lines||[]).forEach(function(l){ const bn=String(l.boxNo||'').trim(); if(bn && !seen[bn]){ seen[bn]=1; n++; } });
+  return n>0 ? n : totalBoxCount(lines||[]);
 }
 /* 日期 → 中文格式：2026-04-08 → 2026年4月8日(销售合同模板风格)；无法解析原样返回 */
 function fmtDateCN(s){if(!s)return '';const m=String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(!m)return String(s);return (+m[1])+'年'+(+m[2])+'月'+(+m[3])+'日';}
