@@ -395,12 +395,24 @@ function boxDedupTotals(lines){
 }
 /* 余差修正：把 rows 各项 key 之和与 target 的差额补到最大行，保证"逐行求和 = 合计"（避免四舍五入错位被海关质疑） */
 function adjustResidual(rows,target,key){
+  /* 方案B：最大余数法(Largest Remainder)。使"明细逐项求和(渲染 Total=Math.round(Σ*100)/100) = 权威合计 target"。
+     基线取逐项3位和(与渲染 Total 口径完全一致)；差额按"对分的余数"分散到若干行(每行±0.01)，无突兀行。
+     仅改此函数；不动 M0-M6 骨架 / boxDedupTotals / mergeLines / buildData 及其他导出层。 */
   if(!rows||!rows.length||!(target>0)) return;
-  const sum=rows.reduce(function(a,r){return a+(+r[key]||0);},0);
-  let diff=Math.round((target-sum)*100)/100;
-  if(diff===0) return;
-  let mi=0; rows.forEach(function(r,i){ if((+r[key]||0)>(+rows[mi][key]||0)) mi=i; });
-  rows[mi][key]=Math.round(((+rows[mi][key]||0)+diff)*100)/100;
+  target = Math.round(target*100)/100;
+  const x = rows.map(function(r){ return Math.round((+(r[key]||0))*10000)/10000; }); // 高精度分项值
+  const sumRaw = x.reduce(function(a,b){return a+b;},0);                              // 明细逐项3位和(=Total 口径)
+  let need = Math.round((target - sumRaw)*100);                                       // 待分配的分(整数)
+  if(need===0) return;
+  if(Math.abs(need) > rows.length){ // 尾差超过"每行1分"承载 → 疑似真实计算误差，不涂改，仅告警
+    console.warn('adjustResidual: 尾差超限('+need+'分 > '+rows.length+'行)，跳过修正');
+    return;
+  }
+  // 各行"对分的余数"(floor 截断零头)：余数大 → 适合 +0.01；余数小 → 适合 -0.01
+  const idx = x.map(function(v,i){ return {i:i, frac:Math.round((v-Math.floor(v*100)/100)*10000)}; });
+  idx.sort(function(a,b){ return (need>0) ? (b.frac - a.frac) : (a.frac - b.frac); });
+  const sign = need>0 ? 1 : -1;
+  for(let k=0;k<Math.abs(need);k++){ const i=idx[k].i; rows[i][key]=Math.round((+(rows[i][key]||0)+sign*0.01)*100)/100; }
 }
 function mergeLines(lines,mode,sup){
   /* 重量口径修正（核心修复）：每行携带"整箱重"，同箱多行会重复。先按"整箱重 × 该行数量/箱内件数"分摊到每行，
