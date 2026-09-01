@@ -1573,13 +1573,13 @@ function builtin(name){
   if(name==='报关草单'){
     return `<div style="font-size:10px">
 <table border="1" cellspacing="0" cellpadding="3" style="width:100%;border-collapse:collapse;font-size:10px;line-height:1.35">
-<tr><td colspan="14" style="text-align:center;font-weight:bold;font-size:16px">中华人民共和国海关出口货物报关单</td></tr>
+<tr><td colspan="15" style="text-align:center;font-weight:bold;font-size:16px">中华人民共和国海关出口货物报关单</td></tr>
 <tr style="border:none">
 <td colspan="2" style="border:none">预录入编号：<br><b>{{header.preNo}}</b></td>
 <td colspan="2" style="border:none">海关编号：<br><b>{{header.customsNo}}</b></td>
 <td colspan="3" style="border:none">发票号：<br><b>{{header.invNo}}</b></td>
 <td colspan="3" style="border:none">委托协议号：<br><b>{{header.entrustNo}}</b></td>
-<td colspan="4" style="border:none;text-align:right">页码/页数：<br><b>1/1</b></td>
+<td colspan="5" style="border:none;text-align:right">页码/页数：<br><b>1/1</b></td>
 </tr>
 <tr>
 <td colspan="6">境内发货人</td>
@@ -1657,12 +1657,12 @@ function builtin(name){
 <td colspan="2"><b>{{header.premium}}</b></td>
 <td colspan="2"><b>{{header.misc}}</b></td>
 </tr>
-<tr><td colspan="14">随附单证及编号</td></tr>
+<tr><td colspan="15">随附单证及编号</td></tr>
 <tr><td colspan="14"><b>{{header.attach}}</b></td></tr>
-<tr><td colspan="14">标记唛码及备注</td></tr>
+<tr><td colspan="15">标记唛码及备注</td></tr>
 <tr><td colspan="14"><b>{{header.marks}}</b></td></tr>
 <tr>
-<th style="width:30px">项号</th><th style="width:70px">商品编号</th><th style="width:110px">中文名称</th><th style="width:90px">英文名称</th><th colspan="2">数量单位</th><th style="width:55px">单价</th><th style="width:60px">总价</th><th style="width:46px">币制</th><th style="width:60px">原产国（地区）</th><th style="width:80px">最终目的国（地区）</th><th style="width:85px">境内货源地/产地</th><th colspan="2">征免</th>
+<th style="width:30px">项号</th><th style="width:70px">商品编号</th><th style="width:110px">中文名称</th><th style="width:90px">英文名称</th><th colspan="2">数量单位</th><th style="width:55px">单价</th><th style="width:60px">总价</th><th style="width:46px">币制</th><th style="width:60px">净重(kg)</th><th style="width:60px">原产国（地区）</th><th style="width:80px">最终目的国（地区）</th><th style="width:85px">境内货源地/产地</th><th colspan="2">征免</th>
 </tr>
 {{#each lines}}<tr>
 <td>{{_i}}</td>
@@ -1673,20 +1673,21 @@ function builtin(name){
 <td>{{declCur}}</td>
 <td>{{amountCur}}</td>
 <td>{{header.currency}}</td>
+<td>{{nw}}</td>
 <td>{{header.originCountry}}</td>
 <td>{{destCn}}</td>
 <td>{{header.domSrc}}</td>
 <td colspan="2">{{header.levy}}</td>
 </tr>
 <tr><td colspan="2"></td><td colspan="12">{{spec}}</td></tr>{{/each}}
-<tr><td colspan="8">TOTAL：{{header.currency}} {{totalAmountCur}}</td><td colspan="6"></td></tr>
-<tr><td colspan="14" style="background:#1D9E75;color:#fff;font-weight:500">数据 TOTAL：件数 {{boxCount}}　数量 {{totalQty}} 件　毛重 {{totalGW}} kg　净重 {{totalNW}} kg</td></tr>
+<tr><td colspan="9">TOTAL：{{header.currency}} {{totalAmountCur}}</td><td colspan="6"></td></tr>
+<tr><td colspan="15" style="background:#1D9E75;color:#fff;font-weight:500">数据 TOTAL：件数 {{boxCount}}　数量 {{totalQty}} 件　毛重 {{totalGW}} kg　净重 {{totalNW}} kg</td></tr>
 <tr>
 <td colspan="2">特殊关系确认：<b>{{header.special||'否'}}</b></td>
 <td></td>
 <td colspan="3">价格影响确认：<b>{{header.priceEff||'否'}}</b></td>
 <td colspan="4">支付特许权使用费确认：<b>{{header.royalty||'否'}}</b></td>
-<td colspan="4">自报自缴：<b>{{header.selfPay||''}}</b></td>
+<td colspan="5">自报自缴：<b>{{header.selfPay||''}}</b></td>
 </tr>
 <tr>
 <td>申报人员：<b>{{header.declarer||''}}</b></td>
@@ -1694,10 +1695,10 @@ function builtin(name){
 <td>申报人员证号：<b>{{header.declarerNo||''}}</b></td>
 <td>电话：<b>{{header.declPhone||''}}</b></td>
 <td colspan="6"></td>
-<td colspan="4">海关批注及签章</td>
+<td colspan="5">海关批注及签章</td>
 </tr>
 <tr>
-<td colspan="4">申报单位（盖章）：<b>{{header.declUnit||''}}</b></td>
+<td colspan="5">申报单位（盖章）：<b>{{header.declUnit||''}}</b></td>
 <td colspan="3"></td>
 <td colspan="3">申报单位（签章）</td>
 <td colspan="4"></td>
@@ -1932,7 +1933,14 @@ function safeRender(type,data,extraData){
   let _data=data;
   if(type==='报关草单'){
     /* 报关件数与 PL 同源：按物理箱号去重，不再取归并的 boxCnt 求和(wh14172 由 69→10) */
-    _data=Object.assign({},data,{boxCount:physicalBoxCount(data.lines||[])});
+    /* 明细项净重(kg)：克隆行先各自四舍五入到2位(与表头/显示一致)，再做方案B(最大余数法)，
+       保证 Σ明细(2位) = 表头净重(权威值)，三单一致在项级成立；仅改克隆，不动 d.lines 存储数据 */
+    const _cl=((data.lines||[]).map(function(l){return Object.assign({},l);}));
+    _cl.forEach(function(l){ l.gw=Math.round((+l.gw)*100)/100; l.nw=Math.round((+l.nw)*100)/100; });
+    adjustResidual(_cl, Math.round(parseFloat(data.totalGW)*100)/100, 'gw');
+    adjustResidual(_cl, Math.round(parseFloat(data.totalNW)*100)/100, 'nw');
+    _cl.forEach(function(l){ l.gw=(+l.gw).toFixed(2); l.nw=(+l.nw).toFixed(2); });
+    _data=Object.assign({},data,{boxCount:physicalBoxCount(data.lines||[]), lines:_cl});
   }
   const tpl=DB.templates[type]||builtin(type);
   let html=renderTpl(tpl,_data);
@@ -2051,13 +2059,13 @@ function xlsCur(d){
   const H=d.header, O=d.order, dt=d.dates;
   const R=[]; const MG=[];
   const set=(r,c,v,c1)=>{ R[r]=R[r]||[]; R[r][c]=v; if(c1!=null&&c1>c) MG.push({s:{r,c:c},e:{r,c:c1}}); };
-  set(0,0,'中华人民共和国海关出口货物报关单',13);
+  set(0,0,'中华人民共和国海关出口货物报关单',14);
   /* 顶栏信息（页码/页数 置右上角，与预览一致） */
   set(1,0,'预录入编号：'+(H.preNo||''),1);
   set(1,2,'海关编号：'+(H.customsNo||''),3);
   set(1,4,'发票号：'+(H.no||H.invNo||''),6); /* 发票号=合同协议号(H.no)，与全系统一致；H.invNo 仅作兜底 */
   set(1,7,'委托协议号：'+(H.entrustNo||''),9);
-  set(1,10,'页码/页数：1/1',13);
+  set(1,10,'页码/页数：1/1',14);
   /* 境内发货人 / 出境关别 / 出口日期 / 申报日期 / 备案号 */
   set(2,0,'境内发货人',5);
   set(3,0,(H.shipper||'')+'\n信用代码 '+(H.shipperUSCI||'')+'\n海关注册 '+(H.shipperReg||''),5);
@@ -2067,8 +2075,8 @@ function xlsCur(d){
   set(3,8,(dt.exportDate||''),9);
   set(2,10,'申报日期',11);
   set(3,10,(dt.customs||''),11);
-  set(2,12,'备案号',13);
-  set(3,12,(H.recordNo||''),13);
+  set(2,12,'备案号',14);
+  set(3,12,(H.recordNo||''),14);
   /* 境外收货人 / 运输方式 / 运输工具 / 提运单号 */
   set(4,0,'境外收货人');
   set(4,2,(H.consignee||''),5);
@@ -2076,8 +2084,8 @@ function xlsCur(d){
   set(5,6,(H.transMode||''),7);
   set(4,8,'运输工具名称及航次号',9);
   set(5,8,(H.vehicle||''),9);
-  set(4,10,'提运单号',13);
-  set(5,10,(H.billNo||''),13);
+  set(4,10,'提运单号',14);
+  set(5,10,(H.billNo||''),14);
   /* 生产销售单位 / 监管方式 / 征免性质 / 许可证号 */
   set(6,0,'生产销售单位',5);
   set(7,0,(H.prodUnit||'')+'\n信用代码 '+(H.prodUSCI||''),5);
@@ -2085,8 +2093,8 @@ function xlsCur(d){
   set(7,6,(H.tradeMode||''),7);
   set(6,8,'征免性质',9);
   set(7,8,(H.levyNature||''),9);
-  set(6,10,'许可证号',13);
-  set(7,10,(H.license||''),13);
+  set(6,10,'许可证号',14);
+  set(7,10,(H.license||''),14);
   /* 合同协议号 / 贸易国 / 运抵国 / 指运港 / 离境口岸 */
   set(8,0,'合同协议号',2);
   set(9,0,(H.no||O.no||''),2);
@@ -2096,8 +2104,8 @@ function xlsCur(d){
   set(9,6,cnCountry(H.arrivalCountry||H.destCountry||''),8);
   set(8,9,'指运港',10);
   set(9,9,(H.destPort||''),10);
-  set(8,11,'离境口岸',13);
-  set(9,11,(H.exitPort||''),13);
+  set(8,11,'离境口岸',14);
+  set(9,11,(H.exitPort||''),14);
   /* 运输包装种类 / 件数 / 毛重 / 净重 / 成交方式 / 运费 / 保费 / 杂费 */
   set(10,0,'运输包装种类');
   set(11,0,(H.packKind||''),2);
@@ -2116,20 +2124,25 @@ function xlsCur(d){
   set(11,8,(H.freight||''),9);
   set(10,10,'保费',11);
   set(11,10,(H.premium||''),11);
-  set(10,12,'杂费',13);
-  set(11,12,(H.misc||''),13);
+  set(10,12,'杂费',14);
+  set(11,12,(H.misc||''),14);
   /* 随附单证及编号 / 标记唛码及备注 */
-  set(12,0,'随附单证及编号',13);
-  set(13,0,(H.attach||''),13);
-  set(14,0,'标记唛码及备注',13);
-  set(15,0,(H.marks||''),13);
-  /* 商品明细表头（12 逻辑列，14 物理列：数量单位跨 E:F、征免跨 M:N） */
-  const hdr=['项号','商品编号','中文名称','英文名称','数量单位','','单价','总价','币制','原产国（地区）','最终目的国（地区）','境内货源地/产地','征免',''];
+  set(12,0,'随附单证及编号',14);
+  set(13,0,(H.attach||''),14);
+  set(14,0,'标记唛码及备注',14);
+  set(15,0,(H.marks||''),14);
+  /* 商品明细表头（13 逻辑列，15 物理列：数量单位跨 E:F、净重插币制后、征免跨 N:O） */
+  const hdr=['项号','商品编号','中文名称','英文名称','数量单位','','单价','总价','币制','净重(kg)','原产国（地区）','最终目的国（地区）','境内货源地/产地','征免',''];
   hdr.forEach((h,i)=>set(16,i,h));
   set(16,4,'数量单位',5);
-  set(16,12,'征免',13);
+  set(16,13,'征免',14);
   let r=17;
-  d.lines.forEach((l,i)=>{
+  /* 明细项毛重/净重：克隆行先各四舍五入到2位(与表头/显示一致)，再做方案B，保证 Σ明细(2位)=表头权威值(三单一致)；不动 d.lines 存储 */
+  const _dl=((d.lines||[]).map(function(l){return Object.assign({},l);}));
+  _dl.forEach(function(l){ l.gw=Math.round((+l.gw)*100)/100; l.nw=Math.round((+l.nw)*100)/100; });
+  adjustResidual(_dl, Math.round(parseFloat(d.totalGW)*100)/100, 'gw');
+  adjustResidual(_dl, Math.round(parseFloat(d.totalNW)*100)/100, 'nw');
+  _dl.forEach((l,i)=>{
     set(r,0,i+1);
     set(r,1,l.hs);
     set(r,2,l.name||'');
@@ -2138,38 +2151,39 @@ function xlsCur(d){
     set(r,6,(+l.declCur).toFixed(4));
     set(r,7,(+l.amountCur).toFixed(2));
     set(r,8,H.currency);
-    set(r,9,H.originCountry);
-    set(r,10,cnCountry(H.destCountry));
-    set(r,11,H.domSrc||'');
-    set(r,12,H.levy,13);
+    set(r,9,(+l.nw).toFixed(2));
+    set(r,10,H.originCountry);
+    set(r,11,cnCountry(H.destCountry));
+    set(r,12,H.domSrc||'');
+    set(r,13,H.levy,14);
     r++;
-    set(r,2,l.spec||'',13);
+    set(r,2,l.spec||'',14);
     r++;
   });
   /* 合计 */
-  set(r,0,'TOTAL：'+(H.currency||'')+' '+(d.totalAmountCur||d.totalAmount||''),7);
+  set(r,0,'TOTAL：'+(H.currency||'')+' '+(d.totalAmountCur||d.totalAmount||''),9);
   r++;
   /* 数据 TOTAL（件数/数量/毛重/净重，与 PL 对齐；件数取物理箱号去重，wh14172 由 69→10） */
-  set(r,0,'数据 TOTAL：件数 '+(_pieceCnt>0?_pieceCnt:(d.boxCount||''))+'　数量 '+(d.totalQty||'')+' 件　毛重 '+(d.totalGW||'')+' kg　净重 '+(d.totalNW||'')+' kg',13); r++;
+  set(r,0,'数据 TOTAL：件数 '+(_pieceCnt>0?_pieceCnt:(d.boxCount||''))+'　数量 '+(d.totalQty||'')+' 件　毛重 '+(d.totalGW||'')+' kg　净重 '+(d.totalNW||'')+' kg',14); r++;
   /* 汇率(仅外币显示,可追溯) */
-  if(d.cur!=='CNY'){ set(r,0,'汇率(CNY→'+d.cur+')：'+(+d.exch).toFixed(4),7); r++; }
+  if(d.cur!=='CNY'){ set(r,0,'汇率(CNY→'+d.cur+')：'+(+d.exch).toFixed(4),9); r++; }
   /* 特殊关系确认 / 价格影响 / 特许权 / 自报自缴 */
   set(r,0,'特殊关系确认：'+(H.special||'否'),1);
   set(r,3,'价格影响确认：'+(H.priceEff||'否'),5);
   set(r,6,'支付特许权使用费确认：'+(H.royalty||'否'),9);
-  set(r,10,'自报自缴：'+(H.selfPay||''),13);
+  set(r,10,'自报自缴：'+(H.selfPay||''),14);
   r++;
   /* 申报人员 / 证号 / 电话 / 海关批注 */
   set(r,0,'申报人员：'+(H.declarer||''));
   set(r,2,'申报人员证号：'+(H.declarerNo||''));
   set(r,3,'电话：'+(H.declPhone||''));
-  set(r,10,'海关批注及签章',13);
+  set(r,10,'海关批注及签章',14);
   r++;
   /* 申报单位 */
-  set(r,0,'申报单位（盖章）：'+(H.declUnit||''),3);
-  set(r,7,'申报单位（签章）',9);
+  set(r,0,'申报单位（盖章）：'+(H.declUnit||''),6);
+  set(r,7,'申报单位（签章）',14);
   r++;
-  const cols=[{wch:7.2},{wch:14.6},{wch:17.6},{wch:18.9},{wch:15.8},{wch:0.6},{wch:12.2},{wch:12.5},{wch:9.4},{wch:13.6},{wch:16.4},{wch:14.3},{wch:11.7},{wch:9.0}];
+  const cols=[{wch:7.2},{wch:14.6},{wch:17.6},{wch:18.9},{wch:15.8},{wch:0.6},{wch:12.2},{wch:12.5},{wch:9.4},{wch:9.0},{wch:13.6},{wch:16.4},{wch:14.3},{wch:11.7},{wch:9.0}];
   const ws=xwsFrom(R,MG,cols,{headerRows:[0,1]}); /* 全部行都有框(thin 细线 0.75pt,Excel 标准);只有纯标签行未来若要无框再传 noBorder */
   /* 标题：16号、加粗、居中 */
   const t=ws['A1'];
