@@ -368,6 +368,13 @@ function consolidatedSupplier(s){
   const t=DB.supplierMap[v];
   return t?String(t).trim()||v:v;
 }
+/* 境内货源地：二级/一级供应商名 → 货源地代码(4位行政区划)。报关草单每项号按供应商自动带出(退税归属)。 */
+function originCodeOf(s){
+  if(!s) return '';
+  const t1=consolidatedSupplier(s);
+  const p=(DB&&DB.tier1Profiles&&DB.tier1Profiles[t1])||{};
+  return p.originCode||'';
+}
 /* 同箱多行重量去重归一：供应商混箱清单「每行=某箱某款」，同一箱号的多行重复填整箱重(gw/nw)。
    若不处理，下游 M0/M5 求和会把整箱重重复累加 N 次（虚高 N 倍）。这里按 boxNo 去重，
    仅首行保留整箱重，同箱后续行重量归 0，保证装箱清单明细合计=整箱重之和=报关总重。 */
@@ -453,7 +460,7 @@ function mergeLines(lines,mode,sup){
   const keys=(mode==='M4'||mode==='M5')&&!hasStyle?['sku']:m.keys.slice();
   const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:getSpu(l),mat:l.mat})[kk];
   const groups={};
-  lines.forEach(l=>{const key=keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+consolidatedSupplier(l.supplier||'')):'');(groups[key]=groups[key]||[]).push(l);});
+  lines.forEach(l=>{const _o=originCodeOf(l.supplier||''); l._origin=_o; const key=keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+consolidatedSupplier(l.supplier||'')):'')+('§ORIGIN:'+_o);(groups[key]=groups[key]||[]).push(l);});
   return Object.keys(groups).map(k=>{const g=groups[k],rep=Object.assign({},g[0]);
     rep.sku=[...new Set(g.map(x=>x.sku))].join(',');
     rep.style=[...new Set(g.map(x=>getSpu(x)))].filter(Boolean).join(',');
@@ -473,6 +480,7 @@ function mergeLines(lines,mode,sup){
     /* 混箱：合并组内 boxSeq（占箱序号去重），供装箱清单展示该合并款落哪几箱 */
     rep.boxSeq=[...new Set([].concat.apply([],g.map(x=>x.boxSeq||[])))].sort((a,b)=>a-b);
     rep._merged=g.length>1; rep._cnt=g.length; rep._keys=g.map(x=>x.sku);
+    rep._origin=g[0]._origin||'';
     /* 组内全部二级供应商(去重)，供合同「供货工厂(原)」列完整显示 */
     rep._supers=[...new Set(g.map(x=>x.supplier).filter(Boolean))].join(';');
     return rep;});
@@ -1448,6 +1456,9 @@ function runMonitor(did){
   add('B','B2','应退税额=Σ不含税采购价×13% 计算正确',b2>0?'OK':'WARN',b2>0,'应退 ¥'+b2.toFixed(2)+'（不含税×13%）');
   const badsup=L.some(l=>l.supplier.includes('不退税'));
   add('B','B3','供货企业具退税资格',badsup?'WARN':'OK',!badsup,badsup?'存在标记「不退税」的供应商':'全部具退税资格');
+  /* B10 货源地一致性：每项号货源地须从供应商档案带出(退税归属=进项发票地区)；未维护则 WARN */
+  const missOrig=[...new Set(L.map(function(l){return consolidatedSupplier(l.supplier);}).filter(Boolean))].filter(function(s){const p=(DB.tier1Profiles&&DB.tier1Profiles[s])||{};return !p.originCode;});
+  add('B','B10','货源地与供应商档案一致(退税归属)',missOrig.length?'WARN':'OK',!missOrig.length,missOrig.length?('以下供应商未维护境内货源地：'+missOrig.join('、')):'全部已配置货源地');
   add('B','B4','换汇成本合理',(H.currency.includes('USD')&&DB.price.exch)?'OK':'WARN',(H.currency.includes('USD')&&DB.price.exch)>0,'未设汇率无法核换汇成本');
   add('B','B5','商品退税率与HS匹配','OK','OK','默认退税率13%');
   add('B','B6','收汇完成(资金流一致)','WARN',false,'待确认收汇（外部凭证）');
@@ -1676,7 +1687,7 @@ function builtin(name){
 <td>{{nw}}</td>
 <td>{{header.originCountry}}</td>
 <td>{{destCn}}</td>
-<td>{{header.domSrc}}</td>
+<td>{{_origin}}</td>
 <td colspan="2">{{header.levy}}</td>
 </tr>
 <tr><td colspan="2"></td><td colspan="12">{{spec}}</td></tr>{{/each}}
@@ -1936,11 +1947,14 @@ function safeRender(type,data,extraData){
     /* 明细项净重(kg)：克隆行先各自四舍五入到2位(与表头/显示一致)，再做方案B(最大余数法)，
        保证 Σ明细(2位) = 表头净重(权威值)，三单一致在项级成立；仅改克隆，不动 d.lines 存储数据 */
     const _cl=((data.lines||[]).map(function(l){return Object.assign({},l);}));
-    _cl.forEach(function(l){ l.gw=Math.round((+l.gw)*100)/100; l.nw=Math.round((+l.nw)*100)/100; });
+    _cl.forEach(function(l){ l.gw=Math.round((+l.gw)*100)/100; l.nw=Math.round((+l.nw)*100)/100; if(l._origin===undefined) l._origin=originCodeOf(l.supplier||''); });
     adjustResidual(_cl, Math.round(parseFloat(data.totalGW)*100)/100, 'gw');
     adjustResidual(_cl, Math.round(parseFloat(data.totalNW)*100)/100, 'nw');
     _cl.forEach(function(l){ l.gw=(+l.gw).toFixed(2); l.nw=(+l.nw).toFixed(2); });
-    _data=Object.assign({},data,{boxCount:physicalBoxCount(data.lines||[]), lines:_cl});
+    /* 单供应商草单：表头货源地自动默认成该供应商代码(可手改覆盖) */
+    const _hdr=Object.assign({},data.header||{});
+    if(!_hdr.domSrc){ const _d=[...new Set(_cl.map(function(l){return l._origin;}).filter(Boolean))]; if(_d.length===1) _hdr.domSrc=_d[0]; }
+    _data=Object.assign({},data,{header:_hdr, boxCount:physicalBoxCount(data.lines||[]), lines:_cl});
   }
   const tpl=DB.templates[type]||builtin(type);
   let html=renderTpl(tpl,_data);
@@ -2154,7 +2168,7 @@ function xlsCur(d){
     set(r,9,(+l.nw).toFixed(2));
     set(r,10,H.originCountry);
     set(r,11,cnCountry(H.destCountry));
-    set(r,12,H.domSrc||'');
+    set(r,12,(l._origin||H.domSrc||''));
     set(r,13,H.levy,14);
     r++;
     set(r,2,l.spec||'',14);
@@ -3007,8 +3021,8 @@ function renderSetBody(){
     h=`<div class="erp">
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">一级供应商(签约主体)</p><span class="cnt">${t1.length} 个</span></div>
-        <table><tr><th style="width:18%">名称(采购合同抬头,可改名)</th><th style="width:30%">地址(采购合同乙方)</th><th style="width:13%">联系人</th><th style="width:19%">邮箱</th><th style="width:20%">操作</th></tr><tbody>
-          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
+        <table><tr><th style="width:16%">名称(采购合同抬头)</th><th style="width:24%">地址(乙方)</th><th style="width:11%">联系人</th><th style="width:15%">邮箱</th><th style="width:9%">货源地代码</th><th style="width:13%">货源地名称</th><th style="width:12%">操作</th></tr><tbody>
+          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newTier1" placeholder="+ 新一级供应商(签约主体)"><button class="btn add" onclick="addTier1()">添加</button></div>
       </div>
