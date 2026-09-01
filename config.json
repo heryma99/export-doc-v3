@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-08-24T10:10:09.446Z",
+  "_at": "2026-09-01T12:27:15.427Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -49,11 +49,18 @@
       "addr": "广州市白云区锦石四路57号1801房",
       "contact": "",
       "email": "",
-      "usci": "91440111MAEH87G029"
+      "usci": "91440111MAEH87G029",
+      "originCode": "44019",
+      "originName": "广州其他"
+    },
+    "Lo Monte International Limited": {
+      "addr": "广州"
     }
   },
   "extraSup2": [],
-  "hiddenParties": [],
+  "hiddenParties": [
+    "Lo Monte International Limited"
+  ],
   "hiddenSup2": [],
   "prefOverride": {},
   "prefHidden": [],
