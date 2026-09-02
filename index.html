@@ -1912,32 +1912,35 @@ function plView(lines){
     totalGW:totalGW, totalNW:totalNW};
 }
 function renderPLHtml(data){
-  /* 按用户规则：直接渲染归并后的行（与"归并模式下显示正确"一致）；
-     箱数(Ge.Crate)列按场景2B：重度混箱→整列合并成一个单元格，填总物理箱数；
-     毛净重按 mergeLines 分摊后的正确值（整箱重×数量/箱件数）。 */
+  /* PL 箱数三场景：Ge.Crate 列按 plCrateModel 渲染（场景①逐行箱数 / ②同箱号集合行合并填1 / ③整列合并填总物理箱数）。
+     毛净重按 mergeLines 分摊后的值，逐行求和经 adjustResidual 对齐权威合计；Total 行件数=physicalBoxCount(物理箱去重)。 */
   const lines=(data.lines||[]).map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:+l.gw||0,nw:+l.nw||0};});
   const n=lines.length;
   const boxCount=physicalBoxCount(data.lines||[]);
   const totalQty=lines.reduce((a,l)=>a+l.qty,0);
-  /* 权威总重（与报关草单一致）：来自 buildData.totalGW/NW（按物理箱去重）；逐行分摊值与合计的差额补到最大行，保证"逐行求和 = 合计" */
   const _tg=parseFloat(data.totalGW)||0, _tn=parseFloat(data.totalNW)||0;
   adjustResidual(lines,_tg,'gw'); adjustResidual(lines,_tn,'nw');
   const totalGW=Math.round(lines.reduce((a,l)=>a+l.gw,0)*100)/100;
   const totalNW=Math.round(lines.reduce((a,l)=>a+l.nw,0)*100)/100;
   const esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  const cm=plCrateModel(data.lines||[]);
   let rows='';
   lines.forEach(function(l,i){
-    const crate=(i===0)?('<td rowspan="'+(n+1)+'">'+boxCount+'</td>'):'';
-    rows+='<tr><td>N/M</td><td>'+esc(l.name)+'</td><td>'+esc(l.model)+'</td>'+crate+'<td>'+l.qty+'</td><td>'+l.gw.toFixed(2)+'</td><td>'+l.nw.toFixed(2)+'</td></tr>';
+    const c=cm.rows[i];
+    let crateCell='';
+    if(cm.mode===3){ crateCell=(i===0)?('<td rowspan="'+(n+1)+'">'+cm.total+'</td>'):''; }
+    else { crateCell=c.merge?'':('<td'+(c.span>1?(' rowspan="'+c.span+'"'):'')+'>'+c.crate+'</td>'); }
+    rows+='<tr><td>N/M</td><td>'+esc(l.name)+'</td><td>'+esc(l.model)+'</td>'+crateCell+'<td>'+l.qty+'</td><td>'+l.gw.toFixed(2)+'</td><td>'+l.nw.toFixed(2)+'</td></tr>';
   });
   const H=data.header||{}, D=data.dates||{}, dest=data.destCn||'';
+  const totalCrate=(cm.mode===3)?'':'<td>'+boxCount+'</td>';
   return '<h2 style="text-align:center;margin:6px 0">Packing List装箱单</h2>'
     +'<p>Date: '+esc(D.invoice)+' &nbsp; Invoice No: '+esc(H.no)+' &nbsp; To Messrs: '+esc(H.consignee)+' &nbsp; Contract No: '+esc(H.no)+'</p>'
     +'<p>Shipped: From 东莞 to '+esc(dest)+' &nbsp; Terms of Pay: '+esc(H.tradeTerm)+'</p>'
     +'<table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">'
     +'<tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>'
     +rows
-    +'<tr><td colspan="3">Total</td><td>'+totalQty+'</td><td>'+totalGW.toFixed(2)+'</td><td>'+totalNW.toFixed(2)+'</td></tr></table>';
+    +'<tr><td colspan="3">Total</td>'+totalCrate+'<td>'+totalQty+'</td><td>'+totalGW.toFixed(2)+'</td><td>'+totalNW.toFixed(2)+'</td></tr></table>';
 }
 function safeRender(type,data,extraData){
   if(type==='Packing List装箱单') return renderPLHtml(Object.assign({},data,{boxCount:physicalBoxCount(data.lines||[])}));
@@ -2316,10 +2319,17 @@ function xlsTable(type,d){
     const _tg=parseFloat(d.totalGW)||0, _tn=parseFloat(d.totalNW)||0;
     adjustResidual(_lines,_tg,'gw'); adjustResidual(_lines,_tn,'nw');
     const _totalGW=_tg, _totalNW=_tn;
-    _lines.forEach(function(l,i){ addRow2([i===0?'N/M':'',l.name,l.model,(i===0?_bc:''),l.qty,'个',l.gw.toFixed(2),l.nw.toFixed(2)]); r++; });
-    if(r>ds) addVMerge(MG,3,ds,r-1);   // Ge.Crate 列竖排合并 = 物理箱数(场景2B)
-    /* R12 Total：毛净总重与报关口径一致 */
-    putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,''); putCell(R,r,4,_totalQty); putCell(R,r,5,''); putCell(R,r,6,_totalGW.toFixed(2)); putCell(R,r,7,_totalNW.toFixed(2)); r++;
+    /* PL 箱数三场景：Ge.Crate 列(索引3)按 plCrateModel 渲染；场景③整列合并填总箱数，场景②同箱号集合行竖排合并填1，场景①逐行箱数 */
+    const _cm=plCrateModel(d.lines||[]);
+    if(_cm.mode===3){
+      _lines.forEach(function(l,i){ addRow2([i===0?'N/M':'',l.name,l.model,(i===0?_bc:''),l.qty,'个',l.gw.toFixed(2),l.nw.toFixed(2)]); r++; });
+      if(r>ds) addVMerge(MG,3,ds,r-1);
+    } else {
+      _lines.forEach(function(l,i){ const c=_cm.rows[i]; addRow2([i===0?'N/M':'',l.name,l.model,(c.merge?'':c.crate),l.qty,'个',l.gw.toFixed(2),l.nw.toFixed(2)]); r++; });
+      let _ri=ds; _cm.rows.forEach(function(c){ if(c.span>1) addVMerge(MG,3,_ri,_ri+c.span-1); _ri++; });
+    }
+    /* R12 Total：件数(物理箱去重)=_bc；毛净总重与报关口径一致 */
+    putCell(R,r,0,'Total'); addMerge(MG,r,0,2); putCell(R,r,3,(_cm.mode===3?'':_bc)); putCell(R,r,4,_totalQty); putCell(R,r,5,''); putCell(R,r,6,_totalGW.toFixed(2)); putCell(R,r,7,_totalNW.toFixed(2)); r++;
     /* R13 空行 */
     noB.push(r); r++;
     return xwsFrom(R,MG,[{wch:12},{wch:11},{wch:13},{wch:9},{wch:6},{wch:7},{wch:18},{wch:13}],{noBorderRows:noB,lrRows:lrR});
@@ -2736,6 +2746,47 @@ function physicalBoxCount(lines){
   const seen=Object.create(null); let n=0;
   (lines||[]).forEach(function(l){ String(l.boxNo||'').split(/[;；]/).forEach(function(s){ const bn=s.trim(); if(bn && !seen[bn]){ seen[bn]=1; n++; } }); });
   return n>0 ? n : totalBoxCount(lines||[]);
+}
+/* PL 箱数三场景：基于 boxNo 物理箱号归因，决定 Ge.Crate 列渲染（HTML/Excel 共用单一数据源）。
+   场景① 干净对应：每个归并 MODEL 独占若干完整箱 → 逐行填该 MODEL 箱数。
+   场景② 两行=一箱(2A)：某单箱仅被若干行共享、且这些行箱号集合=该单箱 → 这些行竖向合并一格填 1。
+   场景③ 重度混箱(2B)：存在跨项共享箱(某箱被不同商品行共用且行含其他箱)或无箱号 → 整列合并填总物理箱数。
+   红线：不改 M0-M6 骨架 / mergeLines / buildData；Total 行件数由调用方取 physicalBoxCount。 */
+function plCrateModel(lines){
+  const L=(lines||[]).filter(Boolean);
+  const n=L.length;
+  const B=L.map(function(l){return new Set(String(l.boxNo||'').split(/[;；]/).map(function(s){return s.trim();}).filter(Boolean));});
+  const crate=new Array(n).fill(0);
+  let mixed=false;
+  if(B.some(function(set){return set.size===0;})) mixed=true;   // 无箱号 → 无法归因 → 场景③
+  const b2i={};
+  B.forEach(function(set,i){ set.forEach(function(b){ (b2i[b]=b2i[b]||[]).push(i); }); });
+  const groupOf=new Array(n).fill(-1);
+  let gid=0;
+  Object.keys(b2i).forEach(function(b){
+    const idx=b2i[b];
+    if(idx.length>=2){
+      const allSingle=idx.every(function(i){return B[i].size===1;});  // 这些行箱号集合都=该单箱
+      if(allSingle){
+        const g=gid++;
+        idx.forEach(function(i){ if(groupOf[i]===-1) groupOf[i]=g; });
+        idx.forEach(function(i){ crate[i]=1; });                        // 该自然箱箱数
+      } else { mixed=true; }   // 跨项混箱：箱被不同商品行共用且行含其他箱
+    }
+  });
+  if(mixed) return {mode:3, total:physicalBoxCount(L), rows:L.map(function(){return {crate:'',merge:false,span:1};})};
+  for(let i=0;i<n;i++){ if(groupOf[i]===-1) crate[i]=B[i].size; }   // 未入组行 = 其箱数
+  const rows=[]; let i=0;
+  while(i<n){
+    if(groupOf[i]!==-1){
+      let j=i; while(j+1<n && groupOf[j+1]===groupOf[i]) j++;
+      rows.push({crate:crate[i], merge:false, span:j-i+1});
+      for(let k=i+1;k<=j;k++) rows.push({crate:crate[k], merge:true, span:1});
+      i=j+1;
+    } else { rows.push({crate:crate[i], merge:false, span:1}); i++; }
+  }
+  const mode=rows.some(function(r){return r.span>1;})?2:1;
+  return {mode:mode, total:physicalBoxCount(L), rows:rows};
 }
 /* 日期 → 中文格式：2026-04-08 → 2026年4月8日(销售合同模板风格)；无法解析原样返回 */
 function fmtDateCN(s){if(!s)return '';const m=String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(!m)return String(s);return (+m[1])+'年'+(+m[2])+'月'+(+m[3])+'日';}
