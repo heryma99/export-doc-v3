@@ -1578,6 +1578,8 @@ function replaceEach(html,data){
 }
 function renderTpl(html,data){return replaceEach(html,data);}
 /* 内置模板（报关草单按 ASN2608001523 官方报关单格式对齐；其余 4 类为标准贸易单据格式） */
+const TPL_REV='20260902'; // 内置模板版本戳：用户保存的自定义模板须带此戳才生效，否则回退最新内置（根治"内置更新被旧本地快照覆盖"）
+function tplOf(k){const t=DB.templates[k];return (t&&typeof t==='object'&&t.v===TPL_REV)?t.h:null;}
 function builtin(name,data){
   const head='<h2 style="text-align:center;margin:6px 0">'+name+'</h2>';
   /* ── 报关草单：中华人民共和国海关出口货物报关单（草单） ── */
@@ -1835,11 +1837,11 @@ function renderOut(){
   const supNamesNow=(doc.suppliers&&doc.suppliers.length)?doc.suppliers.join('、'):'未匹配';
   h+=`<div class="ctx-bar"><span class="ctx-label">正在浏览：</span><span class="ctx-val">草单 ${doc.dftId}</span><span class="ctx-extra">· ${doc.out.reduce((a,b)=>a+b.n,0)} 份单据 · 供应商：${supNamesNow}</span></div>`;
   doc.out.forEach((o,idx)=>{
-    const tplHtml=DB.templates[o.type]||builtin(o.type,dt);
+    const tplHtml=tplOf(o.type)||builtin(o.type,dt);
     const isBroken=html=>/\{\{[\/#]|\{\{each/.test(html);
     const renderOne=extra=>{
       let p=renderTpl(tplHtml,extra||dt);
-      if(isBroken(p)&&DB.templates[o.type]) p=renderTpl(builtin(o.type,dt),extra||dt);
+      if(isBroken(p)&&tplOf(o.type)) p=renderTpl(builtin(o.type,dt),extra||dt);
       return p;
     };
     if(o.type==='国内采购合同'){
@@ -1970,9 +1972,9 @@ function safeRender(type,data,extraData){
     if(!_hdr.domSrc){ const _d=[...new Set(_cl.map(function(l){return l._origin;}).filter(Boolean))]; if(_d.length===1) _hdr.domSrc=_d[0]; }
     _data=Object.assign({},data,{header:_hdr, boxCount:physicalBoxCount(data.lines||[]), lines:_cl});
   }
-  const tpl=DB.templates[type]||builtin(type,_data);
+  const tpl=tplOf(type)||builtin(type,_data);
   let html=renderTpl(tpl,_data);
-  if(/\{\{[\/#]|\{\{each/.test(html)&&DB.templates[type]){
+  if(/\{\{[\/#]|\{\{each/.test(html)&&tplOf(type)){
     html=renderTpl(builtin(type,_data),_data);
   }
   return extraData?renderTpl(html,extraData):html;
@@ -3165,8 +3167,8 @@ function renderSetBody(){
   } else if(curTab==='tmpl'){
     const keys=Object.keys(DB.templates);
     h='<p class="muted">模板管理（解耦，每类独立上传/删除，固化进本文件无服务器）：</p><div class="tmpl">';
-    keys.forEach(k=>{h+=`<div class="tcard"><h4>${k}</h4><div class="st">${DB.templates[k]?'✓ 已上传':'○ 内置版式'}</div>
-      <div class="ops"><button class="small" onclick="upTpl('${k}')">上传</button><button class="small ghost" onclick="delTpl('${k}')">${DB.templates[k]?'删':'重置'}</button></div></div>`;});
+    keys.forEach(k=>{const _up=DB.templates[k]&&typeof DB.templates[k]==='object'&&DB.templates[k].v===TPL_REV;h+=`<div class="tcard"><h4>${k}</h4><div class="st">${_up?'✓ 已上传':'○ 内置版式'}</div>
+      <div class="ops"><button class="small" onclick="upTpl('${k}')">上传</button><button class="small ghost" onclick="delTpl('${k}')">${_up?'删':'重置'}</button></div></div>`;});
     h+='</div><div class="note">上传 .html 模板（含 {{字段}} 占位符，如 {{header.shipper}}、{{#each lines}}…{{/each}}）即内嵌进文件。五类各自独立，支持一次性输出。报关草单/发票/装箱单/销售合同/国内采购合同。</div>';
   }
   b.innerHTML=h;
@@ -3191,7 +3193,7 @@ function onSkuFile(e){const f=e.target.files[0];if(!f)return;const name=f.name.t
   if(name.endsWith('.xlsx')||name.endsWith('.xls')){ensureXLSX(()=>{const r=new FileReader();r.onload=ev=>{const wb=XLSX.read(ev.target.result,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1});handle(rows.map(r=>r.join(',')).join('\n'));};r.readAsArrayBuffer(f);});}
   else {const r=new FileReader();r.onload=()=>handle(r.result);r.readAsText(f);}
 }
-function upTpl(k){const f=prompt('粘贴模板HTML（含 {{字段}} 占位符），留空则用内置版式：');DB.templates[k]=f||builtin(k);save();renderSetBody();alert(k+' 模板已'+(f?'上传':'设为内置')+'并固化');}
+function upTpl(k){const f=prompt('粘贴模板HTML（含 {{字段}} 占位符），留空则用内置版式：');DB.templates[k]=f?{h:f,v:TPL_REV}:null;save();renderSetBody();alert(k+' 模板已'+(f?'上传':'设为内置')+'并固化');}
 function delTpl(k){DB.templates[k]=null;save();renderSetBody();}
 function resetAll(){if(confirm('确认清空本地所有数据（记录/订单/草单/模板）？此操作不可撤销。')){localStorage.removeItem(LS_KEY);DB=defaultDB();save();renderAll();alert('已重置');}}
 
@@ -3288,7 +3290,7 @@ function mergeSharedCfg(cfg){
   if(cfg.price)DB.price=Object.assign({},DB.price,cfg.price);
   if(cfg.hsLibOverride)DB.hsLibOverride=Object.assign({},cfg.hsLibOverride,DB.hsLibOverride);
   /* 模板(软件级共享) + 商品库覆盖层 */
-  if(cfg.templates)DB.templates=Object.assign({},DB.templates,cfg.templates);
+  if(cfg.templates){const _m=Object.assign({},DB.templates);for(const _k in cfg.templates){if(cfg.templates[_k]!=null)_m[_k]=cfg.templates[_k];}DB.templates=_m;}
   if(cfg.skuOverride)DB.skuOverride=Object.assign({},cfg.skuOverride,DB.skuOverride);
   if(cfg.bankInfo)DB.bankInfo=Object.assign({},DB.bankInfo||{},cfg.bankInfo);
   if(Array.isArray(cfg.bankAccounts)&&cfg.bankAccounts.length)DB.bankAccounts=cfg.bankAccounts;
