@@ -2753,40 +2753,45 @@ function physicalBoxCount(lines){
    场景③ 重度混箱(2B)：存在跨项共享箱(某箱被不同商品行共用且行含其他箱)或无箱号 → 整列合并填总物理箱数。
    红线：不改 M0-M6 骨架 / mergeLines / buildData；Total 行件数由调用方取 physicalBoxCount。 */
 function plCrateModel(lines){
+  /* PL 箱数三场景判定（唯一数据源，HTML/Excel 共用）：
+     场景③ 重度混箱：某箱被≥2行共用且共用行箱号集合不全相同(跨项混箱)；或存在行无箱号 → 整列合并填总物理箱数
+     场景① 干净对应：各行箱号互不共享 → 逐行填各自箱数
+     场景② 两行=一箱：连续多行箱号集合完全相同(同集合组，组内箱不被组外行共用) → 竖向合并一格填真实箱数(集合大小)；
+                含多箱情形(B1;B2)：两行同享≥2箱且集合相同即合并填该箱数
+     仅依赖 boxNo 物理箱号归因，不动其他数据与骨架。 */
   const L=(lines||[]).filter(Boolean);
   const n=L.length;
-  const B=L.map(function(l){return new Set(String(l.boxNo||'').split(/[;；]/).map(function(s){return s.trim();}).filter(Boolean));});
-  const crate=new Array(n).fill(0);
-  let mixed=false;
-  if(B.some(function(set){return set.size===0;})) mixed=true;   // 无箱号 → 无法归因 → 场景③
+  if(n===0) return {mode:1, total:0, rows:[]};
+  const B=L.map(function(l){ return new Set(String(l.boxNo||'').split(/[;；]/).map(function(s){return s.trim();}).filter(Boolean)); });
+  if(B.some(function(set){ return set.size===0; })) return mixedRes(L);   // 无箱号 → 场景③
+  const keyOf=function(i){ return Array.from(B[i]).sort().join('|'); };
   const b2i={};
   B.forEach(function(set,i){ set.forEach(function(b){ (b2i[b]=b2i[b]||[]).push(i); }); });
-  const groupOf=new Array(n).fill(-1);
-  let gid=0;
+  let mixed=false;
   Object.keys(b2i).forEach(function(b){
-    const idx=b2i[b];
-    if(idx.length>=2){
-      const allSingle=idx.every(function(i){return B[i].size===1;});  // 这些行箱号集合都=该单箱
-      if(allSingle){
-        const g=gid++;
-        idx.forEach(function(i){ if(groupOf[i]===-1) groupOf[i]=g; });
-        idx.forEach(function(i){ crate[i]=1; });                        // 该自然箱箱数
-      } else { mixed=true; }   // 跨项混箱：箱被不同商品行共用且行含其他箱
-    }
+    const u=b2i[b];
+    if(u.length>=2){ const k0=keyOf(u[0]); if(!u.every(function(i){ return keyOf(i)===k0; })) mixed=true; }  // 同箱被不同集合行共用 → 跨项混箱
   });
-  if(mixed) return {mode:3, total:physicalBoxCount(L), rows:L.map(function(){return {crate:'',merge:false,span:1};})};
-  for(let i=0;i<n;i++){ if(groupOf[i]===-1) crate[i]=B[i].size; }   // 未入组行 = 其箱数
+  if(mixed) return mixedRes(L);
+  const groupOf=new Array(n).fill(-1);
+  const crate=new Array(n).fill(0);
+  let gid=0;
+  for(let i=0;i<n;i++){
+    if(groupOf[i]!==-1) continue;
+    const k=keyOf(i);
+    const members=[i];
+    for(let j=i+1;j<n;j++){ if(groupOf[j]===-1 && keyOf(j)===k) members.push(j); }
+    if(members.length>1){ const id=gid++; members.forEach(function(x){ groupOf[x]=id; crate[x]=B[x].size; }); }  // 同集合组：填真实箱数
+    else { crate[i]=B[i].size; }
+  }
   const rows=[]; let i=0;
   while(i<n){
-    if(groupOf[i]!==-1){
-      let j=i; while(j+1<n && groupOf[j+1]===groupOf[i]) j++;
-      rows.push({crate:crate[i], merge:false, span:j-i+1});
-      for(let k=i+1;k<=j;k++) rows.push({crate:crate[k], merge:true, span:1});
-      i=j+1;
-    } else { rows.push({crate:crate[i], merge:false, span:1}); i++; }
+    if(groupOf[i]!==-1){ let j=i; while(j+1<n && groupOf[j+1]===groupOf[i]) j++; rows.push({crate:crate[i],merge:false,span:j-i+1}); for(let kk=i+1;kk<=j;kk++) rows.push({crate:crate[kk],merge:true,span:1}); i=j+1; }
+    else { rows.push({crate:crate[i],merge:false,span:1}); i++; }
   }
-  const mode=rows.some(function(r){return r.span>1;})?2:1;
+  const mode=rows.some(function(r){ return r.span>1; })?2:1;
   return {mode:mode, total:physicalBoxCount(L), rows:rows};
+  function mixedRes(L){ return {mode:3, total:physicalBoxCount(L), rows:L.map(function(){ return {crate:'',merge:false,span:1}; })}; }
 }
 /* 日期 → 中文格式：2026-04-08 → 2026年4月8日(销售合同模板风格)；无法解析原样返回 */
 function fmtDateCN(s){if(!s)return '';const m=String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(!m)return String(s);return (+m[1])+'年'+(+m[2])+'月'+(+m[3])+'日';}
