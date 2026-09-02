@@ -1578,7 +1578,7 @@ function replaceEach(html,data){
 }
 function renderTpl(html,data){return replaceEach(html,data);}
 /* 内置模板（报关草单按 ASN2608001523 官方报关单格式对齐；其余 4 类为标准贸易单据格式） */
-function builtin(name){
+function builtin(name,data){
   const head='<h2 style="text-align:center;margin:6px 0">'+name+'</h2>';
   /* ── 报关草单：中华人民共和国海关出口货物报关单（草单） ── */
   if(name==='报关草单'){
@@ -1740,39 +1740,50 @@ function builtin(name){
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{boxCnt}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
     <tr><td colspan="3">Total</td><td>{{boxCount}}</td><td>{{totalQty}}</td><td>{{totalGW}}</td><td>{{totalNW}}</td></tr></table>`;
-  if(name==='销售合同')return `<h2 style="text-align:center;margin:6px 0">合&nbsp;&nbsp;同</h2>
-    <p>合約編號：{{header.no}} &nbsp; 簽訂地點：{{header.signPlace}} &nbsp; 簽訂日期：{{signDateCN}}</p>
+  if(name==='销售合同'){
+    const _tm=String((data&&data.header&&data.header.transMode)||'').replace(/^\d+\s*/,'').replace(/运输/g,'運輸').replace(/空运/g,'空運');
+    const _cc=String((data&&data.header&&data.header.currency)||'CNY 人民币');
+    const _cur=((_cc.split(' ')[1]||'人民币').replace(/人民币/g,'人民幣').replace(/欧元/g,'歐元'))+'（'+((_cc.split(' ')[0]||'CNY').toUpperCase())+'）';
+    return `<h1 style="text-align:center;font-size:24px;letter-spacing:8px;margin:0 0 8px;font-weight:bold">銷　售　合　同</h1>
+    <div style="text-align:right;font-size:13px;margin:2px 0;color:#333"><span style="display:inline-block;min-width:5.6em">合約編號</span>：{{header.no}}</div>
+    <div style="text-align:right;font-size:13px;margin:2px 0;color:#333"><span style="display:inline-block;min-width:5.6em">簽訂地點</span>：{{header.signPlace}}</div>
+    <div style="text-align:right;font-size:13px;margin:2px 0;color:#333"><span style="display:inline-block;min-width:5.6em">簽訂日期</span>：{{signDateCN}}</div>
     <p><b>第一條 合約當事人</b></p>
-    <p>甲方（買方）：{{header.partyA.name}}&nbsp;{{header.partyA.addr}}&nbsp;聯絡人：{{header.partyA.contact}}&nbsp;郵箱：{{header.partyA.email}}</p>
-    <p>乙方（賣方）：{{header.partyB.name}}&nbsp;{{header.partyB.addr}}&nbsp;聯絡人：{{header.partyB.contact}}&nbsp;郵箱：{{header.partyB.email}}</p>
+    <table border="0" cellspacing="0" cellpadding="4" style="width:100%;font-size:12px"><tr>
+    <td style="width:50%;vertical-align:top"><b>甲方（買方）</b><br>1. 公司全稱：{{header.partyA.name}}<br>2. 公司地址：{{header.partyA.addr}}<br>3. 聯絡人：{{header.partyA.contact}}<br>4. 郵箱：{{header.partyA.email}}</td>
+    <td style="width:50%;vertical-align:top"><b>乙方（賣方）</b><br>1. 公司全稱：{{header.partyB.name}}<br>2. 公司地址：{{header.partyB.addr}}<br>3. 聯絡人：{{header.partyB.contact}}<br>4. 郵箱：{{header.partyB.email}}</td></tr></table>
     <p><b>第二條 合約標的及價格</b></p>
-    <p>標的貨物：全新未使用的箱包（詳見下表），無任何知識產權侵權情形。</p>
-    <p>2.1 成交價格：{{header.tradeTerm}} &nbsp; 2.2 合約貨幣：{{header.currency}}</p>
+    <p>1. 標的貨物：全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。</p>
+    <p>2. 合約價格：　2.1 成交價格：{{header.tradeTerm}}　2.2 合約貨幣：${_cur}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
-    <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
-    {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
-    <tr><td colspan="5">合計</td><td>{{totalAmount}}</td></tr></table>
+    <tr><th>序號</th><th style="text-align:left">產品名稱</th><th>型號</th><th>材質標準</th><th>單位</th><th>數量</th><th>單價</th><th>小計</th></tr>
+    {{#each lines}}<tr><td>{{_i}}</td><td style="text-align:left">{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td>{{unit}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
+    <tr><td colspan="3" style="text-align:right"><b>總計</b></td><td></td><td></td><td style="text-align:right"><b>{{totalQty}}</b></td><td></td><td style="text-align:right"><b>{{totalAmount}}</b></td></tr></table>
     <p><b>第三條 物流及運輸</b></p>
-    <p>1. 運輸方式：☑ {{header.transMode}}</p>
-    <p>2.1 最終目的港/收貨地：{{destCn}}</p>
-    <p>2.2 交貨時間：{{deliveryDateCN}}前，賣方需及時通知買方運輸工具資訊。</p>
+    <p>1. 運輸方式：☑ ${_tm}</p>
+    <p>2. 物流資訊：　2.1 最終目的港/收貨地：{{destCn}}　2.2 交貨時間：{{deliveryDateCN}}前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。</p>
     <p>3. 運輸風險轉移：按{{header.tradeTerm}}價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。</p>
-    <p>4. 運輸保險：由買方全權負責貨物投保，保險費由買方承擔。</p>
+    <p>4. 運輸保險：由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。</p>
     <p><b>第四條 履約期限及方式</b></p>
-    <p>1. 貨款：收到提單後7天內付全款。&nbsp; 2. 付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶。</p>
-    <p>銀行資訊：{{#each bankAccounts}}[{{cur}}] 開戶行：{{bank}} 戶名：{{name}} 賬號：{{no}}{{/each}}</p>
+    <p>一、固定履約期限（均為工作日）　1. 貨款：收到提單後7天內付全款。</p>
+    <p>二、固定履約方式　1. 付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶，否則視為未付款。</p>
+    <p>銀行資訊：<br>　開戶行：{{bankInfo.bank}}　賬戶名稱：{{bankInfo.name}}　銀行賬號：{{bankInfo.no}}</p>
+    <p>2. 通知方式：所有書面通知均以郵件（合同約定郵箱）或加蓋公章掃描件為有效形式，發送即視為送達。</p>
     <p><b>第五條 質量標準及爭議解決</b></p>
-    <p>質量判定以雙方簽字蓋章封樣樣品為準；質量異議需在【3】個工作日內書面提出並附第三方檢測報告；違約責任按合同約定執行。</p>
+    <p>1. 質量判定：以雙方簽字蓋章封樣樣品為準。</p>
+    <p>2. 質量異議：買方發現質量問題，需在【3】個工作日內以合同約定通知方式提出，並附協力廠商檢測報告，否則視為貨物無質量問題。</p>
+    <p>3. 違約責任：① 輕微問題（不合格率≤0.5%）：賣方【15】個工作日內免費補貨並承擔物流費；② 批次問題（不合格率＞0.5%）：賣方【15】個工作日內更換不合格產品並承擔往返費用；③ 根本性問題（材質不符、侵權等）：買方有權解除合同，賣方【15】個工作日內退還全部貨款，支付合約總價30%懲罰性違約金，並承擔買方全部損失。</p>
     <p><b>第六條 合同生效與終止</b></p>
-    <p>1. 生效：雙方加蓋公司公章後生效。&nbsp; 2. 終止：雙方履行完本合同全部權利義務後自動終止。</p>
+    <p>1. 生效：雙方加蓋公司公章後生效。　2. 終止：雙方履行完本合同全部權利義務（含貨物質保期）後自動終止。</p>
     <p><b>第七條 其他約定</b></p>
     <p>1. 本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。</p>
-    <p>2. 爭議提交香港國際仲裁中心（HKIAC）仲裁，仲裁裁決為終局裁決。</p>
+    <p>2. 因履行本合同產生的任何爭議，雙方友好協商解決；協商不成的，提交香港國際仲裁中心（HKIAC），仲裁裁決為終局裁決，對雙方均具有約束力。</p>
+    <p>3. 本合同所有附件均為本合同不可分割的組成部分，與主合同具有同等法律效力。</p>
     <p><b>第八條 合同落款</b></p>
-    <p>甲方（買方）：{{header.partyA.name}} &nbsp;&nbsp;&nbsp;&nbsp; 乙方（賣方）：{{header.partyB.name}}</p>
-    <p>公司公章：____________________ &nbsp;&nbsp;&nbsp;&nbsp; 公司公章：____________________</p>
-    <p>法定/授權代表簽字：____________________ &nbsp;&nbsp; 法定/授權代表簽字：____________________</p>
-    <p>簽署日期：______年____月____日 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 簽署日期：______年____月____日</p>`;
+    <table border="0" cellspacing="0" cellpadding="4" style="width:100%;font-size:12px"><tr>
+    <td style="width:50%;vertical-align:top">甲方（買方）：{{header.partyA.name}}<br>公司公章：________________________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td>
+    <td style="width:50%;vertical-align:top">乙方（賣方）：{{header.partyB.name}}<br>公司公章：________________________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td></tr></table>`;
+  }
   if(name==='国内采购合同')return `<h2 style="text-align:center;margin:6px 0">采购合同</h2>
     {{#each contracts}}<div style="border:1px solid #999;padding:8px;margin:8px 0">
     <p><b>合同编号：{{_no}}</b></p>
@@ -1824,11 +1835,11 @@ function renderOut(){
   const supNamesNow=(doc.suppliers&&doc.suppliers.length)?doc.suppliers.join('、'):'未匹配';
   h+=`<div class="ctx-bar"><span class="ctx-label">正在浏览：</span><span class="ctx-val">草单 ${doc.dftId}</span><span class="ctx-extra">· ${doc.out.reduce((a,b)=>a+b.n,0)} 份单据 · 供应商：${supNamesNow}</span></div>`;
   doc.out.forEach((o,idx)=>{
-    const tplHtml=DB.templates[o.type]||builtin(o.type);
+    const tplHtml=DB.templates[o.type]||builtin(o.type,dt);
     const isBroken=html=>/\{\{[\/#]|\{\{each/.test(html);
     const renderOne=extra=>{
       let p=renderTpl(tplHtml,extra||dt);
-      if(isBroken(p)&&DB.templates[o.type]) p=renderTpl(builtin(o.type),extra||dt);
+      if(isBroken(p)&&DB.templates[o.type]) p=renderTpl(builtin(o.type,dt),extra||dt);
       return p;
     };
     if(o.type==='国内采购合同'){
@@ -1959,10 +1970,10 @@ function safeRender(type,data,extraData){
     if(!_hdr.domSrc){ const _d=[...new Set(_cl.map(function(l){return l._origin;}).filter(Boolean))]; if(_d.length===1) _hdr.domSrc=_d[0]; }
     _data=Object.assign({},data,{header:_hdr, boxCount:physicalBoxCount(data.lines||[]), lines:_cl});
   }
-  const tpl=DB.templates[type]||builtin(type);
+  const tpl=DB.templates[type]||builtin(type,_data);
   let html=renderTpl(tpl,_data);
   if(/\{\{[\/#]|\{\{each/.test(html)&&DB.templates[type]){
-    html=renderTpl(builtin(type),_data);
+    html=renderTpl(builtin(type,_data),_data);
   }
   return extraData?renderTpl(html,extraData):html;
 }
@@ -2398,8 +2409,9 @@ function xlsSalesContract(d){
   const H=d.header; const R=[]; const MG=[]; let r=0;
   const A=H.partyA||{}, B=H.partyB||{};
   const aName=A.name||H.consignee||'', bName=B.name||H.shipper||'';
-  const tr=String(H.transMode||'').replace(/^\d+\s*/,'');
+  const tr=String(H.transMode||'').replace(/^\d+\s*/,'').replace(/运输/g,'運輸').replace(/空运/g,'空運');
   const cur=(H.currency||'').split(' ')[0].toUpperCase();
+  const curDisp=((H.currency||'CNY 人民币').split(' ')[1]||'人民币').replace(/人民币/g,'人民幣').replace(/欧元/g,'歐元')+'（'+((H.currency||'CNY 人民币').split(' ')[0]||'CNY').toUpperCase()+'）';
   const own=(DB.bankAccounts||[]).filter(a=>!String(a.owner||'').trim());   /* 销售收款=出口公司账户(owner空)，排除一级供应商账户 */
   const list=own.filter(a=>String(a.cur||'').toUpperCase().indexOf(cur)>=0);
   const accs=list.length?list:own;
@@ -2427,11 +2439,11 @@ function xlsSalesContract(d){
   lhead('標的貨物：'); rhead('合約價格：');
   lrow('全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。');
   rrow('2.1. 成交價格：'+(H.tradeTerm||'FOB'));
-  rrow('2.2 合約貨幣：'+(H.currency||''));
+  rrow('2.2 合約貨幣：'+curDisp);
   row('');
-  ['Mark & No','Description','Model','Quantity','Unit price','Amount','金額小計','備註'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  d.lines.forEach(l=>{ ['N/M',fan(l.name),l.model,l.qty,l.decl,l.amount,l.amount,''].forEach((v,i)=>putCell(R,r,i,v)); r++; });
-  putCell(R,r,0,'合計'); addMerge(MG,r,0,6); putCell(R,r,7,d.totalAmount); r++;
+  ['序號','產品名稱','型號','材質標準','單位','數量','單價','小計'].forEach((h,i)=>putCell(R,r,i,h)); r++;
+  d.lines.forEach((l,ci)=>{ [(ci+1),fan(l.name),l.model,l.mat,l.unit,l.qty,l.decl,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  putCell(R,r,0,'總計'); addMerge(MG,r,0,2); putCell(R,r,3,''); putCell(R,r,4,''); putCell(R,r,5,d.totalQty); putCell(R,r,6,''); putCell(R,r,7,d.totalAmount); r++;
   row('');
   row('第三條 物流及運輸');
   two('1. 運輸方式：☑ '+(tr||''),'3. 運輸風險轉移');
@@ -2586,7 +2598,7 @@ function downloadDocWord(docI,idx){
     if(o.type==='国内采购合同'){
       d.contracts.forEach((c,ci)=>{ html+=(ci?'<br style="page-break-before:always">':'')+renderTpl(builtin('国内采购合同'),Object.assign({},d,{contracts:[c]})); });
     } else {
-      html=renderTpl(builtin(o.type),d);
+      html=renderTpl(builtin(o.type,d),d);
     }
     docFromHtml(html,name);
   }catch(e){ alert('Word 导出出错：'+e.message); console.error(e); }
