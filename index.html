@@ -283,33 +283,33 @@ async function stampPurchaseSheet(ws,tpl,items,pctx){
   /* 以模板(9行表头 + 明细 + 总计 + 27行条款)重建：明细行数伸缩，总计/条款跟随下移；样式逐格克隆 */
   var N=items.length,widths=[]; for(var c=1;c<=8;c++){var col=tpl.getColumn(c); widths.push((col&&col.width)?col.width:10);} ws.columns=widths.map(function(w){return {width:w};});
   var copyRow=function(tr,sr){ var rh=tpl.getRow(sr); if(rh&&rh.height)ws.getRow(tr).height=rh.height; for(var c=1;c<=8;c++){var s=tpl.getCell(sr,c),t=ws.getCell(tr,c); if(s.value!==undefined&&s.value!==null)t.value=s.value; _pStyleCopy(s,t);} };
-  for(var s=1;s<=9;s++)copyRow(s,s);
-  for(var i=0;i<N;i++)copyRow(10+i,10);
-  items.forEach(function(it,idx){ var rr=10+idx; var set=function(c,v){ws.getCell(rr,c).value=v;}; set(1,idx+1);set(2,it.name);set(3,it.model);set(4,it.mat);set(5,it.unit);set(6,it.qty);set(7,it.up);set(8,it.sub); });
-  var tot=10+N; copyRow(tot,22);
+  for(var s=1;s<=8;s++)copyRow(s,s);
+  for(var i=0;i<N;i++)copyRow(9+i,9);
+  items.forEach(function(it,idx){ var rr=9+idx; var set=function(c,v){ws.getCell(rr,c).value=v;}; set(1,idx+1);set(2,it.name);set(3,it.model);set(4,it.mat);set(5,it.unit);set(6,it.qty);set(7,it.up);set(8,it.sub); });
+  var tot=9+N; copyRow(tot,21);
   ws.getCell(tot,2).value=null; ws.getCell(tot,3).value=null;  /* 先清从格再合并，避免主格被清 */
   ws.mergeCells(tot,1,tot,3); ws.getCell(tot,1).value='总计'; ws.getCell(tot,8).value=items.reduce(function(a,x){return a+(+x.sub);},0).toFixed(2);
-  var tail=tot; for(var s=23;s<=49;s++){tail++;copyRow(tail,s);}
-  ws.mergeCells(1,1,1,8); ws.mergeCells(2,1,2,8); ws.mergeCells(3,1,3,3); ws.mergeCells(3,4,3,8); ws.mergeCells(4,1,4,3); ws.mergeCells(4,4,4,8);
-  ws.mergeCells(5,1,5,8); ws.mergeCells(6,1,6,8); ws.mergeCells(7,1,7,8); ws.mergeCells(8,1,8,8);
-  var tailStart=10+N+1, srcFull=[23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46];
-  for(var j=0;j<27;j++){ var rr2=tailStart+j,ss=23+j; if(srcFull.indexOf(ss)>=0)ws.mergeCells(rr2,1,rr2,8); else if(ss>=47)ws.mergeCells(rr2,1,rr2,3); }
+  var tail=tot; for(var s=22;s<=48;s++){tail++;copyRow(tail,s);}
+  ws.mergeCells(1,1,1,8); ws.mergeCells(2,1,2,3); ws.mergeCells(2,4,2,8);
+  ws.mergeCells(3,1,3,3); ws.mergeCells(3,4,3,8);
+  ws.mergeCells(4,1,4,8); ws.mergeCells(5,1,5,8); ws.mergeCells(6,1,6,8); ws.mergeCells(7,1,7,8);
+  var tailStart=10+N+1, srcFull=[22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45];
+  for(var j=0;j<27;j++){ var rr2=tailStart+j,ss=22+j; if(srcFull.indexOf(ss)>=0)ws.mergeCells(rr2,1,rr2,8); else if(ss>=46)ws.mergeCells(rr2,1,rr2,3); }
   /* 盖章变量 */
   ws.getCell(1,1).value='合同编号：'+(pctx.no||'');
-  ws.getCell(3,1).value='甲方：'+(pctx.aName||'');
-  ws.getCell(3,4).value='     乙方：'+(pctx.bName||'');
-  ws.getCell(4,1).value='住所/注册地址：'+(pctx.aAddr||'');
-  ws.getCell(4,4).value='住所/注册地址：'+(pctx.bAddr||'');
-  ws.getCell(8,1).value='2.交易币种：'+(pctx.cur||'人民币（CNY）');
-  ws.getCell(tailStart+6,1).value='开户行：'+(pctx.acctBank||'');   /* src29 */
-  ws.getCell(tailStart+7,1).value='账号  ： '+(pctx.acctNo||'');     /* src30 */
-  ws.getCell(tailStart+10,1).value='1．交货时间：'+(pctx.deliveryDate||'')+' 前'; /* src33 */
-  ws.getCell(tailStart+11,1).value='交货地点：'+(pctx.deliveryPlace||'');          /* src34 */
-  ws.getCell(tailStart+24,1).value='甲方（盖章）：'+(pctx.aName||'')+'                      '; /* src47 */
+  ws.getCell(2,1).value='甲方：'+(pctx.aName||'');
+  ws.getCell(2,4).value='     乙方：'+(pctx.bName||'');
+  ws.getCell(3,1).value='住所/注册地址：'+(pctx.aAddr||'');
+  ws.getCell(7,1).value='2.交易币种：'+(pctx.cur||'人民币（CNY）');
+  ws.getCell(tailStart+6,1).value='开户行：'+(pctx.acctBank||'');   /* src28 */
+  ws.getCell(tailStart+7,1).value='账号  ： '+(pctx.acctNo||'');     /* src29 */
+  ws.getCell(tailStart+10,1).value='1．交货时间：'+(pctx.deliveryDate||'')+' 前'; /* src32 */
+  ws.getCell(tailStart+11,1).value='交货地点：'+(pctx.deliveryPlace||'');          /* src33 */
+  ws.getCell(tailStart+24,1).value='甲方（盖章）：'+(pctx.aName||'')+'                      '; /* src46 */
   ws.getCell(tailStart+24,4).value='  乙方（盖章）：'+(pctx.bName||'');
   ws.getCell(tailStart+25,1).value='授权代表（签字）：________________________';
   ws.getCell(tailStart+25,4).value='授权代表（签字）：________________________';
-  if(pctx.signDate) ws.getCell(tailStart+26,1).value=pctx.signDate+'                 ';
+  if(pctx.signDate) ws.getCell(tailStart+26,1).value=pctx.signDate+'                 '; /* src48 签署日期 A:C merged */
 }
 async function purchaseTplDownload(d){
   /* 国内采购合同 → 每个一级供应商一页，按内嵌模板盖章 */
