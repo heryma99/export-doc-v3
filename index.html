@@ -578,7 +578,7 @@ function getSku(s){
 
 /* ============== 工具 ============== */
 const PRICE_RATE=()=>DB.price.rate;
-const declPrice=c=>+(c.noTax/(1-PRICE_RATE())).toFixed(3);
+const declPrice=c=>+(c.noTax/(1-PRICE_RATE())).toFixed(4);
 const uid=p=>p+Date.now().toString().slice(-6)+Math.floor(Math.random()*90+10);
 function today(){const d=new Date();return d.toISOString().slice(0,10);}
 function fmt(d){return d;}
@@ -1529,7 +1529,7 @@ function buildData(doc){
     return {...l,spec,en:l.en||'',unit:l.unit||'',
       decl:l.decl,
       amount:_amt.toFixed(2),
-      declCur:decl2cur(l.decl),
+      declCur:(+decl2cur(l.decl)).toFixed(4),
       amountCur:decl2cur(_amt).toFixed(2),
       boxCnt:(+l.boxCnt||0),
       /* Model 列：按款合并时显示该款下全部 SKU(_keys)，与报关草单一致；否则取款号/单SKU */
@@ -2277,7 +2277,7 @@ function xlsTable(type,d){
     /* R7 列头(全简中) */ addRow(['唛头','品名','型号','数量','','单价('+d.cur+')','金额('+d.cur+')']); r++;
     /* R8-R12 数据(5行) — A列 N/M 竖排合并(行7~11) */
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.model,l.qty,'个',(+l.declCur).toFixed(2),(+l.amountCur).toFixed(2)]); r++; });
+    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',l.name,l.model,l.qty,'个',(+l.declCur).toFixed(4),(+l.amountCur).toFixed(2)]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R13 合计(币种动态): 单行（A13:F13 合并 + G13 金额） */
     putCell(R,r,0,'合计('+d.cur+')：'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.totalAmountCur).toFixed(2)); r++;
@@ -2383,7 +2383,7 @@ function xlsTable(type,d){
     /* R7 列头 */ addRow(['Mark & No','Description','Model','Quantity','','Unit price('+d.cur+')','Amount('+d.cur+')']); r++;
     /* R8-R12 数据 (繁体 fan) */
     const ds=r;
-    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',fan(l.name),l.model,l.qty,'個',(+l.declCur).toFixed(2),(+l.amountCur).toFixed(2)]); r++; });
+    d.lines.forEach((l,i)=>{ addRow([i===0?'N/M':'',fan(l.name),l.model,l.qty,'個',(+l.declCur).toFixed(4),(+l.amountCur).toFixed(2)]); r++; });
     if(r>ds) addVMerge(MG,0,ds,r-1);
     /* R13 TOTAL:(币种动态) A13:F13合并 + G13金额 */
     putCell(R,r,0,'TOTAL:('+d.cur+')'); addMerge(MG,r,0,5); putCell(R,r,6,(+d.totalAmountCur).toFixed(2)); r++;
