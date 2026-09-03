@@ -2850,8 +2850,8 @@ function plCrateModel(lines){
     const k=keyOf(i);
     const members=[i];
     for(let j=i+1;j<n;j++){ if(groupOf[j]===-1 && keyOf(j)===k) members.push(j); }
-    if(members.length>1){ const id=gid++; members.forEach(function(x){ groupOf[x]=id; crate[x]=B[x].size; }); }  // 同集合组：填真实箱数
-    else { crate[i]=B[i].size; }
+    if(members.length>1){ const id=gid++; members.forEach(function(x){ groupOf[x]=id; crate[x]=(+(L[x].boxCnt)||B[x].size); }); }  // 同集合组：填真实箱数(优先 mergeLines 已求和的 boxCnt，按用户规则：合并行=组内箱数求和)
+    else { crate[i]=(+(L[i].boxCnt)||B[i].size); }                                                                                // 未合并行=该行 boxCnt(每行已写好)，无 boxCnt 回退箱号段数
   }
   const rows=[]; let i=0;
   while(i<n){
