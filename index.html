@@ -1743,48 +1743,60 @@ function builtin(name,data){
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{boxCnt}}</td><td>{{qty}}</td><td>{{gw}}</td><td>{{nw}}</td></tr>{{/each}}
     <tr><td colspan="3">Total</td><td>{{boxCount}}</td><td>{{totalQty}}</td><td>{{totalGW}}</td><td>{{totalNW}}</td></tr></table>`;
   if(name==='销售合同'){
-    const _tm=String((data&&data.header&&data.header.transMode)||'').replace(/^\d+\s*/,'').replace(/运输/g,'運輸').replace(/空运/g,'空運');
+    const _tm=String((data&&data.header&&data.header.transMode)||'').replace(/^\d+\s*/,'').replace(/航空运输|空运/g,'空運').replace(/水路运输|海运/g,'水路運輸').replace(/陆运/g,'陸運');
     const _cc=String((data&&data.header&&data.header.currency)||'CNY 人民币');
     const _cur=((_cc.split(' ')[1]||'人民币').replace(/人民币/g,'人民幣').replace(/欧元/g,'歐元'))+'（'+((_cc.split(' ')[0]||'CNY').toUpperCase())+'）';
-    return `<h1 style="text-align:center;font-size:24px;letter-spacing:8px;margin:0 0 8px;font-weight:bold">銷　售　合　同</h1>
-    <div style="text-align:right;font-size:13px;margin:2px 0;color:#333"><span style="display:inline-block;min-width:5.6em">合約編號</span>：{{header.no}}</div>
-    <div style="text-align:right;font-size:13px;margin:2px 0;color:#333"><span style="display:inline-block;min-width:5.6em">簽訂地點</span>：{{header.signPlace}}</div>
-    <div style="text-align:right;font-size:13px;margin:2px 0;color:#333"><span style="display:inline-block;min-width:5.6em">簽訂日期</span>：{{signDateCN}}</div>
-    <p><b>第一條 合約當事人</b></p>
-    <table border="0" cellspacing="0" cellpadding="4" style="width:100%;font-size:12px"><tr>
-    <td style="width:50%;vertical-align:top"><b>甲方（買方）</b><br>1. 公司全稱：{{header.partyA.name}}<br>2. 公司地址：{{header.partyA.addr}}<br>3. 聯絡人：{{header.partyA.contact}}<br>4. 郵箱：{{header.partyA.email}}</td>
-    <td style="width:50%;vertical-align:top"><b>乙方（賣方）</b><br>1. 公司全稱：{{header.partyB.name}}<br>2. 公司地址：{{header.partyB.addr}}<br>3. 聯絡人：{{header.partyB.contact}}<br>4. 郵箱：{{header.partyB.email}}</td></tr></table>
-    <p><b>第二條 合約標的及價格</b></p>
-    <p>1. 標的貨物：全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。</p>
-    <p>2. 合約價格：　2.1 成交價格：{{header.tradeTerm}}　2.2 合約貨幣：${_cur}</p>
-    <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
+    return `<h1 style="text-align:center;font-size:22px;letter-spacing:6px;margin:0 0 6px;font-weight:bold">銷　售　合　同</h1>
+    <div style="font-size:13px;margin:1px 0">合約編號：{{header.no}}</div>
+    <div style="font-size:13px;margin:1px 0">簽訂地點：{{header.signPlace}}</div>
+    <div style="font-size:13px;margin:1px 0">簽訂日期：{{signDateCN}}</div>
+    <h3 style="margin:10px 0 4px;font-size:14px">第一條 合約當事人</h3>
+    <table border="0" cellspacing="0" cellpadding="3" style="width:100%;font-size:12px"><tr>
+    <td style="width:38%;vertical-align:top"><b>甲方</b><br>1. 公司全稱：{{header.partyA.name}}<br>2. 公司地址：{{header.partyA.addr}}<br>3. 聯絡人：{{header.partyA.contact}}<br>4. 郵箱：{{header.partyA.email}}</td>
+    <td style="width:62%;vertical-align:top"><b>乙方</b><br>1. 公司全稱：{{header.partyB.name}}<br>2. 公司地址：{{header.partyB.addr}}<br>3. 聯絡人：{{header.partyB.contact}}<br>4. 郵箱：{{header.partyB.email}}</td></tr></table>
+    <h3 style="margin:10px 0 4px;font-size:14px">第二條 合約標的及價格</h3>
+    <p style="margin:2px 0">1.標的貨物：全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。</p>
+    <p style="margin:2px 0">2.合約價格：</p>
+    <p style="margin:2px 0;padding-left:24px">2.1. 成交價格：{{header.tradeTerm}}</p>
+    <p style="margin:2px 0;padding-left:24px">2.2 合約貨幣：${_cur}</p>
+    <table border="1" cellspacing="0" cellpadding="5" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>序號</th><th style="text-align:left">產品名稱</th><th>型號</th><th>材質標準</th><th>單位</th><th>數量</th><th>單價</th><th>小計</th></tr>
     {{#each lines}}<tr><td>{{_i}}</td><td style="text-align:left">{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td>{{unit}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
-    <tr><td colspan="3" style="text-align:right"><b>總計</b></td><td></td><td></td><td style="text-align:right"><b>{{totalQty}}</b></td><td></td><td style="text-align:right"><b>{{totalAmount}}</b></td></tr></table>
-    <p><b>第三條 物流及運輸</b></p>
-    <p>1. 運輸方式：☑ ${_tm}</p>
-    <p>2. 物流資訊：　2.1 最終目的港/收貨地：{{destCn}}　2.2 交貨時間：{{deliveryDateCN}}前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。</p>
-    <p>3. 運輸風險轉移：按{{header.tradeTerm}}價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。</p>
-    <p>4. 運輸保險：由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。</p>
-    <p><b>第四條 履約期限及方式</b></p>
-    <p>一、固定履約期限（均為工作日）　1. 貨款：收到提單後7天內付全款。</p>
-    <p>二、固定履約方式　1. 付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶，否則視為未付款。</p>
-    <p>銀行資訊：<br>　開戶行：{{bankInfo.bank}}　賬戶名稱：{{bankInfo.name}}　銀行賬號：{{bankInfo.no}}</p>
-    <p>2. 通知方式：所有書面通知均以郵件（合同約定郵箱）或加蓋公章掃描件為有效形式，發送即視為送達。</p>
-    <p><b>第五條 質量標準及爭議解決</b></p>
-    <p>1. 質量判定：以雙方簽字蓋章封樣樣品為準。</p>
-    <p>2. 質量異議：買方發現質量問題，需在【3】個工作日內以合同約定通知方式提出，並附協力廠商檢測報告，否則視為貨物無質量問題。</p>
-    <p>3. 違約責任：① 輕微問題（不合格率≤0.5%）：賣方【15】個工作日內免費補貨並承擔物流費；② 批次問題（不合格率＞0.5%）：賣方【15】個工作日內更換不合格產品並承擔往返費用；③ 根本性問題（材質不符、侵權等）：買方有權解除合同，賣方【15】個工作日內退還全部貨款，支付合約總價30%懲罰性違約金，並承擔買方全部損失。</p>
-    <p><b>第六條 合同生效與終止</b></p>
-    <p>1. 生效：雙方加蓋公司公章後生效。　2. 終止：雙方履行完本合同全部權利義務（含貨物質保期）後自動終止。</p>
-    <p><b>第七條 其他約定</b></p>
-    <p>1. 本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。</p>
-    <p>2. 因履行本合同產生的任何爭議，雙方友好協商解決；協商不成的，提交香港國際仲裁中心（HKIAC），仲裁裁決為終局裁決，對雙方均具有約束力。</p>
-    <p>3. 本合同所有附件均為本合同不可分割的組成部分，與主合同具有同等法律效力。</p>
-    <p><b>第八條 合同落款</b></p>
-    <table border="0" cellspacing="0" cellpadding="4" style="width:100%;font-size:12px"><tr>
-    <td style="width:50%;vertical-align:top">甲方（買方）：{{header.partyA.name}}<br>公司公章：________________________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td>
-    <td style="width:50%;vertical-align:top">乙方（賣方）：{{header.partyB.name}}<br>公司公章：________________________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td></tr></table>`;
+    <tr><td colspan="3" style="text-align:center"><b>總計</b></td><td></td><td></td><td></td><td></td><td style="text-align:right"><b>{{totalAmount}}</b></td></tr></table>
+    <h3 style="margin:10px 0 4px;font-size:14px">第三條 物流及運輸</h3>
+    <p style="margin:2px 0">1.運輸方式：☑ ${_tm}</p>
+    <p style="margin:2px 0">2.物流資訊：</p>
+    <p style="margin:2px 0;padding-left:24px">2.1最終目的港/收貨地：{{destCn}}</p>
+    <p style="margin:2px 0;padding-left:24px">2.2交貨時間：{{deliveryDateCN}}前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。</p>
+    <p style="margin:2px 0">3.運輸風險轉移</p>
+    <p style="margin:2px 0">按{{header.tradeTerm}}價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。</p>
+    <p style="margin:2px 0">4.運輸保險</p>
+    <p style="margin:2px 0">由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。</p>
+    <h3 style="margin:10px 0 4px;font-size:14px">第四條 履約期限及方式</h3>
+    <p style="margin:2px 0">一、固定履約期限（均為工作日）</p>
+    <p style="margin:2px 0">1.貨款：收到提單後7天內付全款。</p>
+    <p style="margin:2px 0">二、固定履約方式</p>
+    <p style="margin:2px 0">1.付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶，否則視為未付款。</p>
+    <p style="margin:2px 0">銀行資訊：</p>
+    <p style="margin:2px 0;padding-left:24px">開戶行：{{bankInfo.bank}}</p>
+    <p style="margin:2px 0;padding-left:24px">賬戶名稱：{{bankInfo.name}}</p>
+    <p style="margin:2px 0;padding-left:24px">銀行賬號：{{bankInfo.no}}</p>
+    <p style="margin:2px 0">2.通知方式：所有書面通知均以郵件（合同約定郵箱）或加蓋公章掃描件為有效形式，發送即視為送達。</p>
+    <h3 style="margin:10px 0 4px;font-size:14px">第五條 質量標準及爭議解決</h3>
+    <p style="margin:2px 0">1.質量判定：以雙方簽字蓋章封樣樣品為準。</p>
+    <p style="margin:2px 0">2.質量異議：買方發現質量問題，需在【3】個工作日內以合同約定通知方式提出，並附協力廠商檢測報告，否則視為貨物無質量問題。</p>
+    <p style="margin:2px 0">3.違約責任：① 輕微問題（不合格率≤0.5%）：賣方【15】個工作日內免費補貨並承擔物流費，逾期按補貨金額【1】%/天支付違約金；② 批次問題（不合格率＞0.5%）：賣方【15】個工作日內更換不合格產品並承擔往返費用，支付該批次貨款【1.5】%違約金；③ 根本性問題（材質不符、侵權等）：買方有權解除合同，賣方【15】個工作日內退還全部貨款，支付合約總價30%懲罰性違約金，並承擔買方全部損失。</p>
+    <h3 style="margin:10px 0 4px;font-size:14px">第六條 合同生效與終止</h3>
+    <p style="margin:2px 0">1.生效：雙方加蓋公司公章後生效。</p>
+    <p style="margin:2px 0">2.終止：雙方履行完本合同全部權利義務（含貨物質保期）後自動終止。</p>
+    <h3 style="margin:10px 0 4px;font-size:14px">第七條 其他約定</h3>
+    <p style="margin:2px 0">1.本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。</p>
+    <p style="margin:2px 0">2.因履行本合同產生的任何爭議，雙方友好協商解決；協商不成的，提交香港國際仲裁中心（HKIAC），仲裁裁決為終局裁決，對雙方均具有約束力。</p>
+    <p style="margin:2px 0">3.本合同所有附件均為本合同不可分割的組成部分，與主合同具有同等法律效力。</p>
+    <h3 style="margin:10px 0 4px;font-size:14px">第八條 合同落款</h3>
+    <table border="0" cellspacing="0" cellpadding="3" style="width:100%;font-size:12px"><tr>
+    <td style="width:38%;vertical-align:top"><b>甲方</b><br>公司公章：________________________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td>
+    <td style="width:62%;vertical-align:top"><b>乙方</b><br>公司公章：________________________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td></tr></table>`;
   }
   if(name==='国内采购合同')return `<h2 style="text-align:center;margin:6px 0">采购合同</h2>
     {{#each contracts}}<div style="border:1px solid #999;padding:8px;margin:8px 0">
@@ -2411,75 +2423,111 @@ function xlsSalesContract(d){
   const H=d.header; const R=[]; const MG=[]; let r=0;
   const A=H.partyA||{}, B=H.partyB||{};
   const aName=A.name||H.consignee||'', bName=B.name||H.shipper||'';
-  const tr=String(H.transMode||'').replace(/^\d+\s*/,'').replace(/运输/g,'運輸').replace(/空运/g,'空運');
-  const cur=(H.currency||'').split(' ')[0].toUpperCase();
-  const curDisp=((H.currency||'CNY 人民币').split(' ')[1]||'人民币').replace(/人民币/g,'人民幣').replace(/欧元/g,'歐元')+'（'+((H.currency||'CNY 人民币').split(' ')[0]||'CNY').toUpperCase()+'）';
-  const own=(DB.bankAccounts||[]).filter(a=>!String(a.owner||'').trim());   /* 销售收款=出口公司账户(owner空)，排除一级供应商账户 */
-  const list=own.filter(a=>String(a.cur||'').toUpperCase().indexOf(cur)>=0);
-  const accs=list.length?list:own;
+  const tr=String(H.transMode||'').replace(/^\d+\s*/,'').replace(/航空运输|空运/g,'空運').replace(/水路运输|海运/g,'水路運輸').replace(/陆运/g,'陸運');
+  const _cc=String(H.currency||'CNY 人民币');
+  const cur=((_cc.split(' ')[0]||'CNY').toUpperCase());
+  const curDisp=((_cc.split(' ')[1]||'人民币').replace(/人民币/g,'人民幣').replace(/欧元/g,'歐元'))+'（'+cur+'）';
+  const destCn=cnCountry(H.destCountry)||'';
+  const delivery=fmtDateCN(H.deliveryDate)||'';
   const bk=acctFor(H.currency)||{};
-  const C=8;
-  /* 整行（横跨 A-H） */
-  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
-  /* 两栏：左 A-D(甲方)，右 E-H(乙方) */
-  const two=(lt,rt)=>{ putCell(R,r,0,lt); addMerge(MG,r,0,3); putCell(R,r,4,rt); addMerge(MG,r,4,7); r++; };
-  const lhead=t=>{ putCell(R,r,0,t); addMerge(MG,r,0,3); r++; };
-  const rhead=t=>{ putCell(R,r,4,t); addMerge(MG,r,4,7); r++; };
-  const lrow=t=>{ putCell(R,r,0,t); addMerge(MG,r,0,3); r++; };
-  const rrow=t=>{ putCell(R,r,4,t); addMerge(MG,r,4,7); r++; };
-  row('合   同');
-  row('合約編號：'+(H.no||'')+'    簽訂地點：'+(H.signPlace||'【東莞】')+'    簽訂日期：'+(fmtDateCN(H.signDate)||'____'));
-  row('');
-  row('第一條 合約當事人');
-  two('甲方（買方）','乙方（賣方）');
-  lrow('1. 公司全稱：'+aName);        rrow('1. 公司全稱：'+bName);
-  lrow('2. 公司地址：'+(A.addr||'')); rrow('2. 公司地址：'+(B.addr||''));
-  lrow('3. 聯絡人：'+(A.contact||''));rrow('3. 聯絡人：'+(B.contact||''));
-  lrow('4. 郵箱：'+(A.email||''));    rrow('4. 郵箱：'+(B.email||''));
-  row('');
-  row('第二條 合約標的及價格');
-  lhead('標的貨物：'); rhead('合約價格：');
-  lrow('全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。');
-  rrow('2.1. 成交價格：'+(H.tradeTerm||'FOB'));
-  rrow('2.2 合約貨幣：'+curDisp);
-  row('');
+  const gRows=[];                       /* 货品表行(表头+数据+總计) → 边框+数字右对齐 */
+  /* 通栏 A-H（标题/编号/地点/日期/各條款正文） */
+  const full=t=>{ putCell(R,r,0,t); addMerge(MG,r,0,7); r++; };
+  /* 甲方 A-C(0-2) / 乙方 D-K(3-10) 两栏 */
+  const prow=(lt,rt)=>{ putCell(R,r,0,lt); addMerge(MG,r,0,2); putCell(R,r,3,rt); addMerge(MG,r,3,10); r++; };
+  const sp=()=>{ r++; };
+  /* 标题 */
+  putCell(R,r,0,'銷  售  合   同'); addMerge(MG,r,0,7); r++;
+  /* 编号/地点/日期 三行（左对齐，与模板一致） */
+  full('合約編號：'+(H.no||''));
+  full('簽訂地點：'+(H.signPlace||'【東莞】'));
+  full('簽訂日期：'+(fmtDateCN(H.signDate)||'____'));
+  sp();
+  /* 第一條 合約當事人（甲方 A-C / 乙方 D-K 两栏） */
+  putCell(R,r,0,'第一條 合約當事人 '); addMerge(MG,r,0,2); addMerge(MG,r,3,10); r++;
+  prow('甲方','乙方');
+  prow('1. 公司全稱：'+aName,'1. 公司全稱：'+bName);
+  prow('2. 公司地址：'+(A.addr||''),'2. 公司地址：'+(B.addr||''));
+  prow('3. 聯絡人：'+(A.contact||''),'3. 聯絡人：'+(B.contact||''));
+  prow('4. 郵箱：'+(A.email||''),'4. 郵箱：'+(B.email||''));
+  sp();
+  /* 第二條 合約標的及價格 */
+  full(' 第二條 合約標的及價格');
+  full('1.標的貨物：全新未使用的箱包（詳見下表），無任何知識產權侵權情形，因侵權產生的一切責任及損失由賣方承擔。');
+  full('2.合約價格：');
+  full('   2.1. 成交價格：'+(H.tradeTerm||'FOB'));
+  full('   2.2 合約貨幣：'+curDisp);
+  /* 货品表（8 列，有框） */
+  gRows.push(r);
   ['序號','產品名稱','型號','材質標準','單位','數量','單價','小計'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  d.lines.forEach((l,ci)=>{ [(ci+1),fan(l.name),l.model,l.mat,l.unit,l.qty,l.decl,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
-  putCell(R,r,0,'總計'); addMerge(MG,r,0,2); putCell(R,r,3,''); putCell(R,r,4,''); putCell(R,r,5,d.totalQty); putCell(R,r,6,''); putCell(R,r,7,d.totalAmount); r++;
-  row('');
-  row('第三條 物流及運輸');
-  two('1. 運輸方式：☑ '+(tr||''),'3. 運輸風險轉移');
-  lrow(''); rrow('按'+(H.tradeTerm||'FOB')+'價格術語約約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。');
-  lhead('2. 物流資訊：'); rhead('4. 運輸保險：');
-  lrow('2.1 最終目的港/收貨地：'+(cnCountry(H.destCountry)||''));
-  lrow('2.2 交貨時間：'+(fmtDateCN(H.deliveryDate)||'____')+'前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。');
-  rrow('由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。');
-  row('');
-  row('第四條 履約期限及方式');
-  lhead('一、固定履約期限（均為工作日）'); rhead('二、固定履約方式');
-  lrow('1. 貨款：收到提單後7天內付全款。');   rrow('1. 付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶，否則視為未付款。');
-  rhead('銀行資訊：');
-  if(accs.length){ accs.forEach(a=>{ rrow((a.cur||'')+'賬戶：開戶行：'+(a.bank||'')+'  戶名：'+(a.name||'')+'  賬號：'+(a.no||'')); }); }
-  else { rrow('人民幣賬戶：開戶行：'+(bk.bank||'')+'  戶名：'+(bk.name||'')+'  賬號：'+(bk.no||'')); }
-  row('');
-  row('第五條 質量標準及爭議解決');
-  lhead('1. 質量判定：'); rhead('3. 違約責任：');
-  lrow('以雙方簽字蓋章封樣樣品為準。');
-  lrow('2. 質量異議：買方發現質量問題，需在【3】個工作日內以合同約定通知方式提出，並附第三方檢測報告，否則視為貨物無質量問題。');
-  rrow('① 輕微問題（不合格率≤0.5%）：賣方【15】個工作日內免費補貨並承擔物流費；② 批次問題（不合格率＞0.5%）：賣方【15】個工作日內更換不合格產品並承擔往返費用。');
-  row('');
-  row('第六條 合同生效與終止');
-  two('1. 生效：雙方加蓋公司公章後生效。','2. 終止：雙方履行完本合同全部權利義務（含貨物質保期）後自動終止。');
-  row('');
-  row('第七條 其他約定');
-  two('1. 本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。','2. 因履行本合同產生的任何爭議，雙方友好協商解決；協商不成的，提交香港國際仲裁中心（HKIAC），仲裁裁決為終局裁決，對雙方均具有約束力。');
-  row('');
-  row('第八條 合同落款');
-  two('甲方（買方）：'+aName,'乙方（賣方）：'+bName);
-  two('公司公章：________________________','公司公章：________________________');
-  two('法定/授權代表簽字：________________________','法定/授權代表簽字：________________________');
-  two('簽署日期：______年____月____日','簽署日期：______年____月____日');
-  return xwsFrom(R,MG,[{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:14},{wch:14},{wch:12}]);
+  d.lines.forEach(l=>{ gRows.push(r); [l.idx!=null?l.idx:(l._i!=null?l._i:0),l.name,l.model,l.mat,l.unit,l.qty,l.decl,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  /* 總计行：A-C 合并写「總計」，H=金额，数量列(F)留空（与模板一致，不求和） */
+  gRows.push(r);
+  putCell(R,r,0,'總計'); addMerge(MG,r,0,2); putCell(R,r,7,d.totalAmount); r++;
+  sp();
+  /* 第三條 物流及運輸 */
+  full(' 第三條 物流及運輸');
+  full('1.運輸方式：☑ '+(tr||''));
+  full('2.物流資訊：');
+  full('   2.1最終目的港/收貨地：'+destCn);
+  full('   2.2交貨時間：'+delivery+'前，賣方需及時通知買方運輸工具資訊（如航班號/船名/車號）。');
+  full('3.運輸風險轉移');
+  full('按'+(H.tradeTerm||'FOB')+'價格術語約定，貨物在交貨地交給承運人後，風險即由賣方轉移至買方。');
+  full('4.運輸保險');
+  full('由買方全權負責貨物投保，保險範圍覆蓋貨物離開裝運港貨櫃後至目的港的全部風險，賣方配合提供投保所需全部資料，保險費由買方承擔。');
+  sp();
+  /* 第四條 履約期限及方式 */
+  full(' 第四條 履約期限及方式');
+  full(' 一、固定履約期限（均為工作日）');
+  full('1.貨款：收到提單後7天內付全款。');
+  full(' 二、固定履約方式');
+  full('1.付款方式：唯一方式為T/T電匯，所有貨款均支付至本合同約定的賣方銀行賬戶，否則視為未付款。');
+  full('銀行資訊：');
+  full('   開戶行：'+(bk.bank||''));
+  full('   賬戶名稱：'+(bk.name||''));
+  full('   銀行賬號：'+(bk.no||''));
+  full('2.通知方式：所有書面通知均以郵件（合同約定郵箱）或加蓋公章掃描件為有效形式，發送即視為送達。');
+  sp();
+  /* 第五條 質量標準及爭議解決 */
+  full(' 第五條 質量標準及爭議解決');
+  full('1.質量判定：以雙方簽字蓋章封樣樣品為準。');
+  full('2.質量異議：買方發現質量問題，需在【3】個工作日內以合同約定通知方式提出，並附協力廠商檢測報告，否則視為貨物無質量問題。');
+  full('3.違約責任：① 輕微問題（不合格率≤0.5%）：賣方【15】個工作日內免費補貨並承擔物流費，逾期按補貨金額【1】%/天支付違約金；② 批次問題（不合格率＞0.5%）：賣方【15】個工作日內更換不合格產品並承擔往返費用，支付該批次貨款【1.5】%違約金；③ 根本性問題（材質不符、侵權等）：買方有權解除合同，賣方【15】個工作日內退還全部貨款，支付合約總價30%懲罰性違約金，並承擔買方全部損失。');
+  sp();
+  /* 第六條 合同生效與終止 */
+  full(' 第六條 合同生效與終止');
+  full('1.生效：雙方加蓋公司公章後生效。');
+  full('2.終止：雙方履行完本合同全部權利義務（含貨物質保期）後自動終止。');
+  sp();
+  /* 第七條 其他約定 */
+  full(' 第七條 其他約定');
+  full('1.本合同正本一式【2】份，甲方執【1】份，乙方執【1】份，具有同等法律效力。');
+  full('2.因履行本合同產生的任何爭議，雙方友好協商解決；協商不成的，提交香港國際仲裁中心（HKIAC），仲裁裁決為終局裁決，對雙方均具有約束力。');
+  full('3.本合同所有附件均為本合同不可分割的組成部分，與主合同具有同等法律效力。');
+  sp();
+  /* 第八條 合同落款（甲方 A-C / 乙方 D-K 两栏） */
+  full(' 第八條 合同落款');
+  prow('甲方','乙方');
+  prow('公司公章：________________________','公司公章：________________________');
+  sp();
+  prow('法定/授權代表簽字：________________________','法定/授權代表簽字：________________________');
+  sp();
+  prow('簽署日期：______年____月____日','簽署日期：______年____月____日');
+  /* 列宽：A-H 按模板，I-K 补足（乙方占 D-K） */
+  const cols=[{wch:6.88},{wch:8.25},{wch:34.75},{wch:9.75},{wch:6.88},{wch:7.00},{wch:11.12},{wch:15.25},{wch:11},{wch:11},{wch:11}];
+  const noR=[]; for(let i=0;i<r;i++) if(gRows.indexOf(i)<0) noR.push(i);
+  const ws=xwsFrom(R,MG,cols,{noBorderRows:noR,lrRows:gRows.slice()});
+  /* 扩展 !ref 至 K（col 10），覆盖乙方 D-K 合并 */
+  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:r-1,c:10}});
+  /* 清除货品表右侧 I/J/K 多余边框（模板仅 A-H 有框） */
+  gRows.forEach(gr=>{ for(let c=8;c<=10;c++){ const a=XLSX.utils.encode_cell({r:gr,c}); if(ws[a]){ ws[a].s=ws[a].s||{}; ws[a].s.border=undefined; } } });
+  /* 标题样式（居中、18号、加粗） */
+  const t=ws['A1']; if(t){ t.s=t.s||{}; t.s.font={name:'宋体',sz:18,bold:true}; t.s.alignment={horizontal:'center',vertical:'center',wrapText:true}; }
+  /* 各條款小标题加粗（第一~八條 / 總計） */
+  for(let rr=0; rr<r; rr++){ const a=ws['A'+(rr+1)]; if(a&&a.v){ const s=String(a.v); if(/^[ 　]*第[一二三四五六七八]條/.test(s)|| s.indexOf('總計')>=0){ a.s=a.s||{}; a.s.font=Object.assign({name:'宋体',sz:9,bold:true}, a.s.font||{}); } } }
+  /* 货品表数字列（數量/單價/小計）右对齐 */
+  ['F','G','H'].forEach(col=>{ gRows.forEach((gr,gi)=>{ if(gi===0) return; const a=col+(gr+1); const c=ws[a]; if(c){ c.s=c.s||{}; c.s.alignment={horizontal:'right',vertical:'center',wrapText:true}; } }); });
+  return ws;
 }
 /* 国内采购合同(仿模板 合同编号：HT1781940-1.docx)：
    合同编号=销售合同协议号+'-'+(序号+1)；甲方=发货人(采购方,档案自动引用)；乙方=一级供应商(供货方,档案 tier1Profiles 自动引用)；
