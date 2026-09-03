@@ -273,6 +273,68 @@
 <script src="box_specs.js?v=20260809_1210"></script>
 <!-- 通用 zip 打包库（WPS/Windows/Python 全兼容，替换旧手写 buildZip 以修复 WPS 报"压缩文件已损坏"；本地优先，CDN 兜底） -->
 <script src="jszip.min.js"></script>
+<!-- 采购合同模板(内嵌 base64，由 采购模板(1).xlsx 清洗归一生成)；exceljs 懒加载用于「模板盖章」导出 -->
+<script src="tpl_purchase.js"></script>
+<script>
+function ensureExcelJS(cb){ if(window.ExcelJS){cb();return;} var s=document.createElement('script'); s.src='exceljs.min.js'; s.onload=function(){cb();}; s.onerror=function(){alert('Excel 模板引擎加载失败，请刷新重试');}; document.head.appendChild(s); }
+function purchaseTplArrayBuffer(){ try{ var b=window.__PURCHASE_TPL_B64__; if(!b) return null; var bin=atob(b),ab=new ArrayBuffer(bin.length),u8=new Uint8Array(ab); for(var i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i); return ab; }catch(e){ return null; } }
+function _pStyleCopy(src,tgt){ if(!src)return; if(src.font)tgt.font=JSON.parse(JSON.stringify(src.font)); if(src.border)tgt.border=JSON.parse(JSON.stringify(src.border)); if(src.fill)tgt.fill=JSON.parse(JSON.stringify(src.fill)); if(src.alignment)tgt.alignment=JSON.parse(JSON.stringify(src.alignment)); if(src.numFmt!==undefined&&src.numFmt!==null)tgt.numFmt=src.numFmt; }
+async function stampPurchaseSheet(ws,tpl,items,pctx){
+  /* 以模板(9行表头 + 明细 + 总计 + 27行条款)重建：明细行数伸缩，总计/条款跟随下移；样式逐格克隆 */
+  var N=items.length,widths=[]; for(var c=1;c<=8;c++){var col=tpl.getColumn(c); widths.push((col&&col.width)?col.width:10);} ws.columns=widths.map(function(w){return {width:w};});
+  var copyRow=function(tr,sr){ var rh=tpl.getRow(sr); if(rh&&rh.height)ws.getRow(tr).height=rh.height; for(var c=1;c<=8;c++){var s=tpl.getCell(sr,c),t=ws.getCell(tr,c); if(s.value!==undefined&&s.value!==null)t.value=s.value; _pStyleCopy(s,t);} };
+  for(var s=1;s<=9;s++)copyRow(s,s);
+  for(var i=0;i<N;i++)copyRow(10+i,10);
+  items.forEach(function(it,idx){ var rr=10+idx; var set=function(c,v){ws.getCell(rr,c).value=v;}; set(1,idx+1);set(2,it.name);set(3,it.model);set(4,it.mat);set(5,it.unit);set(6,it.qty);set(7,it.up);set(8,it.sub); });
+  var tot=10+N; copyRow(tot,22);
+  ws.getCell(tot,2).value=null; ws.getCell(tot,3).value=null;  /* 先清从格再合并，避免主格被清 */
+  ws.mergeCells(tot,1,tot,3); ws.getCell(tot,1).value='总计'; ws.getCell(tot,8).value=items.reduce(function(a,x){return a+(+x.sub);},0).toFixed(2);
+  var tail=tot; for(var s=23;s<=49;s++){tail++;copyRow(tail,s);}
+  ws.mergeCells(1,1,1,8); ws.mergeCells(2,1,2,8); ws.mergeCells(3,1,3,3); ws.mergeCells(3,4,3,8); ws.mergeCells(4,1,4,3); ws.mergeCells(4,4,4,8);
+  ws.mergeCells(5,1,5,8); ws.mergeCells(6,1,6,8); ws.mergeCells(7,1,7,8); ws.mergeCells(8,1,8,8);
+  var tailStart=10+N+1, srcFull=[23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46];
+  for(var j=0;j<27;j++){ var rr2=tailStart+j,ss=23+j; if(srcFull.indexOf(ss)>=0)ws.mergeCells(rr2,1,rr2,8); else if(ss>=47)ws.mergeCells(rr2,1,rr2,3); }
+  /* 盖章变量 */
+  ws.getCell(1,1).value='合同编号：'+(pctx.no||'');
+  ws.getCell(3,1).value='甲方：'+(pctx.aName||'');
+  ws.getCell(3,4).value='     乙方：'+(pctx.bName||'');
+  ws.getCell(4,1).value='住所/注册地址：'+(pctx.aAddr||'');
+  ws.getCell(4,4).value='住所/注册地址：'+(pctx.bAddr||'');
+  ws.getCell(8,1).value='2.交易币种：'+(pctx.cur||'人民币（CNY）');
+  ws.getCell(tailStart+6,1).value='开户行：'+(pctx.acctBank||'');   /* src29 */
+  ws.getCell(tailStart+7,1).value='账号  ： '+(pctx.acctNo||'');     /* src30 */
+  ws.getCell(tailStart+10,1).value='1．交货时间：'+(pctx.deliveryDate||'')+' 前'; /* src33 */
+  ws.getCell(tailStart+11,1).value='交货地点：'+(pctx.deliveryPlace||'');          /* src34 */
+  ws.getCell(tailStart+24,1).value='甲方（盖章）：'+(pctx.aName||'')+'                      '; /* src47 */
+  ws.getCell(tailStart+24,4).value='  乙方（盖章）：'+(pctx.bName||'');
+  ws.getCell(tailStart+25,1).value='授权代表（签字）：________________________';
+  ws.getCell(tailStart+25,4).value='授权代表（签字）：________________________';
+  if(pctx.signDate) ws.getCell(tailStart+26,1).value=pctx.signDate+'                 ';
+}
+async function purchaseTplDownload(d){
+  /* 国内采购合同 → 每个一级供应商一页，按内嵌模板盖章 */
+  var H=d.header||{};
+  var aName=(H.partyB&&H.partyB.name)||H.shipper||'';
+  var aAddr=(H.partyB&&H.partyB.addr)||'';
+  var curTxt=(String(H.currency||'').indexOf('CNY')>=0||String(H.currency||'').indexOf('人民币')>=0)?'人民币（CNY）':(H.currency||'人民币（CNY）');
+  var ab=purchaseTplArrayBuffer(); if(!ab){ alert('采购模板数据缺失'); return; }
+  var wbTpl=await new ExcelJS.Workbook().xlsx.load(ab);
+  var outWb=new ExcelJS.Workbook();
+  for(var k=0;k<(d.contracts||[]).length;k++){
+    var c=d.contracts[k];
+    var ws=outWb.addWorksheet((typeof sheetName==='function'?sheetName('采购合同_'+c.supplier):('采购合同_'+(k+1))));
+    var PB=c.purchaseB||{},PA=c.purchaseAcct||{};
+    var items=(c.items||[]).map(function(l){ var up=Math.round((+l.cost||0)*1.13*10000)/10000; return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:up.toFixed(4),sub:(Math.round(up*(+l.qty||0)*100)/100).toFixed(2)}; });
+    var pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
+      deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.deliveryDate)||'':(H.deliveryDate||''),
+      deliveryPlace:H.deliveryPlace||'',acctBank:PA.bank||'',acctNo:PA.no||'',
+      signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
+    await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
+  }
+  var b=await outWb.xlsx.writeBuffer();
+  _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'国内采购合同.xlsx');
+}
+</script>
 <script>
 /* SheetJS 内联(方案A): 根治 github.io 子资源连接重置导致EXCEL下载按钮无反应; 引擎随页面解析就绪, 无需外网请求 */
 /* xlsx-js-style 1.2.0-beta @ 2022-04-05T01:40:48.447Z */
@@ -1086,7 +1148,7 @@ function delRec(id){
 /* ============== 阶段2 订单 ============== */
 function genOrder(recId){
   const rec=DB.records.find(r=>r.id===recId);if(!rec)return;
-  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',consignee:'',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i}))};
+  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'中国香港',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',consignee:'',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i}))};
   DB.orders.push(ord);DB.sel.ord=ord.id;save();renderOrders();
 }
 function renderOrders(){
@@ -1132,7 +1194,7 @@ function defaultHeader(o){
     partyA:{name:'',addr:'',contact:'',email:''},partyB:{name:'',addr:'',contact:'',email:''},
     signPlace:'【東莞】',signDate:today(),deliveryDate:'',
     deliveryPlace:'',tradeMode:o.tradeMode||'0110 一般贸易',transMode:o.transMode||'2 水路运输',tradeTerm:o.tradeTerm||'FOB',port:'',levy:'1 照章征税',
-    currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry,arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today(),
+    currency:o.currency,destCountry:o.destCountry,tradeCountry:o.tradeCountry||'中国香港',arrivalCountry:o.arrivalCountry||o.destCountry,originCountry:o.originCountry||'中国',declDate:today(),
     preNo:'',customsNo:'',vehicle:'',billNo:'',levyNature:'',license:'',
     destPort:o.destCountry,exitPort:'',packKind:'纸箱',
     freight:'/O/',premium:'/O/',misc:'/O/',container:'',attach:'合同；发票；装箱单',marks:'',special:'/',priceEff:'/',royalty:'/',
@@ -1145,7 +1207,8 @@ function buildRawLines(items,destCountry){
       decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',
       boxCnt:it.boxCnt||0,qtyPerBox:it.qtyPerBox||0,boxSeq:it.boxSeq||[],boxSeqW:it.boxSeqW||[],
       supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||it.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
-      upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn};});
+      upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn,
+      unit:s.unit||it.unit||'个'};});
 }
 function bucketDims(){return [['destCountry','目的国'],['transMode','运输方式'],['currency','币制'],['tradeMode','监管方式'],['tradeTerm','成交方式'],['consignee','收货人']];}
 function bucketKey(o){return bucketDims().map(d=>String(o[d[0]]||'')).join('|');}
@@ -2466,7 +2529,7 @@ function xlsSalesContract(d){
   /* 货品表（8 列，有框） */
   gRows.push(r);
   ['序號','產品名稱','型號','材質標準','單位','數量','單價','小計'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  d.lines.forEach(l=>{ gRows.push(r); [l.idx!=null?l.idx:(l._i!=null?l._i:0),l.name,l.model,l.mat,l.unit,l.qty,(+l.decl).toFixed(4),l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  d.lines.forEach((l,i)=>{ gRows.push(r); [i+1,l.name,l.model,l.mat,l.unit,l.qty,(+l.decl).toFixed(4),l.amount].forEach((v,i2)=>putCell(R,r,i2,v)); r++; });
   /* 總计行：A-C 合并写「總計」，F=数量合计(用户确认求和)，H=金额 */
   gRows.push(r);
   const _tq=d.lines.reduce((s,l)=>s+(Number(l.qty)||0),0);
@@ -2627,10 +2690,14 @@ function downloadDocXlsx(docI,idx){
   ensureXLSX(function(){
     try{
       const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
+      if(o.type==='国内采购合同'){
+        if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
+        else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); xlsDownload('国内采购合同',wb0); }
+        return;
+      }
       const wb=XLSX.utils.book_new();
-      if(o.type==='国内采购合同'){ d.contracts.forEach((c,idx)=>XLSX.utils.book_append_sheet(wb,xlsContract(c,d,idx),sheetName('采购合同_'+c.supplier))); }
-      else { XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(o.type)); }
-      xlsDownload(o.type==='国内采购合同'?'国内采购合同':o.type,wb);
+      XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(o.type));
+      xlsDownload(o.type,wb);
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
 }
