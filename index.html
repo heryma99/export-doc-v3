@@ -446,7 +446,7 @@ function mergeLines(lines,mode,sup){
       rep.sku=_skus.join(',');
       rep.qty=g.reduce(function(a,x){return a+(+x.qty||0);},0);
       /* 加权平均单价（按数量加权）：Σ(各款申报价×数量)/Σ数量；混箱一箱多SKU 也按数量加权，保证单证一致 */
-      (function(){var _q=g.reduce(function(a,x){return a+(+x.qty||0);},0);if(_q>0){var _d=g.reduce(function(a,x){return a+(+x.decl||0)*(+x.qty||0);},0);var _c=g.reduce(function(a,x){return a+(+x.noTax||0)*(+x.qty||0);},0);rep.decl=Math.round(_d/_q*1e6)/1e6;rep.cost=Math.round(_c/_q*1e6)/1e6;rep.noTax=rep.cost;}})();
+      (function(){var _q=g.reduce(function(a,x){return a+(+x.qty||0);},0);if(_q>0){var _d=g.reduce(function(a,x){return a+(+x.decl||0)*(+x.qty||0);},0);var _c=g.reduce(function(a,x){return a+(+x.cost||+x.noTax||0)*(+x.qty||0);},0);rep.decl=Math.round(_d/_q*1e6)/1e6;rep.cost=Math.round(_c/_q*1e6)/1e6;rep.noTax=rep.cost;}})();
       /* 重量：直接取该物理箱(s)整重 = 组内任一行 boxSeqW 中序号 s 对应值（同箱多SKU不重复计） */
       let bw=0;
       for(const x of g){ const w=x.boxSeqW||[], i=(x.boxSeq||[]).indexOf(+s); if(i>=0 && +w[i]>0){ bw=+w[i]; break; } }
@@ -468,7 +468,7 @@ function mergeLines(lines,mode,sup){
     rep.style=[...new Set(g.map(x=>getSpu(x)))].filter(Boolean).join(',');
     rep.qty=g.reduce((a,x)=>a+(+x.qty||0),0);
     /* 加权平均单价（按数量加权）：Σ(各款申报价×数量)/Σ数量；归并不同单价 SKU 时避免取首行价导致申报金额失真，单证一致 */
-    (function(){var _q=g.reduce((a,x)=>a+(+x.qty||0),0);if(_q>0){var _d=g.reduce((a,x)=>a+(+x.decl||0)*(+x.qty||0),0);var _c=g.reduce((a,x)=>a+(+x.noTax||0)*(+x.qty||0),0);rep.decl=Math.round(_d/_q*1e6)/1e6;rep.cost=Math.round(_c/_q*1e6)/1e6;rep.noTax=rep.cost;}})();
+    (function(){var _q=g.reduce((a,x)=>a+(+x.qty||0),0);if(_q>0){var _d=g.reduce((a,x)=>a+(+x.decl||0)*(+x.qty||0),0);var _c=g.reduce((a,x)=>a+(+x.cost||+x.noTax||0)*(+x.qty||0),0);rep.decl=Math.round(_d/_q*1e6)/1e6;rep.cost=Math.round(_c/_q*1e6)/1e6;rep.noTax=rep.cost;}})();
     /* 重量：按整箱重 × 数量/箱件数 分摊到每行，再按归并行求和（等价 model 单件重×数量）；不受 dedupe 清零影响 */
     var _gw=0,_nw=0;
     g.forEach(function(x){var b=String(x.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+x.qty||0)/BQ:0; _gw+=(_bgw[b]||0)*sh; _nw+=(_bnw[b]||0)*sh;});
