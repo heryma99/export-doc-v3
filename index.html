@@ -2808,11 +2808,12 @@ function boxCntOf(l){if(!l)return 1;
 function totalBoxCount(lines){
   return packSummary(lines||[]).boxCount;
 }
-/* 报关草单/装箱单「件数」权威物理箱数：按箱号去重计唯一物理箱(与 PL plView 同源)；
+/* 报关草单/装箱单「件数」权威物理箱数(与 PL plView 同源)：按箱号片段去重后，每片段用 parseBoxNoCount 展开
+   (FBA「一行一SKU跨多箱」boxNo 带 ～ 范围 → 展开真实箱数；混箱逐箱共享箱号 → 去重不变)；
    无箱号时回退 totalBoxCount(boxCnt 求和)，避免无箱号订单显示 0 */
 function physicalBoxCount(lines){
   const seen=Object.create(null); let n=0;
-  (lines||[]).forEach(function(l){ String(l.boxNo||'').split(/[;；]/).forEach(function(s){ const bn=s.trim(); if(bn && !seen[bn]){ seen[bn]=1; n++; } }); });
+  (lines||[]).forEach(function(l){ String(l.boxNo||'').split(/[;；]/).forEach(function(s){ const bn=s.trim(); if(bn && !seen[bn]){ seen[bn]=1; n+=parseBoxNoCount(bn); } }); });
   return n>0 ? n : totalBoxCount(lines||[]);
 }
 /* PL 箱数三场景：基于 boxNo 物理箱号归因，决定 Ge.Crate 列渲染（HTML/Excel 共用单一数据源）。
