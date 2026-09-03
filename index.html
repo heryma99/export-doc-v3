@@ -1746,6 +1746,7 @@ function builtin(name,data){
     const _tm=String((data&&data.header&&data.header.transMode)||'').replace(/^\d+\s*/,'').replace(/航空运输|空运/g,'空運').replace(/水路运输|海运/g,'水路運輸').replace(/陆运/g,'陸運');
     const _cc=String((data&&data.header&&data.header.currency)||'CNY 人民币');
     const _cur=((_cc.split(' ')[1]||'人民币').replace(/人民币/g,'人民幣').replace(/欧元/g,'歐元'))+'（'+((_cc.split(' ')[0]||'CNY').toUpperCase())+'）';
+    const _tq=(data&&data.lines||[]).reduce((s,l)=>s+(Number(l.qty)||0),0);
     return `<h1 style="text-align:center;font-size:22px;letter-spacing:6px;margin:0 0 6px;font-weight:bold">銷　售　合　同</h1>
     <div style="font-size:13px;margin:1px 0">合約編號：{{header.no}}</div>
     <div style="font-size:13px;margin:1px 0">簽訂地點：{{header.signPlace}}</div>
@@ -1762,7 +1763,7 @@ function builtin(name,data){
     <table border="1" cellspacing="0" cellpadding="5" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>序號</th><th style="text-align:left">產品名稱</th><th>型號</th><th>材質標準</th><th>單位</th><th>數量</th><th>單價</th><th>小計</th></tr>
     {{#each lines}}<tr><td>{{_i}}</td><td style="text-align:left">{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td>{{unit}}</td><td>{{qty}}</td><td>{{decl}}</td><td>{{amount}}</td></tr>{{/each}}
-    <tr><td colspan="3" style="text-align:center"><b>總計</b></td><td></td><td></td><td></td><td></td><td style="text-align:right"><b>{{totalAmount}}</b></td></tr></table>
+    <tr><td colspan="3" style="text-align:center"><b>總計</b></td><td></td><td></td><td style="text-align:right"><b>${_tq}</b></td><td></td><td style="text-align:right"><b>{{totalAmount}}</b></td></tr></table>
     <h3 style="margin:10px 0 4px;font-size:14px">第三條 物流及運輸</h3>
     <p style="margin:2px 0">1.運輸方式：☑ ${_tm}</p>
     <p style="margin:2px 0">2.物流資訊：</p>
@@ -2461,9 +2462,10 @@ function xlsSalesContract(d){
   gRows.push(r);
   ['序號','產品名稱','型號','材質標準','單位','數量','單價','小計'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   d.lines.forEach(l=>{ gRows.push(r); [l.idx!=null?l.idx:(l._i!=null?l._i:0),l.name,l.model,l.mat,l.unit,l.qty,l.decl,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
-  /* 總计行：A-C 合并写「總計」，H=金额，数量列(F)留空（与模板一致，不求和） */
+  /* 總计行：A-C 合并写「總計」，F=数量合计(用户确认求和)，H=金额 */
   gRows.push(r);
-  putCell(R,r,0,'總計'); addMerge(MG,r,0,2); putCell(R,r,7,d.totalAmount); r++;
+  const _tq=d.lines.reduce((s,l)=>s+(Number(l.qty)||0),0);
+  putCell(R,r,0,'總計'); addMerge(MG,r,0,2); putCell(R,r,5,_tq); putCell(R,r,7,d.totalAmount); r++;
   sp();
   /* 第三條 物流及運輸 */
   full(' 第三條 物流及運輸');
