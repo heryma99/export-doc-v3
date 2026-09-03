@@ -649,7 +649,7 @@ function sub(dateStr,n){const d=new Date(dateStr);d.setDate(d.getDate()-n);retur
    原实现只比 sel===v，导致回写全串后重渲染选不中、浏览器回落到第一项。 */
 function opt(list,sel){const s=String(sel==null?'':sel).trim();if(!s)return list.map(([v,t])=>`<option value="${v} ${t}">${v} ${t}</option>`).join('');
   const code=s.split(' ')[0];
-  return list.map(([v,t])=>{const val=v+' '+t;return `<option value="${val}" ${(s===val||code===v)?'selected':''}>${val}</option>`;}).join('')}
+  return list.map(([v,t])=>{const val=v+' '+t;return `<option value="${val}" ${(s===val||code===v||t===s)?'selected':''}>${val}</option>`;}).join('')}
 function optStr(list,sel){return list.map(s=>`<option ${sel===s?'selected':''}>${s}</option>`).join('')}
 /* 最终目的国/贸易国只取中文名：兼容 "USA 美国"(下拉回写) / "美国" / "USA"(纯代码查表) */
 function cnCountry(v){
