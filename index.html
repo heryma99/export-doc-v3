@@ -1592,6 +1592,7 @@ function buildData(doc){
     return {...l,spec,en:l.en||'',unit:l.unit||'',
       decl:l.decl,
       decl4:(+l.decl).toFixed(4),            /* 销售合同單價 4 位显示(单价统一4位/汇总2位) */
+      nameF:fan(l.name||''),matF:fan(l.mat||''),unitF:fan(l.unit||''),   /* 繁体显示字段(销售合同用: 单位等必须繁体) */
       amount:_amt.toFixed(2),
       declCur:(+decl2cur(l.decl)).toFixed(4),
       amountCur:decl2cur(_amt).toFixed(2),
@@ -1830,7 +1831,7 @@ function builtin(name,data){
     <p style="margin:2px 0;padding-left:24px">2.2 合約貨幣：${_cur}</p>
     <table border="1" cellspacing="0" cellpadding="5" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>序號</th><th style="text-align:left">產品名稱</th><th>型號</th><th>材質標準</th><th>單位</th><th>數量</th><th>單價</th><th>小計</th></tr>
-    {{#each lines}}<tr><td>{{_i}}</td><td style="text-align:left">{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td>{{unit}}</td><td>{{qty}}</td><td>{{decl4}}</td><td>{{amount}}</td></tr>{{/each}}
+    {{#each lines}}<tr><td>{{_i}}</td><td style="text-align:left">{{nameF}}</td><td>{{model}}</td><td>{{matF}}</td><td>{{unitF}}</td><td>{{qty}}</td><td>{{decl4}}</td><td>{{amount}}</td></tr>{{/each}}
     <tr><td colspan="3" style="text-align:center"><b>總計</b></td><td></td><td></td><td style="text-align:right"><b>${_tq}</b></td><td></td><td style="text-align:right"><b>{{totalAmount}}</b></td></tr></table>
     <h3 style="margin:10px 0 4px;font-size:14px">第三條 物流及運輸</h3>
     <p style="margin:2px 0">1.運輸方式：☑ ${_tm}</p>
@@ -2529,7 +2530,7 @@ function xlsSalesContract(d){
   /* 货品表（8 列，有框） */
   gRows.push(r);
   ['序號','產品名稱','型號','材質標準','單位','數量','單價','小計'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  d.lines.forEach((l,i)=>{ gRows.push(r); [i+1,l.name,l.model,l.mat,l.unit,l.qty,(+l.decl).toFixed(4),l.amount].forEach((v,i2)=>putCell(R,r,i2,v)); r++; });
+  d.lines.forEach((l,i)=>{ gRows.push(r); [i+1,fan(l.name),l.model,fan(l.mat),fan(l.unit||'個'),l.qty,(+l.decl).toFixed(4),l.amount].forEach((v,i2)=>putCell(R,r,i2,v)); r++; });
   /* 總计行：A-C 合并写「總計」，F=数量合计(用户确认求和)，H=金额 */
   gRows.push(r);
   const _tq=d.lines.reduce((s,l)=>s+(Number(l.qty)||0),0);
