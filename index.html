@@ -1161,7 +1161,7 @@ function renderOrders(){
       <td>${o.id}</td><td class="muted">${o.no||''}</td><td class="muted">${o.recId}</td>
       <td><select class="req" style="width:120px" onchange="setOrd('${o.id}','destCountry',this.value)"><option value="">选目的国</option>${opt(CODE.country,o.destCountry)}</select></td>
       <td><select class="req" style="width:100px" onchange="setOrd('${o.id}','currency',this.value)"><option value="">选币种</option>${optStr(DB.parties.currencyList,o.currency)}</select></td>
-      <td><select style="width:100px" onchange="setOrd('${o.id}','tradeCountry',this.value)"><option value="">买方地</option>${opt(CODE.country,o.tradeCountry)}</select></td>
+      <td><select style="width:100px" onchange="setOrd('${o.id}','tradeCountry',this.value)"><option value="">买方地</option>${opt(CODE.country,o.tradeCountry||'中国香港')}</select></td>
       <td><select style="width:100px" onchange="setOrd('${o.id}','arrivalCountry',this.value)"><option value="">货物到达</option>${opt(CODE.country,o.arrivalCountry)}</select></td>
       <td><input style="width:80px" value="${o.originCountry}" onchange="setOrd('${o.id}','originCountry',this.value)"></td>
       <td><select style="width:110px" onchange="setOrd('${o.id}','transMode',this.value)"><option value="">运输</option>${opt(CODE.trans,o.transMode.split(' ')[0])}</select></td>
