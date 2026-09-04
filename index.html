@@ -2683,23 +2683,55 @@ function xlsContract(c,d,idx){
   return xwsFrom(R,MG,[{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:14},{wch:14},{wch:14}]);
 }
 function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
-/* 单工作簿：含整套单据（国内采购合同→每个供应商一页） */
-function xlsWorkbookForDoc(doc){
-  const d=buildData(doc); const wb=XLSX.utils.book_new(); let added=false;
-  doc.out.forEach(o=>{
-    if(o.type==='国内采购合同'){ d.contracts.forEach((c,idx)=>{ XLSX.utils.book_append_sheet(wb,xlsContract(c,d,idx),sheetName('采购合同_'+c.supplier)); added=true; }); }
-    else { const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; } }
+/* ========== 整套 Excel 合成（2026-09-04 v2）：采购合同并入同一工作簿的一个 sheet ==========
+   思路：非采购页(报关/发票/装箱/销售)用 SheetJS 画 → XLSX.write 出 buffer → exceljs load 载入；
+   采购页用模板盖章 append 到同一 exceljs workbook；最终 exceljs 输出单文件多 sheet。
+   无内嵌模板时回退旧 xlsContract 全 SheetJS 打包。返回 {type:'exceljs'|'sheetjs', wb} */
+async function composeSetWorkbook(doc,prefix){
+  const d=buildData(doc);
+  const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
+  const hasTpl=!!window.__PURCHASE_TPL_B64__;
+  /* SheetJS 画非采购页 */
+  const sj=XLSX.utils.book_new(); let addedSj=false;
+  (doc.out||[]).forEach(function(o){
+    if(o.type==='国内采购合同') return;
+    const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(sj,ws,sheetName((prefix||'')+o.type)); addedSj=true; }
   });
-  return added?wb:null;
+  /* 采购页走 exceljs 模板盖章 → 与 SheetJS 页合成单工作簿 */
+  if(hasPur && hasTpl){
+    const ej=new ExcelJS.Workbook();
+    if(addedSj){ const sjBuf=XLSX.write(sj,{type:'array',bookType:'xlsx',cellStyles:true}); await ej.xlsx.load(sjBuf); }
+    const abTpl=purchaseTplArrayBuffer(); if(!abTpl){ alert('采购模板数据缺失'); return null; }
+    const wbTpl=await new ExcelJS.Workbook().xlsx.load(abTpl);
+    const H=d.header||{};
+    const aName=(H.partyB&&H.partyB.name)||H.shipper||'';
+    const aAddr=(H.partyB&&H.partyB.addr)||'';
+    const curTxt=(String(H.currency||'').indexOf('CNY')>=0||String(H.currency||'').indexOf('人民币')>=0)?'人民币（CNY）':(H.currency||'人民币（CNY）');
+    for(let k=0;k<(d.contracts||[]).length;k++){
+      const c=d.contracts[k];
+      const ws=ej.addWorksheet(sheetName((prefix||'')+'采购合同_'+c.supplier));
+      const PB=c.purchaseB||{},PA=c.purchaseAcct||{};
+      const items=(c.items||[]).map(function(l){ var up=Math.round((+l.cost||0)*1.13*10000)/10000; return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:up.toFixed(4),sub:(Math.round(up*(+l.qty||0)*100)/100).toFixed(2)}; });
+      const pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
+        deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.deliveryDate)||'':(H.deliveryDate||''),
+        deliveryPlace:H.deliveryPlace||'',acctBank:PA.bank||'',acctNo:PA.no||'',
+        signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
+      await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
+    }
+    return {type:'exceljs', wb:ej};
+  }
+  /* 采购页无模板：xlsContract 并入 SheetJS */
+  if(hasPur){ (d.contracts||[]).forEach(function(c,idx){ XLSX.utils.book_append_sheet(sj,xlsContract(c,d,idx),sheetName((prefix||'')+'采购合同_'+c.supplier)); addedSj=true; }); }
+  return addedSj?{type:'sheetjs', wb:sj}:null;
 }
-/* 采购合同 Excel 统一出口：有模板→exceljs 模板盖章(单独文件)，无模板→旧 xlsContract 回退。
-   供批量/整套路径复用(引擎不同,模板页无法混入 SheetJS 工作簿,故采购合同单独成文件) */
-function purchaseExcel(d,suffix){
-  if(window.__PURCHASE_TPL_B64__){
-    ensureExcelJS(function(){ purchaseTplDownload(d,suffix||'').catch(function(e){ alert('采购模板导出出错：'+e.message); console.error(e); }); });
+async function downloadSetExcel(doc,fname,prefix){
+  const r=await composeSetWorkbook(doc,prefix);
+  if(!r){ alert('暂无可导出的单据'); return; }
+  if(r.type==='exceljs'){
+    try{ const b=await r.wb.xlsx.writeBuffer(); _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),fname+'.xlsx'); }
+    catch(e){ alert('EXCEL 生成失败：'+e.message); console.error(e); }
   } else {
-    const wb0=XLSX.utils.book_new(); d.contracts.forEach(function(c,ix){ XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier)); });
-    xlsDownload(suffix?('国内采购合同_'+suffix):'国内采购合同',wb0);
+    xlsDownload(fname,r.wb);
   }
 }
 function xlsDownload(name,wb){
@@ -2753,17 +2785,19 @@ function downloadAllXlsx(){
   ensureXLSX(function(){
     try{
       const doc=DB.docs[DB.sel.doc]; if(!doc){alert('暂无可导出的单据');return;}
-      const d=buildData(doc);
-      /* 采购合同页统一模板盖章(独立文件)，其余单据多Sheet打包——避免混入旧 xlsContract 版式 */
       const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
-      if(hasPur){ purchaseExcel(d, ''); }
+      /* 含采购页 → exceljs 合成单工作簿(采购页并入)；否则 SheetJS 多sheet */
+      if(hasPur && window.__PURCHASE_TPL_B64__){
+        ensureExcelJS(function(){ downloadSetExcel(doc,'整套出口单证_多Sheet工作簿','').catch(function(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }); });
+        return;
+      }
       const wb=XLSX.utils.book_new(); let added=false;
       (doc.out||[]).forEach(function(o){
-        if(o.type==='国内采购合同') return;
-        const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
+        if(o.type==='国内采购合同'){ (buildData(doc).contracts||[]).forEach(function(c,ix){ XLSX.utils.book_append_sheet(wb,xlsContract(c,buildData(doc),ix),sheetName('采购合同_'+c.supplier)); added=true; }); return; }
+        const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
       });
       if(added){ xlsDownload('整套出口单证_多Sheet工作簿', wb); }
-      if(!added&&!hasPur){ alert('暂无可导出的单据'); return; }
+      else { alert('暂无可导出的单据'); return; }
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
 }
@@ -2841,19 +2875,20 @@ function batchDownloadXlsx(){
         setTimeout(function(){
           try{
             const doc=DB.docs[docI]; if(!doc) return;
-            const d=buildData(doc);
-            /* 采购合同若存在：无论单份/整套都走模板盖章(exceljs 懒加载，独立文件) */
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
-            if(hasPur){ purchaseExcel(d, (doc.dftId||('set'+(i+1)))); }
-            /* 其余单据(剔除采购页，避免混入旧版式)仍打包整套 SheetJS */
-            const wb=XLSX.utils.book_new(); let added=false;
-            (doc.out||[]).forEach(function(o){
-              if(o.type==='国内采购合同') return;
-              const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
-            });
-            if(added) xlsDownload('整套_'+(doc.dftId||('set'+(i+1))), wb);
+            const fname='整套_'+(doc.dftId||('set'+(i+1)));
+            if(hasPur && window.__PURCHASE_TPL_B64__){
+              ensureExcelJS(function(){ downloadSetExcel(doc,fname,'').catch(function(e){ alert('批量 EXCEL 导出出错：'+e.message); console.error(e); }); });
+            } else {
+              const wb=XLSX.utils.book_new(); let added=false;
+              (doc.out||[]).forEach(function(o){
+                if(o.type==='国内采购合同'){ (buildData(doc).contracts||[]).forEach(function(c,ix){ XLSX.utils.book_append_sheet(wb,xlsContract(c,buildData(doc),ix),sheetName('采购合同_'+c.supplier)); added=true; }); return; }
+                const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
+              });
+              if(added) xlsDownload(fname, wb);
+            }
           }catch(e){ alert('批量 EXCEL 下载出错：'+e.message); }
-        }, i*600);
+        }, i*800);
       });
     }catch(e){ alert('批量 EXCEL 出错：'+e.message); }
   });
@@ -2863,20 +2898,42 @@ function batchDownloadMergedXlsx(){
     try{
       const sels=getSelDocs();
       if(!sels.length){ alert('请先勾选要下载的整套单据'); return; }
+      /* 任一 doc 含采购且模板在 → 走 exceljs 合并(逐 doc compose 后并入同一个 exceljs wb 需要逐 sheet 处理)。
+         简化：exceljs 无直接"合并两个 wb"API；改逐 doc 生成后、通过 exceljs wb.addWorksheet + copy 无法跨引擎 →
+         采用：仅当所有 doc 都不含采购(纯 SheetJS) 才支持合并；含采购时改为逐 doc 单独 exceljs 合成下载(文件名 setN)，提示一次。
+         2026-09-04: 保留旧合并逻辑给无采购场景 */
+      const anyPur=sels.some(function(docI){ const doc=DB.docs[docI]; return doc && (doc.out||[]).some(function(o){return o.type==='国内采购合同';}); });
+      if(anyPur && window.__PURCHASE_TPL_B64__){
+        sels.forEach(function(docI,idx){
+          setTimeout(function(){
+            const doc=DB.docs[docI]; if(!doc) return;
+            const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
+            const fname='合并set'+(idx+1);
+            if(hasPur){ ensureExcelJS(function(){ downloadSetExcel(doc,fname,'set'+(idx+1)+'_').catch(function(e){ alert('合并 EXCEL 导出出错：'+e.message); console.error(e); }); }); }
+            else {
+              const wb=XLSX.utils.book_new(); let added=false;
+              (doc.out||[]).forEach(function(o){ const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; } });
+              if(added) xlsDownload(fname, wb);
+            }
+          }, idx*800);
+        });
+        return;
+      }
       const wb=XLSX.utils.book_new(); let added=false;
       sels.forEach(function(docI,idx){
         const doc=DB.docs[docI]; if(!doc) return;
         const d=buildData(doc);
         const prefix='set'+(idx+1)+'_';
-        /* 采购合同页不并入合并工作簿(引擎不同无法混排)，改为单独模板盖章下载 */
-        const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
-        if(hasPur){ purchaseExcel(d, prefix.replace(/_$/,'')); }
-        (doc.out||[]).forEach(function(o){
-          if(o.type==='国内采购合同') return;
-          const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(wb, ws, sheetName(prefix+o.type)); added=true; }
+        doc.out.forEach(function(o){
+          if(o.type==='国内采购合同'){
+            d.contracts.forEach(function(c,ci){ XLSX.utils.book_append_sheet(wb, xlsContract(c,d,ci), sheetName(prefix+'采购合同_'+c.supplier)); added=true; });
+          } else {
+            const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(wb, ws, sheetName(prefix+o.type)); added=true; }
+          }
         });
       });
-      if(added) xlsDownload('合并整套单证', wb);
+      if(!added){ alert('所选无内容'); return; }
+      xlsDownload('合并整套单证', wb);
     }catch(e){ alert('合并 EXCEL 出错：'+e.message); console.error(e); }
   });
 }
