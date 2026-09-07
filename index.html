@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.4 · 2026-09-07 19:18</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.5 · 2026-09-07 19:42</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -1603,6 +1603,9 @@ function buildData(doc){
     const spec=parts.join('|')||('⚠ 要素序列待填('+(l.hs||'?')+')');
     const _amt=((+l.decl)*(+l.qty));
     return {...l,spec,en:l.en||'',unit:l.unit||'',
+      /* 境内货源地/产地：导出层此前只在 safeRender 预览克隆里计算, buildData 返回行从未带 _origin → Excel N 列恒空(旧草单尤甚);
+         此处补齐: 存储有值(非空)优先, 空/缺失则按供应商实时重算(归集到一级→读 tier1Profiles.originCode), 保证 Excel 与预览一致 */
+      _origin:(l._origin!==undefined&&l._origin!=='')?l._origin:originCodeOf(l.supplier||''),
       decl:l.decl,
       decl4:(+l.decl).toFixed(4),            /* 销售合同單價 4 位显示(单价统一4位/汇总2位) */
       nameF:fan(l.name||''),matF:fan(l.mat||''),unitF:fan(l.unit||''),   /* 繁体显示字段(销售合同用: 单位等必须繁体) */
