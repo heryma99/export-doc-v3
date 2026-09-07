@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.2 · 2026-09-07 18:52</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.3 · 2026-09-07 19:02</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -2453,11 +2453,11 @@ function xlsTable(type,d){
     const rmb=acctFor('CNY 人民币')||{}, usd=acctFor('USD 美元')||{};
     const vv=(x,dft)=>x||dft;
     /* R1 空 */ noB.push(r); r++;
-    /* R2 标题 */ putCell(R,r,0,'INVOICE'); addMerge(MG,r,0,6); noB.push(r); r++;
+    /* R2 标题 */ R[r]=R[r]||[]; for(let c=1;c<NC;c++) R[r][c]=''; R[r][0]={t:'s',v:'INVOICE',s:{alignment:{horizontal:'center',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}}; addMerge(MG,r,0,6); noB.push(r); r++;
     /* R3 空 */ noB.push(r); r++;
-    /* R4 Invoice No */ addRow(['','','','','','Invoice No: ',no]); noB.push(r); addMerge(MG,r,5,6); r++;
-    /* R5 To Messrs / DATE */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,1,4); addMerge(MG,r,5,6); r++;
-    /* R6 Terms */ addRow(['','','','','','Terms of Payment: ',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,5,6); r++;
+    /* R4 Invoice No(标签F列/值G列,不合并) */ addRow(['','','','','','Invoice No: ',no]); noB.push(r); r++;
+    /* R5 To Messrs / DATE(标签F/值G不合并) */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,1,4); r++;
+    /* R6 Terms(标签F/值G不合并) */ addRow(['','','','','','Terms of Payment: ',H.tradeTerm||'']); noB.push(r); r++;
     /* R7 列头 */ addRow(['Mark & No','Description','Model','Quantity','','Unit price('+d.cur+')','Amount('+d.cur+')']); r++;
     /* R8-R12 数据 (繁体 fan) */
     const ds=r;
