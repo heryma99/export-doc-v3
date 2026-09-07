@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.1 · 2026-09-07 18:40</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.2 · 2026-09-07 18:52</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -2166,7 +2166,7 @@ function xwsFrom(aoa,merges,cols,st){
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   let mr=aoa.length-1, mc=0;
   /* 只看非空内容(避免空串占位导致 mc 膨胀触发自动合并) */
-  aoa.forEach(row=>{ if(row) for(let i=row.length-1;i>=0;i--){ if(row[i]!==''&&row[i]!=null){ if(i+1>mc+1) mc=i+1; break; } } });
+  aoa.forEach(row=>{ if(row) for(let i=row.length-1;i>=0;i--){ if(row[i]!==''&&row[i]!=null){ if(i+1>mc) mc=i+1; break; } } });
   /* 各单据最大列: 海关INVOICE=7(G), PACKING=8(H), 客户发票=7(G) — 后续边框/字体/合并按实际 merges 处理 */
   ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc-1}});
   if(merges) ws['!merges']=merges;
@@ -2415,7 +2415,7 @@ function xlsTable(type,d){
     addRow2(['To  Messrs: ',H.consignee,'','','','','Contract No:',H.no||no]); noB.push(r); addMerge(MG,r,1,5); r++;
     /* R5 Shipped(从东莞 至 最终目的国) + Terms of Payment */
     const _shipFrom='东莞', _shipTo=cnCountry((d.order&&d.order.destCountry)||H.destCountry||'');
-    addRow2(['Shipped           ','From '+_shipFrom+' to '+_shipTo,'','','','','','','Terms of Payment:',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
+    addRow2(['Shipped           ','From '+_shipFrom+' to '+_shipTo,'','','','','Terms of Payment:',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,1,5); r++;
     /* R6 列头 */
     addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
     /* R7- 数据：直接渲染合并后的行(与归并模式一致)；Ge.Crate 列(索引3)合并成一个单元格=物理箱数(场景2B)，毛净重按 mergeLines 分摊后的值 */
