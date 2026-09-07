@@ -2473,7 +2473,7 @@ function xlsTable(type,d){
     noB.push(r); r++; noB.push(r); r++;
     /* 账户区 - 全部无边框 */
     const acct=function(label,val){ putCell(R,r,0,label+(val!==undefined?val:'____________________')); for(let c=1;c<NC;c++) putCell(R,r,c,''); addMerge(MG,r,0,6); noB.push(r); r++; };
-    acct('Payment Method: With T/T                       ',vv(rmb.pay,'T/T'));
+    acct('Payment Method: With T/T','');   /* 客户发票纯英文, 不再拼数据值(原重复 T/T) */
     noB.push(r); r++; /* R18 空 */
     acct('RMB Account: ',rmb.account);
     acct('Bank: China Merchants Bank Dongguan Houjie Branch','');   /* 客户发票纯英文, 不带中文行名 */
