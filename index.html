@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.5 · 2026-09-07 19:42</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.6 · 2026-09-07 20:12</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -2206,8 +2206,12 @@ function xlsCur(d){
   set(2,12,'备案号',13);
   set(3,12,(H.recordNo||''),13);
   /* 境外收货人 / 运输方式 / 运输工具 / 提运单号 */
-  set(4,0,'境外收货人');
-  set(4,2,(H.consignee||''),5);
+  /* 方案B(用户确认 2026-09-07): 境外收货人竖跨两行对齐官方报关单——标签 A5:A6、值 C5:F6(原 C5:F5 横并改竖跨); 仅 merge/视觉声明, 不碰任何数据与其它逻辑 */
+  R[4]=R[4]||[]; R[4][0]={t:'s',v:'境外收货人',s:{alignment:{horizontal:'center',vertical:'center',wrapText:true}}};
+  MG.push({s:{r:4,c:0},e:{r:5,c:0}});
+  R[4]=R[4]||[]; for(let c=1;c<=5;c++) if(R[4][c]===undefined) R[4][c]='';
+  R[4][2]={t:'s',v:(H.consignee||''),s:{alignment:{vertical:'center',wrapText:true}}};
+  MG.push({s:{r:4,c:2},e:{r:5,c:5}});
   set(4,6,'运输方式',7);
   set(5,6,(H.transMode||''),7);
   set(4,8,'运输工具名称及航次号',9);
