@@ -342,6 +342,7 @@ async function purchaseTplDownload(d,suffix){
       signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
     await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
   }
+  outWb.worksheets.forEach(function(w){ applyA4PageSetup(w,'国内采购合同'); });
   var b=await outWb.xlsx.writeBuffer();
   _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),suffix?('国内采购合同_'+suffix+'.xlsx'):'国内采购合同.xlsx');
 }
@@ -2683,6 +2684,29 @@ function xlsContract(c,d,idx){
   return xwsFrom(R,MG,[{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:14},{wch:14},{wch:14}]);
 }
 function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
+/* ========== A4 打印设置（2026-09-07）==========
+   只注入打印层参数(paperSize/orientation/fitToPage/边距/居中/打印区域)，
+   不触碰单元格内容/样式/合并 —— 屏幕显示 100% 不变，仅 Ctrl+P 打印时生效。
+   方向(用户拍板)：报关草单/Invoice发票/Packing List装箱单/客户发票=横向；销售合同/国内采购合同=纵向 */
+function applyA4PageSetup(ws,type){
+  try{
+    var LANDSCAPE=['报关草单','Invoice发票','Packing List装箱单','客户发票'];
+    var landscape=LANDSCAPE.indexOf(type)>=0;
+    var ps={ paperSize:9, orientation:landscape?'landscape':'portrait',
+      fitToPage:true, fitToWidth:1, fitToHeight:0,
+      horizontalCentered:true,
+      margins:{left:0.4,right:0.4,top:0.6,bottom:0.6,header:0.3,footer:0.3} };
+    /* 打印区域 = 实际使用范围(自动,不切内容不带空白)。注意: ws.dimensions 在部分 exceljs 版本返回对象,
+       必须自己拼 'A1:xx' 字符串, 否则 writeBuffer 时 printArea.split 报错 */
+    try{
+      if(ws.rowCount>0&&ws.columnCount>0){
+        var _cl=function(n){var s='';while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;};
+        ps.printArea='A1:'+_cl(ws.columnCount)+ws.rowCount;
+      }
+    }catch(e){}
+    ws.pageSetup=ps;
+  }catch(e){ console.warn('A4 setup fail',e); }
+}
 /* ========== 整套 Excel 合成（2026-09-04 v2）：采购合同并入同一工作簿的一个 sheet ==========
    思路：非采购页(报关/发票/装箱/销售)用 SheetJS 画 → XLSX.write 出 buffer → exceljs load 载入；
    采购页用模板盖章 append 到同一 exceljs workbook；最终 exceljs 输出单文件多 sheet。
@@ -2718,6 +2742,8 @@ async function composeSetWorkbook(doc,prefix){
         signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
       await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
     }
+    /* A4 打印设置注入(所有 sheet, 屏幕显示不受影响) */
+    ej.worksheets.forEach(function(w){ applyA4PageSetup(w, w.name.replace(/^(set\d+_)/,'')); });
     return {type:'exceljs', wb:ej};
   }
   /* 采购页无模板：xlsContract 并入 SheetJS */
@@ -2751,7 +2777,18 @@ function downloadDocXlsx(docI,idx){
       }
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(o.type));
-      xlsDownload(o.type,wb);
+      /* 单份下载统一走 exceljs 注入 A4 打印设置(内容/样式经 load 保留, 屏幕显示不变); 失败回退 SheetJS */
+      const sjBuf=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
+      ensureExcelJS(function(){
+        (async function(){
+          try{
+            const ej=new ExcelJS.Workbook(); await ej.xlsx.load(sjBuf);
+            ej.worksheets.forEach(function(w){ applyA4PageSetup(w,o.type); });
+            const b=await ej.xlsx.writeBuffer();
+            _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),o.type+'.xlsx');
+          }catch(e2){ console.warn('A4 注入失败回退 SheetJS',e2); xlsDownload(o.type,wb); }
+        })();
+      });
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
 }
