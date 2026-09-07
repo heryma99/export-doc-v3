@@ -2167,7 +2167,7 @@ function xwsFrom(aoa,merges,cols,st){
   /* 只看非空内容(避免空串占位导致 mc 膨胀触发自动合并) */
   aoa.forEach(row=>{ if(row) for(let i=row.length-1;i>=0;i--){ if(row[i]!==''&&row[i]!=null){ if(i+1>mc+1) mc=i+1; break; } } });
   /* 各单据最大列: 海关INVOICE=7(G), PACKING=8(H), 客户发票=7(G) — 后续边框/字体/合并按实际 merges 处理 */
-  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc}});
+  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:mr,c:mc-1}});
   if(merges) ws['!merges']=merges;
   if(cols) ws['!cols']=cols;
   return xwsStyle(ws,st);
@@ -2183,13 +2183,13 @@ function xlsCur(d){
   const H=d.header, O=d.order, dt=d.dates;
   const R=[]; const MG=[];
   const set=(r,c,v,c1)=>{ R[r]=R[r]||[]; R[r][c]=v; if(c1!=null&&c1>c) MG.push({s:{r,c:c},e:{r,c:c1}}); };
-  set(0,0,'中华人民共和国海关出口货物报关单',14);
+  set(0,0,'中华人民共和国海关出口货物报关单',13);
   /* 顶栏信息（页码/页数 置右上角，与预览一致） */
   set(1,0,'预录入编号：'+(H.preNo||''),1);
   set(1,2,'海关编号：'+(H.customsNo||''),3);
   set(1,4,'发票号：'+(H.no||H.invNo||''),6); /* 发票号=合同协议号(H.no)，与全系统一致；H.invNo 仅作兜底 */
   set(1,7,'委托协议号：'+(H.entrustNo||''),9);
-  set(1,10,'页码/页数：1/1',14);
+  set(1,10,'页码/页数：1/1',13);
   /* 境内发货人 / 出境关别 / 出口日期 / 申报日期 / 备案号 */
   set(2,0,'境内发货人',5);
   set(3,0,(H.shipper||'')+'\n信用代码 '+(H.shipperUSCI||'')+'\n海关注册 '+(H.shipperReg||''),5);
@@ -2199,8 +2199,8 @@ function xlsCur(d){
   set(3,8,(dt.exportDate||''),9);
   set(2,10,'申报日期',11);
   set(3,10,(dt.customs||''),11);
-  set(2,12,'备案号',14);
-  set(3,12,(H.recordNo||''),14);
+  set(2,12,'备案号',13);
+  set(3,12,(H.recordNo||''),13);
   /* 境外收货人 / 运输方式 / 运输工具 / 提运单号 */
   set(4,0,'境外收货人');
   set(4,2,(H.consignee||''),5);
@@ -2208,8 +2208,8 @@ function xlsCur(d){
   set(5,6,(H.transMode||''),7);
   set(4,8,'运输工具名称及航次号',9);
   set(5,8,(H.vehicle||''),9);
-  set(4,10,'提运单号',14);
-  set(5,10,(H.billNo||''),14);
+  set(4,10,'提运单号',13);
+  set(5,10,(H.billNo||''),13);
   /* 生产销售单位 / 监管方式 / 征免性质 / 许可证号 */
   set(6,0,'生产销售单位',5);
   set(7,0,(H.prodUnit||'')+'\n信用代码 '+(H.prodUSCI||''),5);
@@ -2217,8 +2217,8 @@ function xlsCur(d){
   set(7,6,(H.tradeMode||''),7);
   set(6,8,'征免性质',9);
   set(7,8,(H.levyNature||''),9);
-  set(6,10,'许可证号',14);
-  set(7,10,(H.license||''),14);
+  set(6,10,'许可证号',13);
+  set(7,10,(H.license||''),13);
   /* 合同协议号 / 贸易国 / 运抵国 / 指运港 / 离境口岸 */
   set(8,0,'合同协议号',2);
   set(9,0,(H.no||O.no||''),2);
@@ -2228,8 +2228,8 @@ function xlsCur(d){
   set(9,6,cnCountry(H.arrivalCountry||H.destCountry||''),8);
   set(8,9,'指运港',10);
   set(9,9,(H.destPort||''),10);
-  set(8,11,'离境口岸',14);
-  set(9,11,(H.exitPort||''),14);
+  set(8,11,'离境口岸',13);
+  set(9,11,(H.exitPort||''),13);
   /* 运输包装种类 / 件数 / 毛重 / 净重 / 成交方式 / 运费 / 保费 / 杂费 */
   set(10,0,'运输包装种类');
   set(11,0,(H.packKind||''),2);
@@ -2248,18 +2248,18 @@ function xlsCur(d){
   set(11,8,(H.freight||''),9);
   set(10,10,'保费',11);
   set(11,10,(H.premium||''),11);
-  set(10,12,'杂费',14);
-  set(11,12,(H.misc||''),14);
+  set(10,12,'杂费',13);
+  set(11,12,(H.misc||''),13);
   /* 随附单证及编号 / 标记唛码及备注 */
-  set(12,0,'随附单证及编号',14);
-  set(13,0,(H.attach||''),14);
-  set(14,0,'标记唛码及备注',14);
-  set(15,0,(H.marks||''),14);
+  set(12,0,'随附单证及编号',13);
+  set(13,0,(H.attach||''),13);
+  set(14,0,'标记唛码及备注',13);
+  set(15,0,(H.marks||''),13);
   /* 商品明细表头（13 逻辑列，15 物理列：数量单位跨 E:F、净重插币制后、征免跨 N:O） */
   const hdr=['项号','商品编号','中文名称','英文名称','数量单位','','单价','总价','币制','净重(kg)','原产国（地区）','最终目的国（地区）','境内货源地/产地','征免',''];
   hdr.forEach((h,i)=>set(16,i,h));
   set(16,4,'数量单位',5);
-  set(16,13,'征免',14);
+  set(16,13,'征免',13);
   let r=17;
   /* 明细项毛重/净重：克隆行先各四舍五入到2位(与表头/显示一致)，再做方案B，保证 Σ明细(2位)=表头权威值(三单一致)；不动 d.lines 存储 */
   const _dl=((d.lines||[]).map(function(l){return Object.assign({},l);}));
@@ -2279,33 +2279,33 @@ function xlsCur(d){
     set(r,10,H.originCountry);
     set(r,11,cnCountry(H.destCountry));
     set(r,12,(l._origin||H.domSrc||''));
-    set(r,13,H.levy,14);
+    set(r,13,H.levy,13);
     r++;
-    set(r,2,l.spec||'',14);
+    set(r,2,l.spec||'',13);
     r++;
   });
   /* 合计 */
   set(r,0,'TOTAL：'+(H.currency||'')+' '+(d.totalAmountCur||d.totalAmount||''),9);
   r++;
   /* 数据 TOTAL（件数/数量/毛重/净重，与 PL 对齐；件数取物理箱号去重，wh14172 由 69→10） */
-  set(r,0,'数据 TOTAL：件数 '+(_pieceCnt>0?_pieceCnt:(d.boxCount||''))+'　数量 '+(d.totalQty||'')+' 件　毛重 '+(d.totalGW||'')+' kg　净重 '+(d.totalNW||'')+' kg',14); r++;
+  set(r,0,'数据 TOTAL：件数 '+(_pieceCnt>0?_pieceCnt:(d.boxCount||''))+'　数量 '+(d.totalQty||'')+' 件　毛重 '+(d.totalGW||'')+' kg　净重 '+(d.totalNW||'')+' kg',13); r++;
   /* 汇率(仅外币显示,可追溯) */
   if(d.cur!=='CNY'){ set(r,0,'汇率(CNY→'+d.cur+')：'+(+d.exch).toFixed(4),9); r++; }
   /* 特殊关系确认 / 价格影响 / 特许权 / 自报自缴 */
   set(r,0,'特殊关系确认：'+(H.special||'否'),1);
   set(r,3,'价格影响确认：'+(H.priceEff||'否'),5);
   set(r,6,'支付特许权使用费确认：'+(H.royalty||'否'),9);
-  set(r,10,'自报自缴：'+(H.selfPay||''),14);
+  set(r,10,'自报自缴：'+(H.selfPay||''),13);
   r++;
   /* 申报人员 / 证号 / 电话 / 海关批注 */
   set(r,0,'申报人员：'+(H.declarer||''));
   set(r,2,'申报人员证号：'+(H.declarerNo||''));
   set(r,3,'电话：'+(H.declPhone||''));
-  set(r,10,'海关批注及签章',14);
+  set(r,10,'海关批注及签章',13);
   r++;
   /* 申报单位 */
   set(r,0,'申报单位（盖章）：'+(H.declUnit||''),6);
-  set(r,7,'申报单位（签章）',14);
+  set(r,7,'申报单位（签章）',13);
   r++;
   const cols=[{wch:7.2},{wch:14.6},{wch:17.6},{wch:18.9},{wch:15.8},{wch:0.6},{wch:12.2},{wch:12.5},{wch:9.4},{wch:9.0},{wch:13.6},{wch:16.4},{wch:14.3},{wch:11.7},{wch:9.0}];
   const ws=xwsFrom(R,MG,cols,{headerRows:[0,1]}); /* 全部行都有框(thin 细线 0.75pt,Excel 标准);只有纯标签行未来若要无框再传 noBorder */
