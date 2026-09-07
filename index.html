@@ -2687,10 +2687,10 @@ function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(typ
 /* ========== A4 打印设置（2026-09-07）==========
    只注入打印层参数(paperSize/orientation/fitToPage/边距/居中/打印区域)，
    不触碰单元格内容/样式/合并 —— 屏幕显示 100% 不变，仅 Ctrl+P 打印时生效。
-   方向(用户拍板)：报关草单/Invoice发票/Packing List装箱单/客户发票=横向；销售合同/国内采购合同=纵向 */
+   方向(用户拍板 09-07 二次调整)：仅报关草单=横向；Invoice发票/Packing List装箱单/客户发票/销售合同/国内采购合同=纵向 */
 function applyA4PageSetup(ws,type){
   try{
-    var LANDSCAPE=['报关草单','Invoice发票','Packing List装箱单','客户发票'];
+    var LANDSCAPE=['报关草单'];
     var landscape=LANDSCAPE.indexOf(type)>=0;
     var ps={ paperSize:9, orientation:landscape?'landscape':'portrait',
       fitToPage:true, fitToWidth:1, fitToHeight:0,
