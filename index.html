@@ -2401,7 +2401,7 @@ function xlsTable(type,d){
     R[r][0]={t:'s',v:'PACKING LIST',s:{alignment:{horizontal:'center',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
     addMerge(MG,r,0,NC2-1); noB.push(r); r++;
     /* R2 Date: */
-    addRow2(['','','','','','','Date：',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,6,7); r++;
+    addRow2(['','','','','','','Date：',H.invoiceDate||'']); noB.push(r); r++;
     /* 补列宽：实际 NC2=8 但需 8 列; 但模板 H 用了 N.W.。改为 7 列 G:H 合并的方式更贴近模板 */
     /* 改回 7 列 A-G + 8 列 H 但保持 H 列参与 G:H 合并表达"GW 和 NW 一对" */
     /* 模板 R6: A6:F6列头(G6:G.W.(KG): H6 隐含) R7: A7:N/M  B7:Desc ... G7:9.6  H7:8.4 */
@@ -2409,9 +2409,9 @@ function xlsTable(type,d){
     /* 上面 addRow2 已写到 H 列; 但我们的 noB 集合只对 xwsStyle 有效,边框按列渲染 */
 
     /* R3 Invoice No: */
-    addRow2(['','','','','','','Invoice No:',no]); noB.push(r); addMerge(MG,r,6,7); r++;
+    addRow2(['','','','','','','Invoice No:',no]); noB.push(r); r++;
     /* R4 To Messrs + Contract No */
-    addRow2(['To  Messrs: ',H.consignee,'','','','','Contract No:',H.no||no]); noB.push(r); addMerge(MG,r,1,5); addMerge(MG,r,6,7); r++;
+    addRow2(['To  Messrs: ',H.consignee,'','','','','Contract No:',H.no||no]); noB.push(r); addMerge(MG,r,1,5); r++;
     /* R5 Shipped(从东莞 至 最终目的国) + Terms of Payment */
     const _shipFrom='东莞', _shipTo=cnCountry((d.order&&d.order.destCountry)||H.destCountry||'');
     addRow2(['Shipped           ','From '+_shipFrom+' to '+_shipTo,'','','','','','','Terms of Payment:',H.tradeTerm||'']); noB.push(r); addMerge(MG,r,1,6); addMerge(MG,r,7,NC2-1); r++;
