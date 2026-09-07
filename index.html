@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.7 · 2026-09-07 20:28</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.8 · 2026-09-07 20:52</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -289,8 +289,11 @@ async function stampPurchaseSheet(ws,tpl,items,pctx){
   for(var i=0;i<N;i++)copyRow(10+i,10);
   items.forEach(function(it,idx){ var rr=10+idx; var set=function(c,v){ws.getCell(rr,c).value=v;}; set(1,idx+1);set(2,it.name);set(3,it.model);set(4,it.mat);set(5,it.unit);set(6,it.qty);set(7,it.up);set(8,it.sub); });
   var tot=10+N; copyRow(tot,22);
-  /* 合计行: A:C 三格各写"总计"（不合并，与模板示例一致），H 列金额 2 位 */
-  ws.getCell(tot,1).value='总计'; ws.getCell(tot,2).value='总计'; ws.getCell(tot,3).value='总计';
+  /* 合计行(用户确认 2026-09-07): A:C 先清从格再合并成一格"总计"; F=Σ数量(对齐数量列); H=Σ小计 2位 */
+  ws.getCell(tot,2).value=null; ws.getCell(tot,3).value=null;
+  ws.mergeCells(tot,1,tot,3);
+  ws.getCell(tot,1).value='总计';
+  ws.getCell(tot,6).value=items.reduce(function(a,x){return a+(+x.qty);},0);
   ws.getCell(tot,8).value=items.reduce(function(a,x){return a+(+x.sub);},0).toFixed(2);
   var tail=tot; for(var s=23;s<=49;s++){tail++;copyRow(tail,s);}
   /* 合并: 头部 R1/R2/R5-R8 全行(A:H), R3/R4 A:C+ / D:H, 合计行不合并 */
