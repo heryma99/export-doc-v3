@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.1 · 2026-09-08 14:10</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.2 · 2026-09-08 14:00</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -168,6 +168,7 @@
       <div class="sublist" id="railList3"></div>
       <div class="step" data-step="4" onclick="gotoStage(4)"><div class="dot">4</div><div><div class="t">输出整套单据</div><div class="s" id="railSub4">未开始</div></div></div>
       <div class="sublist" id="railList4"></div>
+      <div class="step" data-step="5" onclick="gotoStage(5)"><div class="dot">5</div><div><div class="t">单证中心</div><div class="s" id="railSub5">生成与下载留痕</div></div></div>
       <div class="rail-batch-bar" id="railBatchBar" style="display:none">
         <div class="rail-batch-info">已选 <b id="railSelCount">0</b> 份草单</div>
         <button class="small" onclick="batchDownloadHTML()">批量HTML</button>
@@ -3576,10 +3577,11 @@ function gotoStage(n){curStage=n;updRail();}
 function updRail(){
   const rc=(DB.records||[]).length, oc=(DB.orders||[]).length, dc=(DB.drafts||[]).length;
   const docCount=(DB.docs||[]).length;
-  const subs={1:rc>0?rc+' 条记录':'形成装箱单记录',2:oc>0?oc+' 个订单':'补双红线',3:dc>0?dc+' 张草单':'表头 + 归类',4:docCount>0?docCount+' 份整套':'未开始'};
+  const dcCnt=(DB.docCenter||[]).length;
+  const subs={1:rc>0?rc+' 条记录':'形成装箱单记录',2:oc>0?oc+' 个订单':'补双红线',3:dc>0?dc+' 张草单':'表头 + 归类',4:docCount>0?docCount+' 份整套':'未开始',5:dcCnt>0?dcCnt+' 条留痕':'生成与下载留痕'};
   document.querySelectorAll('.rail .step').forEach(function(s){
     const i=+s.dataset.step;
-    const done=[rc>0,oc>0,dc>0,docCount>0][i-1];
+    const done=[rc>0,oc>0,dc>0,docCount>0,dcCnt>0][i-1];
     s.classList.toggle('on', i===curStage);
     s.classList.toggle('done', done && i!==curStage);
     const sub=document.getElementById('railSub'+i); if(sub) sub.textContent=subs[i];
