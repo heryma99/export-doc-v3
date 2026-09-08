@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.2 · 2026-09-08 14:00</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.3 · 2026-09-08 14:35</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -2756,8 +2756,10 @@ function xlsContract(c,d,idx){
   lhead('1.以下为含税交货价：详见下表'); rhead('2.交易币种：'+(H.currency||'人民币（CNY）'));
   ['序号','产品名称','型号','材质标准','单位','数量','含税单价','含税总价'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   c.items.forEach((l,i)=>{
-    const tp=Math.round((+l.cost||0)*1.13*10000)/10000;
-    [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,tp.toFixed(4),(tp*(+l.qty||0)).toFixed(2)].forEach((v,j)=>putCell(R,r,j,v)); r++;
+    /* 金额半进位统一(2026-09-08 审计补漏): 行值直接取 buildData 的 decRound 结果(taxPrice/taxAmount), 与合计同源, 杜绝 Σ行≠合计 */
+    const tpS=(l.taxPrice!==undefined&&l.taxPrice!=='')?l.taxPrice:decRound((+l.cost||0)*1.13,4).toFixed(4);
+    const taS=(l.taxAmount!==undefined&&l.taxAmount!=='')?l.taxAmount:decRound((+l.cost||0)*1.13*(+l.qty||0),2).toFixed(2);
+    [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,tpS,taS].forEach((v,j)=>putCell(R,r,j,v)); r++;
   });
   const total=c.items.reduce((a,l)=>a+(+l.taxAmount||0),0);   /* 合计=Σ行含税总价(与行和一致,2位) */
   putCell(R,r,0,'合计'); addMerge(MG,r,0,6); putCell(R,r,7,decRound(total,2).toFixed(2)); r++;
@@ -2847,7 +2849,7 @@ async function composeSetWorkbook(doc,prefix){
       const c=d.contracts[k];
       const ws=ej.addWorksheet(sheetName((prefix||'')+'采购合同_'+c.supplier));
       const PB=c.purchaseB||{},PA=c.purchaseAcct||{};
-      const items=(c.items||[]).map(function(l){ var up=Math.round((+l.cost||0)*1.13*10000)/10000; return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:up.toFixed(4),sub:(Math.round(up*(+l.qty||0)*100)/100).toFixed(2)}; });
+      const items=(c.items||[]).map(function(l){ var up=(l.taxPrice!==undefined&&l.taxPrice!=='')?(+l.taxPrice):decRound((+l.cost||0)*1.13,4); return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:(+up).toFixed(4),sub:(l.taxAmount!==undefined&&l.taxAmount!=='')?(+l.taxAmount).toFixed(2):decRound((+up)*(+l.qty||0),2).toFixed(2)}; });
       const pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
         deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.deliveryDate)||'':(H.deliveryDate||''),
         deliveryPlace:H.deliveryPlace||'',acctBank:PA.bank||'',acctNo:PA.no||'',
