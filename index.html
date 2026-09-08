@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.0 · 2026-09-08 11:18</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.1 · 2026-09-08 14:10</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -221,6 +221,13 @@
         <div class="stage">
           <div class="hd"><span class="num">4</span><h2>确认草单 → 一次性输出整套单据</h2></div>
           <div class="bd"><div id="outArea"></div></div>
+        </div>
+      </div>
+      <!-- 阶段5 单证中心 -->
+      <div class="flow-stage" data-stage="5">
+        <div class="stage">
+          <div class="hd"><span class="num">5</span><h2>单证中心 · 生成与下载留痕</h2><span class="tag" id="dcCount">0 条</span></div>
+          <div class="bd"><div id="dcArea"></div></div>
         </div>
       </div>
     </div>
@@ -607,7 +614,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.parties.profiles)d.parties.profiles={};if(!d.tier1Profiles)d.tier1Profiles={};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.parties.profiles)d.parties.profiles={};if(!d.tier1Profiles)d.tier1Profiles={};if(!d.docCenter)d.docCenter=[];if(!d.docSnaps)d.docSnaps={};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -2092,15 +2099,91 @@ function safeRender(type,data,extraData){
   }
   return extraData?renderTpl(html,extraData):html;
 }
+/* ============== 单证中心：生成/下载留痕 + 快照(30份LRU, 总量≤2MB) ============== */
+function dcLog(act,dftId,type,fmt,html,extra){
+  try{
+    if(!Array.isArray(DB.docCenter)) DB.docCenter=[];
+    if(!DB.docSnaps) DB.docSnaps={};
+    var rec={id:'DC'+Date.now().toString(36)+Math.floor(Math.random()*90+10),t:new Date().toISOString(),act:act,dftId:dftId||'',type:type,fmt:fmt||'',no:'',sup:'',amt:''};
+    var doc=DB.docs.find(function(x){return x.dftId===rec.dftId;});
+    if(doc){ var dd=buildData(doc);
+      rec.no=(dd.header&&dd.header.no)||'';
+      rec.amt=dd.totalAmountCur||dd.totalAmount||'';
+      rec.sup=(doc.suppliers&&doc.suppliers.length)?doc.suppliers.join('、'):'';
+    }
+    if(extra) Object.assign(rec,extra);
+    if(html){
+      var sid='S'+Date.now().toString(36)+Math.floor(Math.random()*90+10);
+      DB.docSnaps[sid]=html; rec.snap=sid;
+      var keys=Object.keys(DB.docSnaps).sort();
+      var bytes=keys.reduce(function(a,k){return a+(DB.docSnaps[k]||'').length;},0);
+      while((keys.length>30||bytes>2000000)&&keys.length){
+        var old=keys.shift(); bytes-=(DB.docSnaps[old]||'').length; delete DB.docSnaps[old];
+      }
+      DB.docCenter.forEach(function(r0){ if(r0.snap&&!DB.docSnaps[r0.snap]) delete r0.snap; });
+    }
+    DB.docCenter.unshift(rec);
+    if(DB.docCenter.length>2000) DB.docCenter.length=2000;
+    save(); renderCenter();
+  }catch(e){ console.warn('dcLog',e); }
+}
+function dcFindDoc(dftId){ return DB.docs.find(function(x){return x.dftId===dftId;}); }
+function dcView(id){
+  var r0=(DB.docCenter||[]).find(function(x){return x.id===id;}); if(!r0) return;
+  if(!r0.snap||!DB.docSnaps[r0.snap]){ alert('快照已被淘汰（仅保留最近 30 份 / 2MB）'); return; }
+  document.getElementById('prevTitle').textContent=(r0.type||'单据')+' 快照 · '+(r0.t||'').replace('T',' ').slice(0,16);
+  document.getElementById('prevFrame').srcdoc=DB.docSnaps[r0.snap];
+  document.getElementById('prevModal').classList.add('open');
+}
+function dcRe(id,mode){
+  var r0=(DB.docCenter||[]).find(function(x){return x.id===id;}); if(!r0) return;
+  var doc=dcFindDoc(r0.dftId); if(!doc){ alert('对应草单已被清理，无法重新生成/下载'); return; }
+  var idx=doc.out.findIndex(function(o){return o.type===r0.type;});
+  if(idx<0){ alert('该草单下已无「'+r0.type+'」单据'); return; }
+  var docI=DB.docs.indexOf(doc);
+  if(mode===1) previewDoc(docI,idx);
+  else if((r0.fmt||'').indexOf('Excel')>=0) downloadDocXlsx(docI,idx);
+  else if((r0.fmt||'').indexOf('Word')>=0) downloadDocWord(docI,idx);
+  else downloadDoc(docI,idx);
+}
+function renderCenter(){
+  var el=document.getElementById('dcArea'); if(!el) return;
+  var list=DB.docCenter||[];
+  var cnt=document.getElementById('dcCount'); if(cnt) cnt.textContent=list.length+' 条';
+  if(!list.length){ el.innerHTML='<p class="muted">暂无记录。预览或下载单据后自动留痕（快照保留最近 30 份 / 2MB）。</p>'; return; }
+  var f=(window.__dcFilter||'').trim();
+  var rows=list.filter(function(r0){ return !f || (r0.type||'').indexOf(f)>=0 || (r0.no||'').indexOf(f)>=0 || (r0.dftId||'').indexOf(f)>=0 || (r0.sup||'').indexOf(f)>=0; });
+  var h='<div style="margin-bottom:8px"><input value="'+esc(f)+'" placeholder="筛选：单号 / 草单号 / 类型 / 供应商" style="width:280px" oninput="window.__dcFilter=this.value;renderCenter()"> <span class="muted" style="font-size:11px">共 '+rows.length+' 条（流水永久保留，快照最近 30 份）</span></div>';
+  h+='<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>'
+    +'<th style="border:1px solid var(--line);padding:4px 6px">时间</th><th style="border:1px solid var(--line);padding:4px 6px">动作</th><th style="border:1px solid var(--line);padding:4px 6px">单据</th><th style="border:1px solid var(--line);padding:4px 6px">格式</th><th style="border:1px solid var(--line);padding:4px 6px">单号</th><th style="border:1px solid var(--line);padding:4px 6px">金额</th><th style="border:1px solid var(--line);padding:4px 6px">供应商</th><th style="border:1px solid var(--line);padding:4px 6px">操作</th></tr></thead><tbody>';
+  rows.forEach(function(r0){
+    var can=!!dcFindDoc(r0.dftId);
+    h+='<tr><td style="border:1px solid var(--line);padding:4px 6px;white-space:nowrap">'+(r0.t||'').replace('T',' ').slice(0,16)+'</td>'
+      +'<td style="border:1px solid var(--line);padding:4px 6px">'+(r0.act==='gen'?'生成/预览':'<b>下载</b>')+'</td>'
+      +'<td style="border:1px solid var(--line);padding:4px 6px">'+esc(r0.type||'')+'</td>'
+      +'<td style="border:1px solid var(--line);padding:4px 6px">'+esc(r0.fmt||'')+'</td>'
+      +'<td style="border:1px solid var(--line);padding:4px 6px">'+esc(r0.no||'')+'</td>'
+      +'<td style="border:1px solid var(--line);padding:4px 6px;text-align:right">'+esc(String(r0.amt||''))+'</td>'
+      +'<td style="border:1px solid var(--line);padding:4px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r0.sup||'')+'">'+esc(r0.sup||'')+'</td>'
+      +'<td style="border:1px solid var(--line);padding:4px 6px;white-space:nowrap">'
+      +(r0.snap?'<button class="ghost small" onclick="dcView(\''+r0.id+'\')">看快照</button> ':'')
+      +(can?'<button class="ghost small" onclick="dcRe(\''+r0.id+'\',1)">预览</button> <button class="ghost small" onclick="dcRe(\''+r0.id+'\',2)">重下载</button>':'<span class="muted">草单已删</span>')
+      +'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  el.innerHTML=h;
+}
 function previewDoc(docI,idx){_cur={doc:docI,idx};const doc=DB.docs[docI];const o=doc.out[idx];
   const data=buildData(doc);
+  const _h=safeRender(o.type,data);
   document.getElementById('prevTitle').textContent=o.type+' 预览';
-  document.getElementById('prevFrame').srcdoc=safeRender(o.type,data);
-  document.getElementById('prevModal').classList.add('open');}
+  document.getElementById('prevFrame').srcdoc=_h;
+  document.getElementById('prevModal').classList.add('open');
+  dcLog('gen',doc.dftId,o.type,'预览',_h);}
 function closePrev(){document.getElementById('prevModal').classList.remove('open');}
 function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];const data=buildData(doc);
-  if(o.type==='国内采购合同'){data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});dl('采购合同_'+c.supplier,one);});return;}
-  dl(o.type,safeRender(o.type,data));}
+  if(o.type==='国内采购合同'){var _first='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_first)_first=one;dl('采购合同_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'Word×'+data.contracts.length,_first);return;}
+  const _h=safeRender(o.type,data);dcLog('dl',doc.dftId,o.type,'Word',_h);dl(o.type,_h);}
 function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
 /* 通用下载：Chrome 127+ 对 URL.createObjectURL 的 Blob 同步下载会弹"需下载权限"。
    统一走 DataURL(FileReader)绕过。注：DataURL 不受 URL 长度限制影响（实际可到 50MB+）。 */
@@ -2781,6 +2864,7 @@ async function composeSetWorkbook(doc,prefix){
 async function downloadSetExcel(doc,fname,prefix){
   const r=await composeSetWorkbook(doc,prefix);
   if(!r){ alert('暂无可导出的单据'); return; }
+  dcLog('dl',doc.dftId,'整套单据','Excel整套',safeRender('报关草单',buildData(doc)));
   if(r.type==='exceljs'){
     try{ const b=await r.wb.xlsx.writeBuffer(); _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),fname+'.xlsx'); }
     catch(e){ alert('EXCEL 生成失败：'+e.message); console.error(e); }
@@ -2798,6 +2882,7 @@ function downloadDocXlsx(docI,idx){
   ensureXLSX(function(){
     try{
       const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
+      dcLog('dl',doc.dftId,o.type,'Excel',safeRender(o.type,d));
       if(o.type==='国内采购合同'){
         if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
         else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); xlsDownload('国内采购合同',wb0); }
@@ -2843,6 +2928,7 @@ function downloadDocWord(docI,idx){
     } else {
       html=renderTpl(builtin(o.type,d),d);
     }
+    dcLog('dl',doc.dftId,o.type,'Word(doc)',html);
     docFromHtml(html,name);
   }catch(e){ alert('Word 导出出错：'+e.message); console.error(e); }
 }
@@ -2850,6 +2936,7 @@ function downloadAllXlsx(){
   ensureXLSX(function(){
     try{
       const doc=DB.docs[DB.sel.doc]; if(!doc){alert('暂无可导出的单据');return;}
+      dcLog('dl',doc.dftId,'整套单据','Excel多Sheet',safeRender('报关草单',buildData(doc)));
       const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
       /* 含采购页 → exceljs 合成单工作簿(采购页并入)；否则 SheetJS 多sheet */
       if(hasPur && window.__PURCHASE_TPL_B64__){
@@ -2940,6 +3027,7 @@ function batchDownloadXlsx(){
         setTimeout(function(){
           try{
             const doc=DB.docs[docI]; if(!doc) return;
+            dcLog('dl',doc.dftId,'整套单据(批量)','Excel',safeRender('报关草单',buildData(doc)));
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
             const fname='整套_'+(doc.dftId||('set'+(i+1)));
             if(hasPur && window.__PURCHASE_TPL_B64__){
@@ -2972,6 +3060,7 @@ function batchDownloadMergedXlsx(){
         sels.forEach(function(docI,idx){
           setTimeout(function(){
             const doc=DB.docs[docI]; if(!doc) return;
+            dcLog('dl',doc.dftId,'整套单据(合并)','Excel',safeRender('报关草单',buildData(doc)));
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
             const fname='合并set'+(idx+1);
             if(hasPur){ ensureExcelJS(function(){ downloadSetExcel(doc,fname,'set'+(idx+1)+'_').catch(function(e){ alert('合并 EXCEL 导出出错：'+e.message); console.error(e); }); }); }
@@ -3541,7 +3630,7 @@ function updRail(){
 }
 
 /* ============== 初始化 ============== */
-function renderAll(){renderRecords();renderOrders();renderDrafts();renderOut();updRail();}
+function renderAll(){renderRecords();renderOrders();renderDrafts();renderOut();renderCenter();updRail();}
 /* 共享配置(软件级)：从 GitHub config.json 拉取(一人维护全员共享)。合并策略：parties/buyerParties/supplierMap/tier1Suppliers/templates 以云端为准，map 类合并。 */
 function mergeSharedCfg(cfg){
   if(!cfg||!cfg._v) return false;
