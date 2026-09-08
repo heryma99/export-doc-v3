@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v1.9 · 2026-09-07 21:26</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.0 · 2026-09-08 11:18</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -294,7 +294,7 @@ async function stampPurchaseSheet(ws,tpl,items,pctx){
   ws.mergeCells(tot,1,tot,3);
   ws.getCell(tot,1).value='总计';
   ws.getCell(tot,6).value=items.reduce(function(a,x){return a+(+x.qty);},0);
-  ws.getCell(tot,8).value=items.reduce(function(a,x){return a+(+x.sub);},0).toFixed(2);
+  ws.getCell(tot,8).value=decRound(items.reduce(function(a,x){return a+(+x.sub);},0),2).toFixed(2);
   var tail=tot; for(var s=23;s<=49;s++){tail++;copyRow(tail,s);}
   /* 合并: 头部 R1/R2/R5-R8 全行(A:H), R3/R4 A:C+ / D:H, 合计行不合并 */
   ws.mergeCells(1,1,1,8); ws.mergeCells(2,1,2,8);
@@ -339,7 +339,7 @@ async function purchaseTplDownload(d,suffix){
     var c=d.contracts[k];
     var ws=outWb.addWorksheet((typeof sheetName==='function'?sheetName('采购合同_'+c.supplier):('采购合同_'+(k+1))));
     var PB=c.purchaseB||{},PA=c.purchaseAcct||{};
-    var items=(c.items||[]).map(function(l){ var up=Math.round((+l.cost||0)*1.13*10000)/10000; return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:up.toFixed(4),sub:(Math.round(up*(+l.qty||0)*100)/100).toFixed(2)}; });
+    var items=(c.items||[]).map(function(l){ var up=decRound((+l.cost||0)*1.13,4); return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:up.toFixed(4),sub:decRound(up*(+l.qty||0),2).toFixed(2)}; });
     var pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
       deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.deliveryDate)||'':(H.deliveryDate||''),
       deliveryPlace:H.deliveryPlace||'',acctBank:PA.bank||'',acctNo:PA.no||'',
@@ -656,7 +656,19 @@ function getSku(s){
 
 /* ============== 工具 ============== */
 const PRICE_RATE=()=>DB.price.rate;
-const declPrice=c=>+(c.noTax/(1-PRICE_RATE())).toFixed(4);
+/* 金额半进位舍入(标准四舍五入, 2026-09-08 用户确认): Math.round/toFixed 在 x.xx5 边界因浮点存储(如 1855.975→1855.97499…)会舍错 1 分;
+   decRound 在 |小数-0.5|<1e-6 的边界用 toFixed(dp+2) 高精度字符串判定真实方向, 非边界走普通 Math.round, 无双重舍入陷阱 */
+function decRound(x,dp){
+  if(!isFinite(x)) return x;
+  var neg=x<0, a=neg?-x:x;
+  var m=Math.pow(10,dp), scaled=a*m, fl=Math.floor(scaled), frac=scaled-fl, r;
+  if(Math.abs(frac-0.5)<1e-6){
+    var s=a.toFixed(dp+2), dec=(s.split('.')[1]||'');
+    r=(+(dec[dp]||'0')>=5)? fl+1 : fl;
+  } else r=Math.round(scaled);
+  return neg? -(r/m) : r/m;
+}
+const declPrice=c=>decRound(c.noTax/(1-PRICE_RATE()),4);
 const uid=p=>p+Date.now().toString().slice(-6)+Math.floor(Math.random()*90+10);
 function today(){const d=new Date();return d.toISOString().slice(0,10);}
 function fmt(d){return d;}
@@ -1612,25 +1624,25 @@ function buildData(doc){
       decl:l.decl,
       decl4:(+l.decl).toFixed(4),            /* 销售合同單價 4 位显示(单价统一4位/汇总2位) */
       nameF:fan(l.name||''),matF:fan(l.mat||''),unitF:fan(l.unit||''),   /* 繁体显示字段(销售合同用: 单位等必须繁体) */
-      amount:_amt.toFixed(2),
-      declCur:(+decl2cur(l.decl)).toFixed(4),
-      amountCur:decl2cur(_amt).toFixed(2),
+      amount:decRound(_amt,2).toFixed(2),
+      declCur:decRound(decl2cur(l.decl),4).toFixed(4),
+      amountCur:decRound(decl2cur(_amt),2).toFixed(2),
       boxCnt:(+l.boxCnt||0),
       /* Model 列：按款合并时显示该款下全部 SKU(_keys)，与报关草单一致；否则取款号/单SKU */
       model:l.model||(l._keys&&l._keys.length?l._keys.join(','):(l.style||l.sku))};});
   const base=d.header.declDate||today();
   /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
-  const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=Math.round((+l.cost||0)*1.13*10000)/10000;return {...l,taxPrice:tp.toFixed(4),taxAmount:(tp*(+l.qty||0)).toFixed(2)};});
+  const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=decRound((+l.cost||0)*1.13,4);return {...l,taxPrice:tp.toFixed(4),taxAmount:decRound(tp*(+l.qty||0),2).toFixed(2)};});
     /* 乙方信息/账户按规则自动引用：乙方=一级供应商档案, 账户=该供应商绑定的账户(owner 匹配) */
     const _pb=tier1Profile(s),_pa=acctFor((d.header&&d.header.currency)||'',s);
-    return {supplier:s,items,_no:((d.header&&d.header.no)||'')+'-'+(ci+1),taxTotal:items.reduce((a,l)=>a+(+l.taxAmount||0),0).toFixed(2),amount:items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0).toFixed(2),count:items.length,
+    return {supplier:s,items,_no:((d.header&&d.header.no)||'')+'-'+(ci+1),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
       purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
     cur:_curSym,curCode:_curCode,currencyRaw:_ccur,exch:_exch,
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
-    totalAmount:lines.reduce((a,l)=>a+(+l.decl)*(+l.qty),0).toFixed(2),
-    totalAmountCur:lines.reduce((a,l)=>a+decl2cur((+l.decl)*(+l.qty)),0).toFixed(2),
+    totalAmount:decRound(lines.reduce((a,l)=>a+(+l.decl)*(+l.qty),0),2).toFixed(2),
+    totalAmountCur:decRound(lines.reduce((a,l)=>a+decl2cur((+l.decl)*(+l.qty)),0),2).toFixed(2),
     /* 权威总重：按物理箱去重求和（与报关总重一致），不再对分摊后逐行重量求和（避免浮点漂移/全0）。箱数另由 physicalBoxCount 取物理箱。 */
     totalGW:boxDedupTotals(d.rawLines||lines).gw.toFixed(2),
     totalNW:boxDedupTotals(d.rawLines||lines).nw.toFixed(2),
@@ -2664,7 +2676,7 @@ function xlsContract(c,d,idx){
     [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,tp.toFixed(4),(tp*(+l.qty||0)).toFixed(2)].forEach((v,j)=>putCell(R,r,j,v)); r++;
   });
   const total=c.items.reduce((a,l)=>a+(+l.taxAmount||0),0);   /* 合计=Σ行含税总价(与行和一致,2位) */
-  putCell(R,r,0,'合计'); addMerge(MG,r,0,6); putCell(R,r,7,total.toFixed(2)); r++;
+  putCell(R,r,0,'合计'); addMerge(MG,r,0,6); putCell(R,r,7,decRound(total,2).toFixed(2)); r++;
   lrow('3.本合同价格为指定地点含税交货价，增值税税率 13%，价格已涵盖包装费、运输费。未经双方书面补充约定，甲方对合同外的任何额外费用均有权拒绝支付。');
   rrow('4.标准：乙方交付的货物须符合国家相关产品质量标准（如包包/皮具：QB/T 1333-2018）、行业规范，同时严格匹配本合同约定的规格、款式、材质及甲方确认的样品标准，两者不一致时，按更严格标准执行。');
   row('');
