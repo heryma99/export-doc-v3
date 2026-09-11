@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.3 · 2026-09-08 14:35</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.4 · 2026-09-11 17:05</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -333,6 +333,7 @@ async function stampPurchaseSheet(ws,tpl,items,pctx){
   ws.getCell(tailStart+25,1).value='授权代表（签字）：________________________';
   ws.getCell(tailStart+25,4).value='授权代表（签字）：________________________';
   if(pctx.signDate) ws.getCell(tailStart+26,1).value=pctx.signDate+'                 '; /* src R49 */
+  autoHeightsExcelJS(ws,widths);   /* 行高自适应(2026-09-11): 模板个别行高不足(如 R24/R35/R40/R41)按内容加高, 只增不减 */
 }
 async function purchaseTplDownload(d,suffix){
   /* 国内采购合同 → 每个一级供应商一页，按内嵌模板盖章。suffix 可选：批量/合并时区分文件名 */
@@ -677,6 +678,71 @@ function decRound(x,dp){
   return neg? -(r/m) : r/m;
 }
 const declPrice=c=>decRound(c.noTax/(1-PRICE_RATE()),4);
+/* ── 行高自适应(2026-09-11 用户确认方案A): 按内容计算行高, 只增不减, 不碰任何文字/数据/合并/列宽/A4打印设置 ──
+   hpt = max(现值, 行数*字号*1.35 + 2.85); 行数 = Σ每段 ceil(文字占宽/每行可用宽);
+   units: 中文/全角=2, ASCII=1; 宽度单位以 11pt 默认字体为基准 → 按 字号/11 缩放; 0.92 = 单元格内边距折损; 1.02 = 余量 */
+function _rhIsWide(cp){ return (cp>=0x1100&&cp<=0x115F)||(cp>=0x2E80&&cp<=0xA4CF)||(cp>=0xAC00&&cp<=0xD7A3)||(cp>=0xF900&&cp<=0xFAFF)||(cp>=0xFE30&&cp<=0xFE6F)||(cp>=0xFF00&&cp<=0xFF60)||(cp>=0xFFE0&&cp<=0xFFE6); }
+function _rhUnits(s){ var u=0,i; for(i=0;i<s.length;i++) u+=_rhIsWide(s.charCodeAt(i))?2:1; return u; }
+function _rhLines(text,W,fs){
+  var cap=Math.max(6,W*0.92), k=(fs/11)*1.02, lines=0;
+  String(text).replace(/[ \t\u3000]+$/gm,'').split('\n').forEach(function(seg){ lines+=Math.max(1,Math.ceil((_rhUnits(seg)*k)/cap)); });
+  return lines;
+}
+/* SheetJS 版: 就地提高 ws['!rows'][r].hpt */
+function autoHeightsSheetJS(ws){
+  try{
+    if(!ws||!ws['!ref']) return;
+    var merges=(ws['!merges']||[]).map(function(m){return {r1:m.s.r,c1:m.s.c,r2:m.e.r,c2:m.e.c};});
+    var cols=(ws['!cols']||[]).map(function(c){return (c&&c.wch)||8.43;});
+    var rng=XLSX.utils.decode_range(ws['!ref']);
+    var wOf=function(r,c){ var i,m=null; for(i=0;i<merges.length;i++){ m=merges[i]; if(r>=m.r1&&r<=m.r2&&c>=m.c1&&c<=m.c2) break; m=null; }
+      var w=0; if(m){ for(i=m.c1;i<=m.c2;i++) w+=(cols[i]||8.43); } else w=(cols[c]||8.43); return w; };
+    for(var r=rng.s.r;r<=rng.e.r;r++){
+      var need=0;
+      for(var c=rng.s.c;c<=rng.e.c;c++){
+        var cell=ws[XLSX.utils.encode_cell({r:r,c:c})]; if(!cell||cell.v===undefined||cell.v===null||cell.v===''||typeof cell.v==='number') continue;
+        var mm=null,i; for(i=0;i<merges.length;i++){ var M=merges[i]; if(r>=M.r1&&r<=M.r2&&c>=M.c1&&c<=M.c2){ mm=M; break; } }
+        if(mm&&mm.r2>mm.r1&&r!==mm.r1) continue;   /* 纵向合并只按起始行计 */
+        var sz=(cell.s&&cell.s.font&&cell.s.font.sz)||9;
+        need=Math.max(need,_rhLines(cell.v,wOf(r,c),sz)*(sz*1.35)+2.85);
+      }
+      if(need<=0) continue;
+      need=Math.round(need*10)/10;
+      ws['!rows']=ws['!rows']||[];
+      var cur=(ws['!rows'][r]&&ws['!rows'][r].hpt)||15;
+      if(need>cur+0.05) ws['!rows'][r]={hpt:need};
+    }
+  }catch(e){ console.warn('autoHeightsSheetJS:',e); }
+}
+/* exceljs 版: 就地提高 row.height; widthsIn 必须显式传入(读列宽不可靠) */
+function _rhParseA1(s){ var m=/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(s); if(!m) return null;
+  var cn=function(x){var a=0;for(var i=0;i<x.length;i++)a=a*26+(x.charCodeAt(i)-64);return a;};
+  return {r1:+m[2]-1,c1:cn(m[1])-1,r2:+m[4]-1,c2:cn(m[3])-1}; }
+function autoHeightsExcelJS(ws,widthsIn){
+  try{
+    var merges=(ws.model.merges||[]).map(_rhParseA1).filter(Boolean);
+    var W=function(c){ return (widthsIn&&widthsIn[c])||10; };
+    var wOf=function(r,c){ var i,m=null; for(i=0;i<merges.length;i++){ m=merges[i]; if(r>=m.r1&&r<=m.r2&&c>=m.c1&&c<=m.c2) break; m=null; }
+      var w=0; if(m){ for(i=m.c1;i<=m.c2;i++) w+=W(i); } else w=W(c); return w; };
+    for(var r=0;r<ws.rowCount;r++){
+      var need=0;
+      for(var c=0;c<ws.columnCount;c++){
+        var cell=ws.getCell(r+1,c+1), v=cell.value;
+        if(v===null||v===undefined||v==='') continue;
+        if(typeof v==='object') v=(v.richText? v.richText.map(function(t){return t.text;}).join('') : (v.text!==undefined? v.text : (v.result!==undefined? v.result : null)));
+        if(v===null||v===undefined||v===''||typeof v==='number') continue;
+        var mm=null,i; for(i=0;i<merges.length;i++){ var M=merges[i]; if(r>=M.r1&&r<=M.r2&&c>=M.c1&&c<=M.c2){ mm=M; break; } }
+        if(mm&&mm.r2>mm.r1&&r!==mm.r1) continue;
+        var sz=(cell.font&&cell.font.size)||12;
+        need=Math.max(need,_rhLines(v,wOf(r,c),sz)*(sz*1.35)+2.85);
+      }
+      if(need<=0) continue;
+      need=Math.round(need*10)/10;
+      var row=ws.getRow(r+1), cur=row.height||22;
+      if(need>cur+0.05) row.height=need;
+    }
+  }catch(e){ console.warn('autoHeightsExcelJS:',e); }
+}
 const uid=p=>p+Date.now().toString().slice(-6)+Math.floor(Math.random()*90+10);
 function today(){const d=new Date();return d.toISOString().slice(0,10);}
 function fmt(d){return d;}
@@ -2722,6 +2788,7 @@ function xlsSalesContract(d){
   /* 货品表数字列（數量/單價/小計）右对齐 */
   ['F','G','H'].forEach(col=>{ gRows.forEach((gr,gi)=>{ if(gi===0) return; const a=col+(gr+1); const c=ws[a]; if(c){ c.s=c.s||{}; c.s.alignment={horizontal:'right',vertical:'center',wrapText:true}; } }); });
   ws['!rows']=ws['!rows']||[]; ws['!rows'][0]={hpt:36}; /* 标题行行高 36(合同档 18号) */
+  autoHeightsSheetJS(ws);   /* 行高自适应(2026-09-11): 长条款行按内容加高, 只增不减 */
   return ws;
 }
 /* 国内采购合同(仿模板 合同编号：HT1781940-1.docx)：
@@ -2795,7 +2862,9 @@ function xlsContract(c,d,idx){
   two('甲方（盖章）：'+bName,'乙方（盖章）：'+supName);
   two('授权代表（签字）：________________________','授权代表（签字）：________________________');
   two('签署日期：______年____月____日','签署日期：______年____月____日');
-  return xwsFrom(R,MG,[{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:14},{wch:14},{wch:14}]);
+  var _wsC=xwsFrom(R,MG,[{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:14},{wch:14},{wch:14}]);
+  autoHeightsSheetJS(_wsC);   /* 行高自适应(2026-09-11): 兜底采购合同长条款行加高 */
+  return _wsC;
 }
 function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
 /* ========== A4 打印设置（2026-09-07）==========
