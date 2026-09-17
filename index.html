@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.5 · 2026-09-17 17:00</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.6 · 2026-09-17 17:28</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -1802,18 +1802,26 @@ function runMonitor(did){
   const sameHS=L.filter(l=>l.hs).map(l=>l.hs);const dup=[...new Set(sameHS.filter((h,i)=>sameHS.indexOf(h)!==i))];
   add('A','A11','归类归并正确(同HS+同要素+同单价可归并)',dup.length?'WARN':'OK',!dup.length,dup.length?('存在同HS可归并项：'+dup.join(',')):'无');
   // B 出口退税政策
-  const b2=L.reduce((a,l)=>a+(+l.cost||0)*0.13,0);
+  /* 退税测算（v2.5 起）：用「真实退税率表 × 供应商主体性质」取代原硬编码 0.13。
+     只改 B2/B5/B7 的「取值来源」，编号/其余检查项/阻断逻辑一律不动。 */
+  const _rb=rebateCalc({lines:L});
+  const _unHs=[...new Set(_rb.unlisted.map(r=>r.hs||'(空编码)'))];
+  const _rateTxt=_rb.rateSet.length?_rb.rateSet.map(r=>r+'%').join(' / '):'—';
   add('B','B1','采购进项发票与报关单品名/数量一致(票流一致)','WARN',false,'待上传进项发票核对票流（外部凭证）');
-  add('B','B2','应退税额=Σ不含税采购价×13% 计算正确',b2>0?'OK':'WARN',b2>0,'应退 ¥'+b2.toFixed(2)+'（不含税×13%）');
+  add('B','B2','应退税额=Σ不含税采购价×实际退税率 计算正确',_unHs.length?'WARN':(_rb.total>0?'OK':'WARN'),_unHs.length?false:_rb.total>0,
+    '应退 ¥'+_rb.total.toFixed(2)+(_unHs.length?('（'+_unHs.length+' 个编码未收录退税率，该部分未计入）'):'（逐行算：不含税采购价×实际退税率）'));
   const badsup=L.some(l=>l.supplier.includes('不退税'));
   add('B','B3','供货企业具退税资格',badsup?'WARN':'OK',!badsup,badsup?'存在标记「不退税」的供应商':'全部具退税资格');
   /* B10 货源地一致性：每项号货源地须从供应商档案带出(退税归属=进项发票地区)；未维护则 WARN */
   const missOrig=[...new Set(L.map(function(l){return consolidatedSupplier(l.supplier);}).filter(Boolean))].filter(function(s){const p=(DB.tier1Profiles&&DB.tier1Profiles[s])||{};return !p.originCode;});
   add('B','B10','货源地与供应商档案一致(退税归属)',missOrig.length?'WARN':'OK',!missOrig.length,missOrig.length?('以下供应商未维护境内货源地：'+missOrig.join('、')):'全部已配置货源地');
   add('B','B4','换汇成本合理',(H.currency.includes('USD')&&DB.price.exch)?'OK':'WARN',(H.currency.includes('USD')&&DB.price.exch)>0,'未设汇率无法核换汇成本');
-  add('B','B5','商品退税率与HS匹配','OK','OK','默认退税率13%');
+  add('B','B5','商品退税率与HS匹配',_unHs.length?'WARN':'OK',!_unHs.length,
+    _unHs.length?('未收录退税率，已标黄：'+_unHs.slice(0,6).join('、')+(_unHs.length>6?(' 等 '+_unHs.length+' 个'):'')+'（可在「退税测算→退税率配置」补录）'):('全部命中退税率表，在册税率 '+_rateTxt));
   add('B','B6','收汇完成(资金流一致)','WARN',false,'待确认收汇（外部凭证）');
-  add('B','B7','同票多品类不同退税率分项核算','OK','OK','按HS分行核算');
+  add('B','B7','同票多品类不同退税率分项核算',_rb.mixedHs.length?'WARN':'OK',!_rb.mixedHs.length,
+    _rb.mixedHs.length?('同一商品编码混合纳税人身份：'+_rb.mixedHs.join('、')+' → 建议分两票申报（划分不清将从低适用）')
+      :(_rb.smallCnt?('已分项核算：'+_rateTxt+'（含 '+_rb.smallCnt+' 行小规模，按孰低）'):('已分项核算：'+_rateTxt)));
   add('B','B8','申报日期在退税申报期内','OK','OK','申报日 '+H.declDate);
   const b9=L.every(l=>(+l.decl)>(+l.cost));
   add('B','B9','申报价>成本(防倒挂)',b9?'OK':'BLOCK',b9,'存在申报价≤成本，倒挂影响退税基数');
