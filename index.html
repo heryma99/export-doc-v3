@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.4 · 2026-09-11 17:05</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.5 · 2026-09-17 17:00</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -257,6 +257,20 @@
   <div class="bf"><button class="ghost" onclick="closeHsLib()">关闭</button></div>
 </div></div>
 
+<!-- 退税测算弹窗（只读辅助面板；不写任何单证、不改金额链路） -->
+<div class="modal" id="rebateModal"><div class="box" style="width:960px">
+  <div class="bh"><h3>退税测算（辅助参考）</h3><span style="flex:1"></span><button class="ghost" onclick="closeRebate()">✕</button></div>
+  <div class="bb" id="rebateBody"></div>
+  <div class="bf"><button class="ghost" onclick="openRebateCfg()">退税率配置(HS)</button><button class="ghost" onclick="exportRebate()">导出测算表(xlsx)</button><button class="ghost" onclick="closeRebate()">关闭</button></div>
+</div></div>
+
+<!-- 退税率配置弹窗（HS → 退税率；覆盖层存 DB.rebateOverride，随共享配置同步） -->
+<div class="modal" id="rebateCfgModal"><div class="box" style="width:720px">
+  <div class="bh"><h3>HS 退税率配置</h3><span style="flex:1"></span><button class="ghost" onclick="closeRebateCfg()">✕</button></div>
+  <div class="bb"><div class="muted" style="font-size:12px;margin-bottom:8px">按 10 位海关编码维护出口退税率。匹配顺序：精确 10 位 → 8 位前缀 → 6 位前缀；都不中则测算面板标黄提醒（不回退为 0%）。此处修改存入本地并可用「共享配置中心」导出给全员同步；基础表在 <code>rebate_rates.js</code>。</div><div id="rebateCfgBody"></div></div>
+  <div class="bf"><button class="ghost" onclick="closeRebateCfg()">关闭</button></div>
+</div></div>
+
 <!-- 共享配置中心(软件级)弹窗 -->
 <div class="modal" id="sharedModal"><div class="box" style="width:600px">
   <div class="bh"><h3>☁ 共享配置中心（软件级 · 一人维护全员共享）</h3><span style="flex:1"></span><button class="ghost" onclick="closeShared()">✕</button></div>
@@ -284,6 +298,8 @@
 <script src="jszip.min.js"></script>
 <!-- 采购合同模板(内嵌 base64，由 采购模板(1).xlsx 清洗归一生成)；exceljs 懒加载用于「模板盖章」导出 -->
 <script src="tpl_purchase.js"></script>
+<!-- HS 出口退税率表（REBATE_RATES：10位海关编码→退税率；仅「退税测算」面板读取，不参与任何单证输出。不存在则面板全部标黄提醒，不报错） -->
+<script src="rebate_rates.js?v=20260917_1700"></script>
 <script>
 function ensureExcelJS(cb){ if(window.ExcelJS){cb();return;} var s=document.createElement('script'); s.src='exceljs.min.js'; s.onload=function(){cb();}; s.onerror=function(){alert('Excel 模板引擎加载失败，请刷新重试');}; document.head.appendChild(s); }
 function purchaseTplArrayBuffer(){ try{ var b=window.__PURCHASE_TPL_B64__; if(!b) return null; var bin=atob(b),ab=new ArrayBuffer(bin.length),u8=new Uint8Array(ab); for(var i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i); return ab; }catch(e){ return null; } }
@@ -421,6 +437,72 @@ const MODES=[
  {id:'M6',lb:'HS+品名+材质',keys:['hs','nm','mat']}
 ];
 function mergedHsLib(){return Object.assign({},HS_LIB,DB.hsLibOverride||{});}
+
+/* ===================== 出口退税测算（只读辅助，不参与任何单证输出） =====================
+   判定模型：最终退税率 = min( ①HS编码退税率(法定上限) , ②供应商主体性质(下限) )
+     ① 一般纳税人 → 不设限，编码说了算
+     ② 小规模纳税人 → min(编码率, 票面征收率 1%/3%)
+   计算口径（用户 2026-09-17 拍板）：可退税额 = 不含税采购价 × 实际退税率
+   本模块只做「读 + 算 + 展示」，不改 buildData / 不改任何导出层 / 不写任何单证。 */
+/* 合并退税率表：内置文件 rebate_rates.js（window.REBATE_RATES） + 用户覆盖层 DB.rebateOverride
+   文件不存在/加载失败 → 返回空表，全部标黄提醒，不抛错。 */
+function rebateLib(){
+  const def=(typeof window!=='undefined'&&window.REBATE_RATES)||{};
+  return Object.assign({},def,DB.rebateOverride||{});
+}
+/* 供应商主体性质：缺省=一般纳税人（老数据零迁移，行为与改造前一致）
+   返回值 {vt:'gen'|'small', rate:13|3|1} */
+function vatOf(supName){
+  const p=(DB.tier1Profiles&&DB.tier1Profiles[supName||''])||{};
+  const vt=(p.vatType==='small')?'small':'gen';
+  let rate=(+p.vatRate)>0?(+p.vatRate):(vt==='small'?3:13);
+  if(vt==='gen') rate=13;
+  return {vt:vt,rate:rate,label:vt==='small'?('小规模·'+rate+'%'):'一般纳税人'};
+}
+/* 编码 → 退税率：精确10位 → 8位前缀 → 6位前缀 → 未收录(null)
+   返回 {rate, hit:'10'|'8'|'6'|null, desc} */
+function hsRebateRate(hs){
+  const lib=rebateLib();
+  const k=String(hs||'').replace(/\D/g,'');
+  if(!k) return {rate:null,hit:null,desc:''};
+  if(lib[k]) return {rate:+lib[k].rate,hit:'10',desc:lib[k].desc||''};
+  const p8=k.slice(0,8), p6=k.slice(0,6);
+  const hitPrefix=(pre)=>{
+    for(const kk in lib){ if(kk.slice(0,pre.length)===pre) return {rate:+lib[kk].rate,hit:String(pre.length),desc:lib[kk].desc||''}; }
+    return null;
+  };
+  if(p8.length===8){const h8=hitPrefix(p8); if(h8) return h8;}
+  if(p6.length===6){const h6=hitPrefix(p6); if(h6) return h6;}
+  return {rate:null,hit:null,desc:''};
+}
+/* 单行测算：编码率 × 供应商身份 → 实际率 → 可退税额（不含税采购价 × 实际率） */
+function lineRebate(l){
+  const hsRes=hsRebateRate(l.hs);
+  const v=vatOf(consolidatedSupplier(l.supplier||''));
+  const base=+(l.cost||0);                       /* 不含税采购价（票面金额口径） */
+  let eff=null, warn='';
+  if(hsRes.rate==null){ warn='编码未收录退税率'; }
+  else if(v.vt==='small'){ eff=Math.min(hsRes.rate,v.rate); if(eff<hsRes.rate) warn='小规模，按'+eff+'%孰低'; }
+  else { eff=hsRes.rate; }
+  const amt=(eff==null)?null:decRound(base*eff/100,2);
+  return {hs:String(l.hs||''),hsRate:hsRes.rate,hit:hsRes.hit,desc:hsRes.desc,
+          base:base,vt:v.vt,vtLabel:v.label,eff:eff,amt:amt,warn:warn,
+          sup:consolidatedSupplier(l.supplier||'')};
+}
+/* 整票测算：返回 {rows, total, mixed, unlisted, rateSet}
+   mixed = 存在「同一 HS 码既有一般纳税人又有小规模」→ 需分两票申报（二期做一键拆分） */
+function rebateCalc(dt){
+  const rows=(dt&&dt.lines?dt.lines:[]).map(lineRebate).filter(r=>r.base>0||r.hs);
+  const total=decRound(rows.reduce((a,r)=>a+(r.amt||0),0),2);
+  const byHs={};
+  rows.forEach(r=>{ (byHs[r.hs]=byHs[r.hs]||[]).push(r.vt); });
+  const mixedHs=Object.keys(byHs).filter(h=>byHs[h].indexOf('gen')>=0&&byHs[h].indexOf('small')>=0);
+  const unlisted=rows.filter(r=>r.hsRate==null);
+  const rateSet=[...new Set(rows.filter(r=>r.eff!=null).map(r=>r.eff))].sort((a,b)=>b-a);
+  return {rows:rows,total:total,mixedHs:mixedHs,unlisted:unlisted,rateSet:rateSet,
+          smallCnt:rows.filter(r=>r.vt==='small').length};
+}
+
 /* 规格型号 = 品牌类型 | 出口享惠<X> | <要素序列按 HS_LIB.seq 拼装，缺码显示待填> */
 /* 取归并/型号用的真款式(SPU/SKC)：① 商品库有独立款式编码列(style≠sku)优先；
    ② 否则从SKU去掉末尾尺码/色码推导真SPU（JH30314-1→JH30314），用户 2026-08-18 确认的路径② */
@@ -616,7 +698,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.parties.profiles)d.parties.profiles={};if(!d.tier1Profiles)d.tier1Profiles={};if(!d.docCenter)d.docCenter=[];if(!d.docSnaps)d.docSnaps={};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.parties.codes)d.parties.codes={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.parties.profiles)d.parties.profiles={};if(!d.tier1Profiles)d.tier1Profiles={};if(!d.docCenter)d.docCenter=[];if(!d.docSnaps)d.docSnaps={};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.parties.codes)d.parties.codes={};if(!d.rebateOverride)d.rebateOverride={};if(!d.hsLibOverride)d.hsLibOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -1587,6 +1669,106 @@ function saveHsSeq(hs){const v=document.getElementById('hs_'+hs).value.trim();
   save();alert('已保存 '+hs+' 要素序列：'+(seq.join(',')||'(清空)'));}
 function closeHsLib(){document.getElementById('hsLibModal').classList.remove('open');}
 
+/* ============== 退税测算面板（只读辅助 · 阶段4输出区入口） ==============
+   铁律：本模块只「读 + 算 + 展示」，不写任何单证、不改 buildData/金额链路/导出层。
+   口径（用户 2026-09-17 拍板）：可退税额 = 不含税采购价 × 实际退税率
+       实际退税率 = 一般纳税人→编码率；小规模→min(编码率, 票面征收率) */
+let _rebateDocI=null;
+function openRebate(docI){
+  const i=(docI==null)?DB.sel.doc:docI;
+  const doc=DB.docs[i];
+  if(!doc){alert('暂无可测算的草单：请先在阶段3确认草单');return;}
+  _rebateDocI=i;
+  const R=rebateCalc(buildData(doc));
+  const meta=(typeof window!=='undefined'&&window.REBATE_META)||{};
+  const pct=v=>(v==null?'—':(v+'%'));
+  const warnBox=msg=>'<div style="background:rgba(210,153,34,.12);border:1px solid var(--warn);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12px;color:var(--warn)">'+msg+'</div>';
+  let h='';
+  h+='<div class="muted" style="font-size:12px;margin-bottom:10px">草单 '+esc(doc.dftId||'')+' · 共 '+R.rows.length+' 行 · 供应商身份缺省=一般纳税人（未维护即按 13% 全退，与改造前一致）。</div>';
+  if(R.mixedHs.length) h+=warnBox('⚠ 本票存在<b>同一商品编码混合纳税人身份</b>：'+esc(R.mixedHs.join('、'))+' → 建议分两票申报（划分不清将从低适用）。');
+  if(R.unlisted.length) h+=warnBox('⚠ 以下编码未收录退税率，需人工核对：'+esc([...new Set(R.unlisted.map(r=>r.hs||'(空)'))].join('、'))+'（可用下方「退税率配置(HS)」补录）');
+  h+='<table style="min-width:0"><thead><tr><th style="width:26%">商品 / 海关编码</th><th style="width:24%">供应商 · 身份</th>'
+    +'<th style="text-align:right;width:14%">不含税采购价</th><th style="text-align:right;width:10%">编码率</th>'
+    +'<th style="text-align:right;width:12%">实际退税率</th><th style="text-align:right;width:14%">可退税额</th></tr></thead><tbody>';
+  R.rows.forEach(r=>{
+    const note=r.warn?'<div class="muted" style="font-size:10px;color:var(--warn);margin-top:2px">'+esc(r.warn)+'</div>':'';
+    h+='<tr>'
+      +'<td>'+esc(r.desc||'(未命名)')+'<div class="muted" style="font-family:monospace;font-size:11px">'+esc(r.hs||'(无编码)')+(r.hit?(' · 命中'+r.hit+'位'):'')+'</div></td>'
+      +'<td>'+esc(r.sup||'—')+'<div style="margin-top:3px"><span class="badge '+(r.vt==='small'?'warn':'ok')+'">'+esc(r.vtLabel)+'</span></div></td>'
+      +'<td style="text-align:right;font-family:monospace">'+r.base.toFixed(2)+'</td>'
+      +'<td style="text-align:right">'+pct(r.hsRate)+'</td>'
+      +'<td style="text-align:right"><b>'+pct(r.eff)+'</b>'+note+'</td>'
+      +'<td style="text-align:right;font-family:monospace">'+(r.amt==null?'—':r.amt.toFixed(2))+'</td>'
+      +'</tr>';
+  });
+  h+='<tr><td colspan="5" style="text-align:right;font-weight:600">合计可退税额</td>'
+    +'<td style="text-align:right;font-family:monospace;font-weight:600">'+R.total.toFixed(2)+'</td></tr>';
+  h+='</tbody></table>';
+  h+='<div class="muted" style="font-size:11px;margin-top:10px;line-height:1.7">'
+    +'口径：可退税额 = 不含税采购价 × 实际退税率；实际退税率 = min(HS编码率, 供应商征收率)。<br>'
+    +'本面板为<b>测算辅助</b>，不参与任何单证输出；最终以进项专票票面税额及当期退税率文库为准。'
+    +(meta.updated?('<br>退税率表更新：'+esc(meta.updated)):'')
+    +'</div>';
+  document.getElementById('rebateBody').innerHTML=h;
+  document.getElementById('rebateModal').classList.add('open');
+}
+function closeRebate(){document.getElementById('rebateModal').classList.remove('open');}
+/* 退税率配置：编辑 DB.rebateOverride（覆盖层，随共享配置同步）；基础表在 rebate_rates.js */
+function openRebateCfg(){
+  const lib=rebateLib();
+  const used=[...new Set((DB.sku||[]).map(s=>String(s.hs||'').replace(/\D/g,'')).filter(Boolean))];
+  const keys=[...new Set(Object.keys(lib).concat(used))].sort();
+  let h='<table style="min-width:0"><thead><tr><th style="width:20%">海关编码</th><th style="width:38%">品类描述</th><th style="width:14%">退税率%</th><th style="width:28%">状态</th></tr></thead><tbody>';
+  keys.forEach(k=>{
+    const e=lib[k];
+    const inFile=!!((typeof window!=='undefined'&&window.REBATE_RATES)||{})[k];
+    const st=inFile?'<span class="badge ok">基础表</span>':(e?'<span class="badge warn">本地覆盖</span>':'<span class="badge bad">未收录(商品库在用)</span>');
+    const rateVal=(e&&e.rate!=null)?e.rate:'';
+    h+='<tr><td style="font-family:monospace">'+esc(k)+'</td>'
+      +'<td><input value="'+esc((e&&e.desc)||'')+'" placeholder="品类描述" onchange="saveRebateRate(\''+esc(k)+'\',null,this.value)"></td>'
+      +'<td><input type="number" min="0" max="17" step="1" value="'+esc(rateVal)+'" placeholder="如13" style="width:70px" onchange="saveRebateRate(\''+esc(k)+'\',this.value,null)"></td>'
+      +'<td>'+st+'</td></tr>';
+  });
+  h+='</tbody></table><div class="muted" style="font-size:11px;margin-top:8px">留空退税率 = 视为未收录（测算面板标黄提醒，不会按 0% 处理）。清空并保存可移除本地覆盖、回归基础表。</div>';
+  document.getElementById('rebateCfgBody').innerHTML=h;
+  document.getElementById('rebateCfgModal').classList.add('open');
+}
+function closeRebateCfg(){document.getElementById('rebateCfgModal').classList.remove('open');}
+function saveRebateRate(hs,rate,desc){
+  if(!DB.rebateOverride)DB.rebateOverride={};
+  const cur=DB.rebateOverride[hs]||{};
+  const fileDef=((typeof window!=='undefined'&&window.REBATE_RATES)||{})[hs]||{};
+  const next=Object.assign({},fileDef,cur);
+  if(rate!==null&&rate!==undefined){
+    const v=String(rate).trim();
+    if(v===''){ delete next.rate; } else { const n=+v; if(!(n>=0&&n<=17)){ alert('退税率应为 0–17 的数值'); return; } next.rate=n; }
+  }
+  if(desc!==null&&desc!==undefined) next.desc=String(desc);
+  if(next.rate==null&&!(next.desc||'').trim()){ delete DB.rebateOverride[hs]; }
+  else DB.rebateOverride[hs]=next;
+  save(); openRebateCfg();
+}
+/* 导出测算表(xlsx)：纯导出层，复用现有 xlsDownload/_dl，不触碰其它导出逻辑 */
+function exportRebate(){
+  const doc=DB.docs[_rebateDocI==null?DB.sel.doc:_rebateDocI];
+  if(!doc){alert('暂无可测算的草单');return;}
+  const R=rebateCalc(buildData(doc));
+  const aoa=[['出口退税测算表（辅助参考）'],['草单',String(doc.dftId||''),'','导出时间',today()],[],
+    ['商品描述','海关编码','命中位数','供应商','纳税人身份','不含税采购价','编码退税率%','实际退税率%','可退税额','备注']];
+  R.rows.forEach(r=>aoa.push([r.desc||'',r.hs,r.hit||'未收录',r.sup||'',r.vtLabel,r.base,
+    (r.hsRate==null?'':r.hsRate),(r.eff==null?'':r.eff),(r.amt==null?'':r.amt),r.warn||'']));
+  aoa.push(['','','','','合计','','','',R.total,'']);
+  aoa.push([]);aoa.push(['说明：可退税额 = 不含税采购价 × 实际退税率；实际退税率 = min(HS编码率, 供应商征收率)。']);
+  aoa.push(['本表为测算辅助，不参与任何单证输出；最终以进项专票票面税额及当期退税率文库为准。']);
+  try{
+    const wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb,ws,'退税测算');
+    xlsDownload('退税测算_'+String(doc.dftId||'doc'),wb);
+  }catch(e){ alert('测算表导出失败：'+e.message); console.error(e); }
+}
+
+
 /* ============== 监控体系 A/B ============== */
 function runMonitor(did){
   const d=DB.drafts.find(x=>x.id===did);const R=[];let block=0,warn=0;
@@ -2063,7 +2245,8 @@ function renderOut(){
   h+=`<p class="seq">日期前后逻辑：国内采购合同(${dt.dates.purchase}) &lt; 销售合同(${dt.dates.sales}) ≤ 发票/装箱单(${dt.dates.invoice}) &lt; 报关单申报(${dt.dates.customs})。</p>`;
   h+=`<div class="row" style="margin-top:10px"><button class="primary" onclick="downloadAll()">下载当前整套(单据)</button>
       <button class="primary xbtn" onclick="downloadAllXlsx()">下载当前整套EXCEL(工作簿)</button>
-      <button class="ghost" onclick="printAll()">打印当前整套</button></div>`;
+      <button class="ghost" onclick="printAll()">打印当前整套</button>
+      <button class="ghost" onclick="openRebate(${docI})" title="只读测算面板：按海关编码×供应商身份算应退税额，不影响任何单证">退税测算</button></div>`;
 
   document.getElementById('outArea').innerHTML=h;
   updRail();
@@ -3345,6 +3528,8 @@ function setPartyProfile(name,f,v){if(!DB.parties.profiles)DB.parties.profiles={
 /* 一级供应商档案：一级供应商 → {addr,contact,email,tel}(采购合同乙方信息) */
 function tier1Profile(name){return (DB.tier1Profiles&&DB.tier1Profiles[name])||{};}
 function setTier1Profile(name,f,v){if(!DB.tier1Profiles)DB.tier1Profiles={};if(!DB.tier1Profiles[name])DB.tier1Profiles[name]={};DB.tier1Profiles[name][f]=v;save();}
+/* 退税用·供应商纳税人身份（缺省=一般纳税人 → 老数据不填即维持改造前行为）。切换后重渲染以联动征收率输入框的启用态 */
+function setVatType(name,v){setTier1Profile(name,'vatType',(v==='small'?'small':'gen'));renderSetBody();}
 /* 供应商归集：二级工厂 → 一级签约主体(留空=不归集，自为一级) */
 function setSupplierMap(sec,prim){if(!DB.supplierMap)DB.supplierMap={};const v=(prim||'').trim();if(v)DB.supplierMap[sec]=v;else delete DB.supplierMap[sec];save();renderSetBody();}
 /* 一级供应商列表维护 */
@@ -3374,7 +3559,7 @@ function buildSharedConfig(){
     parties:{shippers:DB.parties.shippers,consignees:DB.parties.consignees,currencyList:DB.parties.currencyList,codes:DB.parties.codes||{},profiles:DB.parties.profiles||{}},
     buyerParties:DB.buyerParties||[],supplierMap:DB.supplierMap||{},tier1Suppliers:DB.tier1Suppliers||{},tier1Profiles:DB.tier1Profiles||{},extraSup2:DB.extraSup2||[],
     hiddenParties:DB.hiddenParties||[],hiddenSup2:DB.hiddenSup2||[],prefOverride:DB.prefOverride||{},prefHidden:DB.prefHidden||[],
-    brandTypeMap:DB.brandTypeMap||{},price:DB.price||{},hsLibOverride:DB.hsLibOverride||{},
+    brandTypeMap:DB.brandTypeMap||{},price:DB.price||{},hsLibOverride:DB.hsLibOverride||{},rebateOverride:DB.rebateOverride||{},
     templates:DB.templates||{},skuOverride:DB.skuOverride||{},bankInfo:DB.bankInfo||{},bankAccounts:DB.bankAccounts||[]};
 }
 /* 导出共享配置(软件级全员共享那份)：维护人导出后交 WorkBuddy 推 GitHub config.json，其他人打开自动拉取 */
@@ -3531,8 +3716,8 @@ function renderSetBody(){
     h=`<div class="erp">
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">一级供应商(签约主体)</p><span class="cnt">${t1.length} 个</span></div>
-        <table><tr><th style="width:16%">名称(采购合同抬头)</th><th style="width:24%">地址(乙方)</th><th style="width:11%">联系人</th><th style="width:15%">邮箱</th><th style="width:9%">货源地代码</th><th style="width:13%">货源地名称</th><th style="width:12%">操作</th></tr><tbody>
-          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
+        <table><tr><th style="width:14%">名称(采购合同抬头)</th><th style="width:17%">地址(乙方)</th><th style="width:9%">联系人</th><th style="width:11%">邮箱</th><th style="width:8%">货源地代码</th><th style="width:10%">货源地名称</th><th style="width:12%">纳税人性质</th><th style="width:8%">征收率</th><th style="width:11%">操作</th></tr><tbody>
+          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><select onchange="setVatType('${escQ(s)}',this.value)" title="退税测算用：缺省一般纳税人(不设限)"><option value="gen"${p.vatType==='small'?'':' selected'}>一般纳税人</option><option value="small"${p.vatType==='small'?' selected':''}>小规模纳税人</option></select></td><td><input type="number" min="0" max="17" step="1" value="${(p.vatType==='small'&&p.vatRate!==undefined&&p.vatRate!=='')?esc(p.vatRate):(p.vatType==='small'?'3':'13')}"${p.vatType==='small'?'':' disabled'} style="width:56px" title="小规模纳税人票面征收率(1/3)" onchange="setTier1Profile('${escQ(s)}','vatRate',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newTier1" placeholder="+ 新一级供应商(签约主体)"><button class="btn add" onclick="addTier1()">添加</button></div>
       </div>
@@ -3730,6 +3915,7 @@ function mergeSharedCfg(cfg){
   if(cfg.brandTypeMap)DB.brandTypeMap=Object.assign({},cfg.brandTypeMap,DB.brandTypeMap);
   if(cfg.price)DB.price=Object.assign({},DB.price,cfg.price);
   if(cfg.hsLibOverride)DB.hsLibOverride=Object.assign({},cfg.hsLibOverride,DB.hsLibOverride);
+  if(cfg.rebateOverride)DB.rebateOverride=Object.assign({},cfg.rebateOverride,DB.rebateOverride);
   /* 模板(软件级共享) + 商品库覆盖层 */
   if(cfg.templates){const _m=Object.assign({},DB.templates);for(const _k in cfg.templates){if(cfg.templates[_k]!=null)_m[_k]=cfg.templates[_k];}DB.templates=_m;}
   if(cfg.skuOverride)DB.skuOverride=Object.assign({},cfg.skuOverride,DB.skuOverride);
