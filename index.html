@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.6 · 2026-09-17 17:28</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.7 · 2026-09-17 17:52</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -1772,7 +1772,9 @@ function exportRebate(){
 /* ============== 监控体系 A/B ============== */
 function runMonitor(did){
   const d=DB.drafts.find(x=>x.id===did);const R=[];let block=0,warn=0;
-  const add=(cat,id,desc,sev,ok,msg)=>{R.push({cat,id,desc,sev,ok,msg});if(!ok){sev==='BLOCK'?block++:warn++;}};
+  /* add(...,msg,always)：第 7 参数 always=true 时，即使检查通过也显示 msg（用于把算出来的金额亮出来）。
+     不传 always 的条目渲染行为与改造前完全一致（含 localStorage 里存量的旧 monitor 数据）。 */
+  const add=(cat,id,desc,sev,ok,msg,always)=>{R.push({cat,id,desc,sev,ok,msg,always:!!always});if(!ok){sev==='BLOCK'?block++:warn++;}};
   const H=d.header, L=d.lines;
   // A 报关单填制规范
   const a1=H.shipper&&H.consignee&&H.tradeMode&&H.transMode&&H.tradeTerm&&H.levy&&H.currency&&H.port&&H.destCountry;
@@ -1809,7 +1811,7 @@ function runMonitor(did){
   const _rateTxt=_rb.rateSet.length?_rb.rateSet.map(r=>r+'%').join(' / '):'—';
   add('B','B1','采购进项发票与报关单品名/数量一致(票流一致)','WARN',false,'待上传进项发票核对票流（外部凭证）');
   add('B','B2','应退税额=Σ不含税采购价×实际退税率 计算正确',_unHs.length?'WARN':(_rb.total>0?'OK':'WARN'),_unHs.length?false:_rb.total>0,
-    '应退 ¥'+_rb.total.toFixed(2)+(_unHs.length?('（'+_unHs.length+' 个编码未收录退税率，该部分未计入）'):'（逐行算：不含税采购价×实际退税率）'));
+    '应退 ¥'+_rb.total.toFixed(2)+(_unHs.length?('（'+_unHs.length+' 个编码未收录退税率，该部分未计入）'):'（逐行算：不含税采购价×实际退税率）'),true);
   const badsup=L.some(l=>l.supplier.includes('不退税'));
   add('B','B3','供货企业具退税资格',badsup?'WARN':'OK',!badsup,badsup?'存在标记「不退税」的供应商':'全部具退税资格');
   /* B10 货源地一致性：每项号货源地须从供应商档案带出(退税归属=进项发票地区)；未维护则 WARN */
@@ -1832,7 +1834,7 @@ function renderMonitor(m){
   h+=m.block?`<span class="badge bad">${m.block} 阻断</span>`:`<span class="badge ok">无阻断</span>`;
   h+=` <span class="badge warn">${m.warn} 提示</span> <span class="muted">（阻断=BLOCK不可锁定；提示=WARN标红可继续）</span></div>`;
   m.list.forEach(r=>{const cls=r.ok?'ok':(r.sev==='BLOCK'?'bad':'warn');const ic=r.ok?'✓':(r.sev==='BLOCK'?'✕':'!');
-    h+=`<div class="mline"><span class="ic badge ${cls}">${ic}</span><span><b>[${r.cat}${r.id}]</b> ${r.desc}${r.ok?'':' — '+r.msg}</span></div>`;});
+    h+=`<div class="mline"><span class="ic badge ${cls}">${ic}</span><span><b>[${r.cat}${r.id}]</b> ${r.desc}${(r.ok&&!r.always)?'':' — '+r.msg}</span></div>`;});
   h+='</div>';return h;
 }
 
