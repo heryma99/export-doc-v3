@@ -1,13 +1,13 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-09-03T03:23:40.977Z",
+  "_at": "2026-09-17T09:37:49.331Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
     ],
     "consignees": [
       "Leading Trade One Limited",
-      "JW PEI AP LIMITED"
+      "Soyama limited"
     ],
     "currencyList": [
       "USD 美元",
@@ -30,6 +30,12 @@
         "addr": "FLAT/RM 1911 LEE GARDEN ONE 33 HYSAN AVENUE CAUSEWAY BAY，HONGKONG",
         "contact": "馬金火",
         "email": "majinhuo@leading-trade.com"
+      },
+      "JW PEI AP LIMITED": {
+        "addr": "UNIT 1102, 11/F, 29 AUSTIN ROAD, TSIM SHA TSUI, KOWLOON, HONG KONG"
+      },
+      "Soyama limited": {
+        "addr": "UNIT 1102, 11/F, 29 AUSTIN ROAD, TSIM SHA TSUI, KOWLOON, HONG KONG"
       }
     }
   },
@@ -72,6 +78,7 @@
     "exch": 6.8
   },
   "hsLibOverride": {},
+  "rebateOverride": {},
   "templates": {
     "报关草单": null,
     "Invoice发票": null,
