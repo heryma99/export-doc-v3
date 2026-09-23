@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.12 · 2026-09-23 16:17</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.13 · 2026-09-23 17:49</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -649,36 +649,6 @@ function adjustResidual(rows,target,key){
   idx.sort(function(a,b){ return (need>0) ? (b.frac - a.frac) : (a.frac - b.frac); });
   const sign = need>0 ? 1 : -1;
   for(let k=0;k<Math.abs(need);k++){ const i=idx[k].i; rows[i][key]=Math.round((+(rows[i][key]||0)+sign*0.01)*100)/100; }
-}
-/* 横向混箱箱视图（v2.12 自 mergeLines 移入，逻辑原样保留）：按物理箱(boxSeq)分组，一行一箱。
-   仅 PACKING LIST 渲染使用（renderPLHtml / xlsTable 装箱清单分支）；无 boxSeq 返回 null（用归并行）。 */
-function boxView(lines){
-  lines=dedupeBoxWeight(lines||[]);
-  const hasBoxSeq=lines.some(function(l){ return Array.isArray(l.boxSeq)&&l.boxSeq.length; });
-  if(!hasBoxSeq) return null;
-  const byBox=Object.create(null);
-  lines.forEach(function(l){
-    const seqs=(l.boxSeq&&l.boxSeq.length)?l.boxSeq:[0];
-    seqs.forEach(function(s){ (byBox[s]=byBox[s]||[]).push(l); });
-  });
-  return Object.keys(byBox).map(Number).sort(function(a,b){return a-b;}).map(function(s){
-    const g=byBox[s], rep=Object.assign({},g[0]);
-    rep.boxNo=String(s); rep.boxCnt=1; rep.boxSeq=[+s];
-    const _skus=[...new Set(g.map(function(x){return x.sku;}))].filter(Boolean);
-    /* 品名/型号为空(如 FBA 横向表无品名列)时，回退用 SKU 代码，避免 PL 两列空白 */
-    rep.name=[...new Set(g.map(function(x){return x.name;}))].filter(Boolean).join(' / ')||_skus.join(' / ');
-    rep.model=[...new Set(g.map(function(x){return x.model;}))].filter(Boolean).join(' / ')||_skus.join(' / ');
-    rep.sku=_skus.join(',');
-    rep.qty=g.reduce(function(a,x){return a+(+x.qty||0);},0);
-    /* 加权平均单价（按数量加权）：Σ(各款申报价×数量)/Σ数量；混箱一箱多SKU 也按数量加权，保证单证一致 */
-    (function(){var _q=g.reduce(function(a,x){return a+(+x.qty||0);},0);if(_q>0){var _d=g.reduce(function(a,x){return a+(+x.decl||0)*(+x.qty||0);},0);var _c=g.reduce(function(a,x){return a+(+x.cost||+x.noTax||0)*(+x.qty||0);},0);rep.decl=Math.round(_d/_q*1e6)/1e6;rep.cost=Math.round(_c/_q*1e6)/1e6;rep.noTax=rep.cost;}})();
-    /* 重量：直接取该物理箱(s)整重 = 组内任一行 boxSeqW 中序号 s 对应值（同箱多SKU不重复计） */
-    let bw=0;
-    for(const x of g){ const w=x.boxSeqW||[], i=(x.boxSeq||[]).indexOf(+s); if(i>=0 && +w[i]>0){ bw=+w[i]; break; } }
-    rep.gw=bw; rep.nw=Math.max(0, Math.round((bw-1.3)*1000)/1000);
-    rep.boxSeqW=[bw];   /* 同步整箱重，供 packSummary(hasMixed) 求报关总重不丢 */
-    return rep;
-  });
 }
 function mergeLines(lines,mode,sup){
   /* 重量口径修正（核心修复）：每行携带"整箱重"，同箱多行会重复。先按"整箱重 × 该行数量/箱内件数"分摊到每行，
@@ -1975,8 +1945,8 @@ function buildData(doc){
       declCur:decRound(decl2cur(l.decl),4).toFixed(4),
       amountCur:decRound(decl2cur(_amt),2).toFixed(2),
       boxCnt:(+l.boxCnt||0),
-      /* Model 列：按款合并时显示该款下全部 SKU(_keys)，与报关草单一致；否则取款号/单SKU */
-      model:l.model||(l._keys&&l._keys.length?l._keys.join(','):(l.style||l.sku))};});
+      /* Model 列：归并行显示该款全部 SKU(_keys)；M0 一行一款取 sku（含尺码；style 为 SPU 级无尺码，用户 09-23 确认须显示全）；显式 model 最优先 */
+      model:l.model||(l._keys&&l._keys.length?l._keys.join(','):((d.mergeMode==='M0')?(l.sku||l.style):(l.style||l.sku)))};});
   const base=d.header.declDate||today();
   /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
   const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=decRound((+l.cost||0)*1.13,4);return {...l,taxPrice:tp.toFixed(4),taxAmount:decRound(tp*(+l.qty||0),2).toFixed(2)};});
@@ -1985,7 +1955,6 @@ function buildData(doc){
     return {supplier:s,items,_no:((d.header&&d.header.no)||'')+'-'+(ci+1),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
       purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
-    rawLines:d.rawLines||[],
     cur:_curSym,curCode:_curCode,currencyRaw:_ccur,exch:_exch,
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
@@ -2389,19 +2358,19 @@ function plView(lines){
 function renderPLHtml(data){
   /* PL 箱数三场景：Ge.Crate 列按 plCrateModel 渲染（场景①逐行箱数 / ②同箱号集合行合并填1 / ③整列合并填总物理箱数）。
      毛净重按 mergeLines 分摊后的值，逐行求和经 adjustResidual 对齐权威合计；Total 行件数=physicalBoxCount(物理箱去重)。 */
-  /* 横向混箱(boxSeq)：PL 一行一箱 —— 从原始行(rawLines)按物理箱重组(v2.12)；无混箱时用归并行，行为不变 */
-  let _plSrc=data.lines||[];
-  if(Array.isArray(data.rawLines)&&data.rawLines.some(function(l){return Array.isArray(l.boxSeq)&&l.boxSeq.length;})) _plSrc=boxView(data.rawLines)||_plSrc;
-  const lines=_plSrc.map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:+l.gw||0,nw:+l.nw||0};});
+  /* v2.13 用户规则：PL 按款行渲染（M0-M6 归并行），Description/Model/qty/GW/NW 一款一行不合并；
+     仅 Ge.Crate 列由 plCrateModel 三场景处理（同箱多款 → 场景②竖排合并填 1；跨项混箱 → 场景③整列合并）。
+     v2.12 的 boxView 拼接行撤销（description/model 被拼接不符合用户预期）。 */
+  const lines=(data.lines||[]).map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:+l.gw||0,nw:+l.nw||0};});
   const n=lines.length;
-  const boxCount=physicalBoxCount(_plSrc);
+  const boxCount=physicalBoxCount(data.lines||[]);
   const totalQty=lines.reduce((a,l)=>a+l.qty,0);
   const _tg=parseFloat(data.totalGW)||0, _tn=parseFloat(data.totalNW)||0;
   adjustResidual(lines,_tg,'gw'); adjustResidual(lines,_tn,'nw');
   const totalGW=Math.round(lines.reduce((a,l)=>a+l.gw,0)*100)/100;
   const totalNW=Math.round(lines.reduce((a,l)=>a+l.nw,0)*100)/100;
   const esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
-  const cm=plCrateModel(_plSrc);
+  const cm=plCrateModel(data.lines||[]);
   let rows='';
   lines.forEach(function(l,i){
     const c=cm.rows[i];
@@ -2873,11 +2842,9 @@ function xlsTable(type,d){
     /* R6 列头 */
     addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
     /* R7- 数据：直接渲染合并后的行(与归并模式一致)；Ge.Crate 列(索引3)合并成一个单元格=物理箱数(场景2B)，毛净重按 mergeLines 分摊后的值 */
-    /* 横向混箱(boxSeq)：PL 一行一箱 —— 从原始行(rawLines)按物理箱重组(v2.12)；无混箱时用归并行，行为不变 */
-    let _plSrc=d.lines||[];
-    if(Array.isArray(d.rawLines)&&d.rawLines.some(function(l){return Array.isArray(l.boxSeq)&&l.boxSeq.length;})) _plSrc=boxView(d.rawLines)||_plSrc;
-    const _lines=_plSrc.map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:+l.gw||0,nw:+l.nw||0};});
-    const _bc=physicalBoxCount(_plSrc);
+    /* v2.13 用户规则：PL 按款行渲染，仅 Ge.Crate 列由 plCrateModel 三场景合并（同箱多款→竖排合并填1）。v2.12 boxView 撤销 */
+    const _lines=(d.lines||[]).map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:+l.gw||0,nw:+l.nw||0};});
+    const _bc=physicalBoxCount(d.lines||[]);
     const ds=r;
     const _totalQty=_lines.reduce((a,l)=>a+l.qty,0);
     /* 权威总重（与报关草单一致）：d.totalGW/NW 已按物理箱去重；逐行分摊值与合计的差额补到最大行 */
@@ -2885,7 +2852,7 @@ function xlsTable(type,d){
     adjustResidual(_lines,_tg,'gw'); adjustResidual(_lines,_tn,'nw');
     const _totalGW=_tg, _totalNW=_tn;
     /* PL 箱数三场景：Ge.Crate 列(索引3)按 plCrateModel 渲染；场景③整列合并填总箱数，场景②同箱号集合行竖排合并填1，场景①逐行箱数 */
-    const _cm=plCrateModel(_plSrc);
+    const _cm=plCrateModel(d.lines||[]);
     if(_cm.mode===3){
       _lines.forEach(function(l,i){ addRow2([i===0?'N/M':'',l.name,l.model,(i===0?_bc:''),l.qty,'个',l.gw.toFixed(2),l.nw.toFixed(2)]); r++; });
       if(r>ds) addVMerge(MG,3,ds,r-1);
