@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.14 · 2026-09-23 18:10</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.15 · 2026-09-23 18:32</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -3495,14 +3495,17 @@ function plCrateModel(lines){
   if(mixed) return mixedRes(L);
   const groupOf=new Array(n).fill(-1);
   const crate=new Array(n).fill(0);
+  /* Ge.Crate 取值 v2.15：物理箱数优先（箱号去重逐个解析，与 Total 行件数同口径）——
+     M5 归并行的 boxCnt 是组内求和，「同箱多款」会被加成虚增值(如 1+1=2)，故 boxCnt 降为解析不出时的回退 */
+  const physOf=function(set){ let s=0; set.forEach(function(b){ s+=parseBoxNoCount(b); }); return s; };
   let gid=0;
   for(let i=0;i<n;i++){
     if(groupOf[i]!==-1) continue;
     const k=keyOf(i);
     const members=[i];
     for(let j=i+1;j<n;j++){ if(groupOf[j]===-1 && keyOf(j)===k) members.push(j); }
-    if(members.length>1){ const id=gid++; members.forEach(function(x){ groupOf[x]=id; crate[x]=(+(L[x].boxCnt)||B[x].size); }); }  // 同集合组：填真实箱数(优先 mergeLines 已求和的 boxCnt，按用户规则：合并行=组内箱数求和)
-    else { crate[i]=(+(L[i].boxCnt)||B[i].size); }                                                                                // 未合并行=该行 boxCnt(每行已写好)，无 boxCnt 回退箱号段数
+    if(members.length>1){ const id=gid++; members.forEach(function(x){ groupOf[x]=id; crate[x]=physOf(B[x])||(+(L[x].boxCnt)||B[x].size); }); }  // 同集合组：填物理箱数（同箱多款 boxCnt 求和会虚增）
+    else { crate[i]=physOf(B[i])||(+(L[i].boxCnt)||B[i].size); }                                                                                  // 未合并行同口径：物理箱数优先
   }
   const rows=[]; let i=0;
   while(i<n){
