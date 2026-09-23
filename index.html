@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.7 · 2026-09-17 17:52</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.9 · 2026-09-23 12:00</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -438,6 +438,39 @@ const MODES=[
 ];
 function mergedHsLib(){return Object.assign({},HS_LIB,DB.hsLibOverride||{});}
 
+/* ===== 申报要素查表：精确 10 位 → 8 位 → 6 位前缀回退（与退税率表同口径） =====
+   返回 {entry,by,from}；by='prefix' 表示复用了同子目其它编码的要素序列，界面会标出，不偷偷用。
+   注：不改 mergedHsLib 本身 —— HS 要素库维护弹窗需如实列出「真正未配」的码，否则补录入口会被前缀掩盖。 */
+function hsEntryOf(hs){
+  const lib=mergedHsLib(), k=String(hs==null?'':hs).replace(/\D/g,'');
+  if(!k) return {entry:null,by:null,from:''};
+  if(lib[k]) return {entry:lib[k],by:'exact',from:k};
+  for(const n of [8,6]){ const p=k.slice(0,n);
+    for(const kk in lib){ if(kk.length>=n && kk.slice(0,n)===p) return {entry:lib[kk],by:'prefix',from:kk}; } }
+  return {entry:null,by:null,from:''};
+}
+/* 织造方法：海关编码本身定义 —— 61 章=针织/钩编，62 章=梭织（非推断） */
+function weaveOf(hs){ const k=String(hs==null?'':hs).replace(/\D/g,'').slice(0,2);
+  return k==='61'?'针织':(k==='62'?'梭织':''); }
+/* 性别：仅覆盖可确定的女装子目；男装/中性子目（6109/6110/6114/6117/6115/63章等）不猜 */
+const GENDER_SUB={6104:'女式',6106:'女式',6202:'女式',6204:'女式'};
+function genderOf(hs){ const k=String(hs==null?'':hs).replace(/\D/g,'').slice(0,4); return GENDER_SUB[k]||''; }
+/* 要素取值表（与 buildSpec/mergeLines 原 map 完全一致，仅加 weave/gender 回退） */
+function specMap(l){ return {nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),
+  weave:l.weave||weaveOf(l.hs),gender:l.gender||genderOf(l.hs),kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use}; }
+/* 规格型号明细：text=报关串（空要素仍过滤，报关格式不能塞占位符）；
+   miss=取不到值的要素中文名（界面据此红标，让缺失可见，不再静默） */
+function specDetail(l){
+  const r=hsEntryOf(l.hs);
+  if(!r.entry) return {text:'⚠ 要素序列待填('+(l.hs||'?')+')',miss:null,unmatched:true,by:null,from:''};
+  const map=specMap(l), miss=[];
+  const seqStr=r.entry.seq.map(k=>{ const v=map[k];
+      if(v==null||String(v).trim()===''){ miss.push(SEQ_CN[k]||k); return null; } return v; })
+    .filter(v=>v!=null).join(';');
+  return {text:[resolveBrandType(l),l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | '),
+    miss:miss.length?miss:null,unmatched:false,by:r.by,from:r.from};
+}
+
 /* ===================== 出口退税测算（只读辅助，不参与任何单证输出） =====================
    判定模型：最终退税率 = min( ①HS编码退税率(法定上限) , ②供应商主体性质(下限) )
      ① 一般纳税人 → 不设限，编码说了算
@@ -520,15 +553,7 @@ function resolveBrandType(l){
   if(l&&l.brand&&m&&m[l.brand])return String(m[l.brand]).trim();
   return '';
 }
-function buildSpec(l){
-  const lib=mergedHsLib();
-  const entry=lib[(l.hs||'').trim()];
-  if(!entry) return '⚠ 要素序列待填('+(l.hs||'?')+')';
-  const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),
-    weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
-  const seqStr=entry.seq.map(k=>map[k]).filter(v=>v!=null&&String(v).trim()!=='').join(';');
-  return [resolveBrandType(l),l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | ');
-}
+function buildSpec(l){ return specDetail(l).text; }
 /* 归并：按模式 keys 构建归并键；供应商开关在键尾追加 §SUP:<供应商>。同组合并，款号聚合。 */
 /* 供应商归集：二级工厂 → 一级签约主体；无映射则原样返回。 */
 function consolidatedSupplier(s){
@@ -1536,15 +1561,25 @@ function renderDrafts(){
   </div>`;
   let t='<table><thead><tr><th style="width:40px">项号</th><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>供应商</th><th>归类</th></tr></thead><tbody>';
   d.lines.forEach((l,i)=>{
-    const spec=buildSpec(l);
+    const _sd=specDetail(l);
+    const spec=_sd.text;
     const over=spec.length>250;
+    /* 缺失可见：未配序列/要素取不到值 → 红标；靠前缀复用他码序列 → 黄标（两者可同时出现，复用本身需核对） */
+    const specTag=(_sd.by==='prefix'
+        ? '<span class="badge warn" title="未精确命中，复用了同子目编码 '+esc(_sd.from)+' 的要素序列，请核对是否适用">复用'+esc(_sd.from)+'</span> '
+        : '')
+      +(_sd.unmatched
+        ? '<span class="badge bad" title="该海关编码未维护要素序列，请到设置→HS要素库维护补录">序列未配</span>'
+        : (_sd.miss
+          ? '<span class="badge bad" title="海关要求的要素在商品库取不到值，需在商品库或源表补齐">缺:'+esc(_sd.miss.join('、'))+'</span>'
+          : ''));
     const mergedTag=l._merged?' <span class="badge warn">归并'+l._cnt+'</span>':'';
     const gwVal=(+l.gw||0), nwVal=(+l.nw||0);
     t+=`<tr class="${l.matched?'':'sel'}">
       <td style="text-align:center;color:var(--mut)">${i+1}</td>
       <td>${l.sku}${mergedTag}</td><td>${l.name}</td>
       <td><input style="width:88px" value="${l.hs}" onchange="setLine('${d.id}',${i},'hs',this.value)"></td>
-      <td>${l.mat}</td><td style="font-size:11px;${over?'color:var(--bad);font-weight:600':''}">${spec}${over?' ⚠超250字':''}</td>
+      <td>${l.mat}</td><td style="font-size:11px;${over?'color:var(--bad);font-weight:600':''}">${spec}${over?' ⚠超250字':''}${specTag?' '+specTag:''}</td>
       <td>${l.decl}</td><td>${l.cost}</td><td>${l.qty}</td><td>${l.gw}/${l.nw}</td>
       <td>${l.box}</td><td>${l.supplier}</td>
       <td><button class="ghost" onclick="openCls('${d.id}',${i})">选HS</button></td></tr>`;});
@@ -1870,18 +1905,24 @@ function buildData(doc){
   const _foreign=!_isCNY;
   const _fx=_foreign?(_exch>0?_exch:1):1;
   const decl2cur=v=>(_foreign? (+v)/_fx : +v);
-  const lines=d.lines.map(l=>{const ent=(mergedHsLib())[(l.hs||'').trim()];
-    const map={nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),weave:l.weave,gender:l.gender,kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use};
+  const lines=d.lines.map(l=>{const ent=hsEntryOf(l.hs).entry;   /* 精确10位→8位→6位前缀回退(与退税率表同口径) */
+    const map=specMap(l);
     /* 申报要素=品牌类型|出口享惠(0)|<HS_LIB.seq 要素按品类管道拼装>
        包：nm;mat;brand;sku → 4|0|手提包|100%PU|JW PEI|1C56-2
        鞋：kind;upmat;solemat;brand;sku → 4|0|短筒靴|PU|TPR|JW PEI|X1
        服装：weave;nm;gender;mat;brand;sku → 4|0|针织;连衣裙;女;涤纶;JW PEI;X1
        手机壳：use;mat;brand;sku → 4|0|手机壳;TPU|JW PEI|X1
        去掉尾部空段；缺码则 ⚠要素序列待填(HS) */
-    const parts=[resolveBrandType(l),l.enjoys||'0'];
-    if(ent) ent.seq.forEach(k=>parts.push(map[k]));
-    while(parts.length&&(parts[parts.length-1]==null||String(parts[parts.length-1]).trim()===''))parts.pop();
-    const spec=parts.join('|')||('⚠ 要素序列待填('+(l.hs||'?')+')');
+    /* 显式判断有没有命中：未命中就真的写 ⚠。
+       原写法 parts.join('|')||('⚠…') 中 join 至少有 brandType+enjoys 两段、永不为空 → ⚠ 从不触发，未配码只写 4|0 */
+    let spec;
+    if(!ent) spec='⚠ 要素序列待填('+(l.hs||'?')+')';
+    else{
+      const parts=[resolveBrandType(l),l.enjoys||'0'];
+      ent.seq.forEach(k=>parts.push(map[k]));
+      while(parts.length&&(parts[parts.length-1]==null||String(parts[parts.length-1]).trim()===''))parts.pop();
+      spec=parts.join('|');
+    }
     const _amt=((+l.decl)*(+l.qty));
     return {...l,spec,en:l.en||'',unit:l.unit||'',
       /* 境内货源地/产地：导出层此前只在 safeRender 预览克隆里计算, buildData 返回行从未带 _origin → Excel N 列恒空(旧草单尤甚);
