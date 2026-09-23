@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.13 · 2026-09-23 17:49</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.14 · 2026-09-23 18:10</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -650,7 +650,25 @@ function adjustResidual(rows,target,key){
   const sign = need>0 ? 1 : -1;
   for(let k=0;k<Math.abs(need);k++){ const i=idx[k].i; rows[i][key]=Math.round((+(rows[i][key]||0)+sign*0.01)*100)/100; }
 }
+/* 箱号归一兜底(v2.14)：横向 FBA 行可能只有 boxSeq(物理箱序号)+boxSeqW(每箱重)而无箱号 ——
+   用 boxSeq 生成箱号([1]→'1'、[3,4]→'3;4')，并从 boxSeqW 求和兜底行级毛重(净重按每箱扣 1.3 皮重，与系统默认同口径；已有正值不覆盖)。
+   修复：M0 重量分摊与 plCrateModel 场景判定均依赖箱号，缺箱号 → GW/NW 全 0 + Ge.Crate 退化场景③整列合并。 */
+function normalizeBoxNo(lines){
+  (lines||[]).forEach(function(l){
+    if(String(l.boxNo||'').trim()) return;
+    if(!Array.isArray(l.boxSeq) || !l.boxSeq.length || !l.boxSeq.every(function(s){return +s>0;})) return;
+    l.boxNo = l.boxSeq.join(';');
+    var w = Array.isArray(l.boxSeqW) ? l.boxSeqW : [];
+    if(w.length !== l.boxSeq.length) return;
+    var sum = 0, has = false;
+    w.forEach(function(x){ if(+x>0){ sum += +x; has = true; } });
+    if(!has) return;
+    if(!(+l.gw>0)) l.gw = Math.round(sum*1000)/1000;
+    if(!(+l.nw>0)) l.nw = Math.max(0, Math.round((sum - 1.3*l.boxSeq.length)*1000)/1000);
+  });
+}
 function mergeLines(lines,mode,sup){
+  normalizeBoxNo(lines);   /* 箱号归一兜底(v2.14)：缺箱号时从 boxSeq/boxSeqW 生成，供重量分摊与 Ge.Crate 场景判定使用 */
   /* 重量口径修正（核心修复）：每行携带"整箱重"，同箱多行会重复。先按"整箱重 × 该行数量/箱内件数"分摊到每行，
      使同箱多行Σ=整箱重、合并组Σ=各箱整重之和——等价于"按 model 单件重×数量"，并根治合并组求和全 0 的 bug。 */
   const _bgw=Object.create(null),_bnw=Object.create(null),_bq=Object.create(null);
