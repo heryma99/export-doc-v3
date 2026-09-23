@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.9 · 2026-09-23 12:00</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.10 · 2026-09-23 13:50</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -407,8 +407,8 @@ const COUNTRY_PREF={
 };
 function enjoysOf(code){const c=(code||'').split(' ')[0];if(DB&&DB.prefOverride&&DB.prefOverride[c]!==undefined)return DB.prefOverride[c];return COUNTRY_PREF[c]!==undefined?COUNTRY_PREF[c]:'2';}
 
-/* ============== HS_LIB 申报要素库（精确10位匹配，否决前缀归类） ============== */
-/* 内置已验证的真实码；匹配不上 → ⚠要素序列待填；用户可在「HS要素库维护」补录缺失码。
+/* ============== HS_LIB 申报要素库（精确10位优先，未命中按 8/6 位前缀复用 → hsEntryOf） ============== */
+/* 内置已验证的真实码；三种都不中 → ⚠要素序列待填；用户可在「HS要素库维护」补录缺失码。
    要素序列 seq 取值：nm品名/mat材质/brand品牌/sku款号(≡SKU)/spu型号/weave织造/gender性别/kind种类/upmat鞋面/solemat鞋底/use用途。
    服装类末位 style 已统一为 sku（款号≡SKU 铁律）。 */
 const HS_LIB={
@@ -422,7 +422,37 @@ const HS_LIB={
  '6404190000':{cat:'纺织面鞋靴', seq:['kind','upmat','solemat','brand','sku']},
  '6405900000':{cat:'其他鞋靴', seq:['kind','upmat','solemat','brand','sku']},
  '4202990000':{cat:'手机壳(皮革/其他)', seq:['use','mat','brand','sku']},
- '3926909000':{cat:'手机壳(塑料)', seq:['use','mat','brand','sku']}
+ '3926909000':{cat:'手机壳(塑料)', seq:['use','mat','brand','sku']},
+ /* ↓ 2026-09-23 补齐：按商品库实际在用编码逐条比对，补 26 个此前未收录的码（覆盖 9/36 码 → 35/36 码）。
+      要素序列按 HS 章属性归类，与库内同章节已有码保持一致：
+      鞋靴 64 章 3 条 / 61·62 章成衣 11 条 / 衣着附件·袜 2 条 / 箱包·编结·首饰·塑料·眼镜·帽类·纺织制成品 10 条。
+      仍缺 8480419000（84 章"模具"却挂在包包肩带上，归类存疑）—— 待核，故意不猜。 */
+ '6402200000':{cat:'鞋靴(橡胶塑料制外底及鞋面)', seq:['kind','upmat','solemat','brand','sku']},
+ '6402910000':{cat:'鞋靴(过踝,其他)', seq:['kind','upmat','solemat','brand','sku']},
+ '6404110000':{cat:'运动鞋(纺织材料鞋面)', seq:['kind','upmat','solemat','brand','sku']},
+ '6104330000':{cat:'针织女装(上衣/夹克)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6104690000':{cat:'针织女装(短裤/长裤)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6106200090':{cat:'针织女装(衬衫)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6102300000':{cat:'针织女装(大衣/外套)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6114300090':{cat:'针织女装(吊带背心/高领)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6204599000':{cat:'梭织女装(半身裙)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6204299000':{cat:'梭织女装(套装)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6202409000':{cat:'梭织女装(大衣)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6210500000':{cat:'梭织女装(夹克)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6211439000':{cat:'梭织女装(无袖衫/紧身衣)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6211429000':{cat:'梭织女装(连帽衫)', seq:['weave','nm','gender','mat','brand','sku']},
+ '6117109000':{cat:'衣着附件(披肩/丝巾)', seq:['weave','mat','brand','sku']},
+ '6115950000':{cat:'针织袜类(袜套)', seq:['weave','nm','mat','brand','sku']},
+ '4202320000':{cat:'箱包(卡包/钱包/护照夹)', seq:['nm','mat','brand','sku']},
+ '4202129000':{cat:'箱包(购物袋)', seq:['nm','mat','brand','sku']},
+ '4602120000':{cat:'编结品(手提包)', seq:['nm','mat','brand','sku']},
+ '7117190000':{cat:'仿首饰(项链/耳环/手链)', seq:['nm','mat','brand','sku']},
+ '8308100000':{cat:'贱金属制品(钥匙圈)', seq:['nm','mat','brand','sku']},
+ '3926400000':{cat:'塑料装饰品(挂件)', seq:['nm','mat','brand','sku']},
+ '9004100000':{cat:'眼镜(太阳镜)', seq:['nm','mat','brand','sku']},
+ '6506999000':{cat:'帽类(棒球帽)', seq:['nm','mat','brand','sku']},
+ '6505009900':{cat:'针织帽类(渔夫帽)', seq:['nm','mat','brand','sku']},
+ '6307909000':{cat:'纺织制成品(肩带)', seq:['nm','mat','brand','sku']}
 };
 const SEQ_CN={nm:'品名',mat:'材质',ms:'材质标准',brand:'品牌',style:'款号',sku:'款号',spu:'型号',weave:'织造方法',gender:'性别',kind:'种类',upmat:'鞋面材质',solemat:'鞋底材质',use:'用途'};
 
@@ -452,12 +482,17 @@ function hsEntryOf(hs){
 /* 织造方法：海关编码本身定义 —— 61 章=针织/钩编，62 章=梭织（非推断） */
 function weaveOf(hs){ const k=String(hs==null?'':hs).replace(/\D/g,'').slice(0,2);
   return k==='61'?'针织':(k==='62'?'梭织':''); }
-/* 性别：仅覆盖可确定的女装子目；男装/中性子目（6109/6110/6114/6117/6115/63章等）不猜 */
-const GENDER_SUB={6104:'女式',6106:'女式',6202:'女式',6204:'女式'};
-function genderOf(hs){ const k=String(hs==null?'':hs).replace(/\D/g,'').slice(0,4); return GENDER_SUB[k]||''; }
-/* 要素取值表（与 buildSpec/mergeLines 原 map 完全一致，仅加 weave/gender 回退） */
+/* 性别：用户明确本公司产品全为女装 → 61/62 章一律「女式」
+   （只有 seq 含 gender 的码才会取这个值；6117 披巾 / 6115 袜的序列本身无 gender，不受影响。
+     将来若有男装：商品库加一列 gender 即可自动覆盖 —— specMap 是 l.gender||派生，列值优先） */
+function genderOf(hs){ const k=String(hs==null?'':hs).replace(/\D/g,'').slice(0,2);
+  return (k==='61'||k==='62')?'女式':''; }
+/* 要素取值表（与 buildSpec/mergeLines 原 map 一致；weave/gender 可派生，kind/upmat 走商品库别名）
+   商品库其实齐备，只是没有 kind/upmat 这两个字段名：
+     鞋「种类」= 中文品名(cn→l.name)、「鞋面材质」= mat、「鞋底材质」= soleMat(buildRawLines 已归一 l.solemat) */
 function specMap(l){ return {nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.sku,sku:l.sku,spu:getSpu(l),
-  weave:l.weave||weaveOf(l.hs),gender:l.gender||genderOf(l.hs),kind:l.kind,upmat:l.upmat,solemat:l.solemat,use:l.use}; }
+  weave:l.weave||weaveOf(l.hs),gender:l.gender||genderOf(l.hs),
+  kind:l.kind||l.name,upmat:l.upmat||l.mat,solemat:l.solemat||l.soleMat,use:l.use}; }
 /* 规格型号明细：text=报关串（空要素仍过滤，报关格式不能塞占位符）；
    miss=取不到值的要素中文名（界面据此红标，让缺失可见，不再静默） */
 function specDetail(l){
