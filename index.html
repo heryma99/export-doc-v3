@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.20 · 2026-09-30 13:47</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.21 · 2026-09-30 14:35</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -1624,10 +1624,12 @@ function renderDrafts(){
     <div class="field"><label>自报自缴</label><input value="${H.selfPay||''}" onchange="setHeader('${d.id}','selfPay',this.value)" placeholder="是/否"></div>
   </div>`;
   let t='<table><thead><tr><th style="width:40px">项号</th><th>SKU</th><th>品名</th><th>HS</th><th>材质</th><th>规格型号(要素)</th><th>申报价</th><th>成本</th><th>数量</th><th>毛/净重</th><th>纸箱规格</th><th>供应商</th><th>归类</th></tr></thead><tbody>';
+  let hasOver=false;   /* v2.21：行内超255字节标记，供旧版归并检测 */
   d.lines.forEach((l,i)=>{
     const _sd=specDetail(l);
     const spec=_sd.text;
     const over=byteLen(spec)>255;   /* v2.16：单一窗口按字节校验（255字节，中文占2字节），非字符数 */
+    if(over)hasOver=true;
     /* 缺失可见：未配序列/要素取不到值 → 红标；靠前缀复用他码序列 → 黄标（两者可同时出现，复用本身需核对） */
     const specTag=(_sd.by==='prefix'
         ? '<span class="badge warn" title="未精确命中，复用了同子目编码 '+esc(_sd.from)+' 的要素序列，请核对是否适用">复用'+esc(_sd.from)+'</span> '
@@ -1653,6 +1655,16 @@ function renderDrafts(){
   let maxLen0=0,total0=0;
   d.lines.forEach(l=>{const sp=buildSpec(l),bl=byteLen(sp);if(bl>maxLen0)maxLen0=bl;total0+=(+l.decl)*(+l.qty);});
   const hasSpu=(d.rawLines||[]).some(x=>getSpu(x));
+  /* v2.21：旧版归并检测 —— 当前行有超255字节，而用 rawLines 按当前模式重新归并后无超长（新版分段可解决）
+     → 提示一键重新归并（草单 lines 是生成/切模式时的快照，旧版生成的不会自动更新） */
+  let staleTip='';
+  if(hasOver&&Array.isArray(d.rawLines)&&d.rawLines.length){
+    try{
+      const _fresh=mergeLines(d.rawLines,d.mergeMode,d.mergeSup);
+      if(_fresh.length&&!_fresh.some(l=>byteLen(buildSpec(l))>255))
+        staleTip='<div style="margin-top:8px;border:1px solid #ffd479;border-radius:8px;padding:10px 12px;background:#2a2415;font-size:12px">检测到本单为<b>旧版归并数据</b>：新版已支持「超255字节按款自动分段」，重新归并即可消除红标（数量/金额/重量合计不变）。 <button class="small primary" onclick="setMerge(\''+d.id+'\',\''+(d.mergeMode||'M0')+'\')">一键重新归并</button></div>';
+    }catch(e){}
+  }
   const spuHint=(d.mergeMode==='M4'||d.mergeMode==='M5')?(hasSpu
     ? '<div style="font-size:11px;color:var(--ok);margin-top:4px">M4/M5 按「款式=从款号推导的SPU（去末尾尺码，如 JH30314-1→JH30314）」归并；若商品库有独立「款式编码/SPU/SKC」列则优先用列值</div>'
     : '<div style="font-size:11px;color:#ffd479;margin-top:4px">⚠ 当前SKU无法推导款式(SPU)，M4/M5 已按 SKU 分行（不合并）避免误并</div>'):'';
@@ -1662,7 +1674,7 @@ function renderDrafts(){
       ${MODES.map(m=>`<button class="small ${d.mergeMode===m.id?'primary':''}" onclick="setMerge('${d.id}','${m.id}')">${m.id} ${m.lb}</button>`).join('')}
       <label style="font-size:12px;display:flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" ${d.mergeSup?'checked':''} onchange="setMergeSup('${d.id}',this.checked)"> 按供应商分行</label>
     </div>
-    <div class="muted" style="font-size:11px;margin-top:6px">归并后 <b>${d.lines.length}</b> 项（原 ${rawCount} 行）· 规格型号最长 <b style="color:${maxLen0>255?'var(--bad)':'var(--ok)'}">${maxLen0}</b> 字节${maxLen0>255?' ⚠超限(单一窗口≤255字节)':''} · 合计金额 ¥${total0.toFixed(2)} 恒等</div>${spuHint}
+    <div class="muted" style="font-size:11px;margin-top:6px">归并后 <b>${d.lines.length}</b> 项（原 ${rawCount} 行）· 规格型号最长 <b style="color:${maxLen0>255?'var(--bad)':'var(--ok)'}">${maxLen0}</b> 字节${maxLen0>255?' ⚠超限(单一窗口≤255字节)':''} · 合计金额 ¥${total0.toFixed(2)} 恒等</div>${spuHint}${staleTip}
     ${d.lines.length>50?`<div style="margin-top:8px;border:2px solid var(--bad);border-radius:8px;padding:10px 12px;background:#2a1518">
       <div style="font-size:17px;font-weight:600;color:var(--bad)">⚠ 商品项数超限：${d.lines.length} 项 &gt; 50 项上限</div>
       <div style="font-size:12px;color:var(--mut);margin-top:4px">依据《报关单填制规范》（海关总署公告2019年第18号）：一份报关单商品项 ≤ 50 项，超限须<b>分单申报</b>。请一键分单（按供应商，每张 ≤ 50）或改用更粗归并模式压项数。</div>
