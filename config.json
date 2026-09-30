@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-09-30T01:45:55.037Z",
+  "_at": "2026-09-30T02:17:09.980Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -35,6 +35,10 @@
         "addr": "UNIT 1102, 11/F, 29 AUSTIN ROAD, TSIM SHA TSUI, KOWLOON, HONG KONG"
       },
       "Soyama limited": {
+        "addr": "ROOM 30 34/F TIMES SQUARE TOWER ONE 1 MATHESON STREET CAUSEWAY BAY HK",
+        "contact": "徐芳芳"
+      },
+      "SOYAMA LIMITED": {
         "addr": "ROOM 30 34/F TIMES SQUARE TOWER ONE 1 MATHESON STREET CAUSEWAY BAY HK",
         "contact": "徐芳芳"
       }
