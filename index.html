@@ -143,13 +143,17 @@
   .erp .ok{font-size:11px;color:var(--ok)}
   .erp .rec{margin:6px 16px 12px;font-size:12px;color:var(--mut)}
   .erp .rec button{background:transparent;color:#9cf;border:1px solid #3a5a7a;border-radius:6px;padding:1px 8px;font-size:11px;cursor:pointer;margin-left:6px}
+  /* v2.18：主体维护行内输入 = 可直接编辑、改完自动保存 —— 悬停/聚焦给可编辑视觉反馈 */
+  #setBody input[onchange]{cursor:text}
+  #setBody input[onchange]:hover{border-color:#378ADD}
+  #setBody input[onchange]:focus{border-color:#1D9E75}
 </style>
 </head>
 <body>
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.17 · 2026-09-30 10:05</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.18 · 2026-09-30 10:28</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -3592,7 +3596,10 @@ function addParty(t){const el=document.getElementById('newParty_'+t);const v=(el
   if(hi>=0){DB.hiddenParties.splice(hi,1);alert('「'+v+'」此前在隐藏名单中，已自动恢复显示');}
   save();renderSetBody();}
 function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length<=1){alert('至少保留一个'+(t==='shipper'?'境内发货人':'境外收货人'));return;}const v=a[i];a.splice(i,1);hiddenPush('hiddenParties',v);save();renderSetBody();}
-function updParty(t,i,v){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;const old=a[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){a[i]=nv;if(DB.parties.codes&&DB.parties.codes[old]!==undefined){DB.parties.codes[nv]=DB.parties.codes[old];delete DB.parties.codes[old];}if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();}
+function updParty(t,i,v){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;const old=a[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){a[i]=nv;if(DB.parties.codes&&DB.parties.codes[old]!==undefined){DB.parties.codes[nv]=DB.parties.codes[old];delete DB.parties.codes[old];}
+  /* v2.18：改名同步搬迁 地址/联系人/邮箱 档案（修复：档案按名字作键，改名后读不到 → "维护的地址联系人不见了"） */
+  if(DB.parties.profiles&&DB.parties.profiles[old]!==undefined){DB.parties.profiles[nv]=Object.assign({},DB.parties.profiles[old],DB.parties.profiles[nv]||{});delete DB.parties.profiles[old];}
+  if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();savedTip();}
 /* 采购主体 */
 function addBuyer(){const el=document.getElementById('newBuyer');const v=(el&&el.value||'').trim();if(!v){alert('请输入采购主体名称');return;}if(!DB.buyerParties)DB.buyerParties=[];
   /* v2.17：同 addParty —— 已存在→提示；在隐藏名单→自动恢复显示 */
@@ -3601,10 +3608,10 @@ function addBuyer(){const el=document.getElementById('newBuyer');const v=(el&&el
   if(!existed)DB.buyerParties.push(v);
   if(hi>=0){DB.hiddenParties.splice(hi,1);alert('「'+v+'」此前在隐藏名单中，已自动恢复显示');}
   save();renderSetBody();}
-function updBuyer(i,v){if(!DB.buyerParties)DB.buyerParties=[];const old=DB.buyerParties[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){DB.buyerParties[i]=nv;if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();}
+function updBuyer(i,v){if(!DB.buyerParties)DB.buyerParties=[];const old=DB.buyerParties[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){DB.buyerParties[i]=nv;if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();savedTip();}
 function delBuyer(i){if(DB.buyerParties&&DB.buyerParties.length>1){const v=DB.buyerParties[i];DB.buyerParties.splice(i,1);hiddenPush('hiddenParties',v);}save();renderSetBody();}
 /* 统一社会信用代码 / 海关注册编码 */
-function updCode(i,f,v){const s=DB.parties.shippers[i];if(!s)return;if(!DB.parties.codes)DB.parties.codes={};if(!DB.parties.codes[s])DB.parties.codes[s]={};DB.parties.codes[s][f]=v;save();}
+function updCode(i,f,v){const s=DB.parties.shippers[i];if(!s)return;if(!DB.parties.codes)DB.parties.codes={};if(!DB.parties.codes[s])DB.parties.codes[s]={};DB.parties.codes[s][f]=v;save();savedTip();}
 /* 银行账户列表维护(多账户按币种)：updBank(i,k,v) 行内修改; addBank/delBank */
 function updBank(i,k,v){if(!DB.bankAccounts)DB.bankAccounts=[];if(i<0){i=DB.bankAccounts.length;}if(!DB.bankAccounts[i])DB.bankAccounts[i]={cur:'',pay:'',account:'',bank:'',name:'',no:''};DB.bankAccounts[i][k]=v;save();}
 function addBank(){if(!DB.bankAccounts)DB.bankAccounts=[];DB.bankAccounts.push({cur:'CNY 人民币',pay:'T/T',account:'',bank:'',name:'',no:''});save();renderSetBody();}
@@ -3624,7 +3631,9 @@ function acctFor(cur,owner){
 }
 /* 主体档案：发货人/收货人/采购主体 → {addr,contact,email,tel}(单据自动引用) */
 function partyProfile(name){return (DB.parties.profiles&&DB.parties.profiles[name])||{};}
-function setPartyProfile(name,f,v){if(!DB.parties.profiles)DB.parties.profiles={};if(!DB.parties.profiles[name])DB.parties.profiles[name]={};DB.parties.profiles[name][f]=v;save();}
+function setPartyProfile(name,f,v){if(!DB.parties.profiles)DB.parties.profiles={};if(!DB.parties.profiles[name])DB.parties.profiles[name]={};DB.parties.profiles[name][f]=v;save();savedTip();}
+/* v2.18：行内自动保存的右下角反馈（"✓ 已保存"闪现 1.4s）—— 主体维护无保存按钮，靠它确认修改已生效 */
+function savedTip(){let t=document.getElementById('savedTipEl');if(!t){t=document.createElement('div');t.id='savedTipEl';t.style.cssText='position:fixed;right:18px;bottom:18px;z-index:99999;background:#123c26;color:#7fe0a7;border:1px solid #2a6b45;padding:6px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none';document.body.appendChild(t);}t.textContent='✓ 已保存';t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},1400);}
 /* 一级供应商档案：一级供应商 → {addr,contact,email,tel}(采购合同乙方信息) */
 function tier1Profile(name){return (DB.tier1Profiles&&DB.tier1Profiles[name])||{};}
 function setTier1Profile(name,f,v){if(!DB.tier1Profiles)DB.tier1Profiles={};if(!DB.tier1Profiles[name])DB.tier1Profiles[name]={};DB.tier1Profiles[name][f]=v;save();}
@@ -3780,7 +3789,7 @@ function renderSetBody(){
         <label class="small" style="background:#2a1a3a;color:#c9b;border:1px solid #5a3a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📤 导入主体信息(JSON)
           <input type="file" accept=".json" onchange="impParty(event)" style="display:none"></label>
       </div>
-      <div class="hint">删除 = 本地移除 + 加入隐藏(云端项不会被拉回);「已隐藏」可随时恢复。统一社会信用代码/海关注册编码用于报关表头生产销售单位。</div>
+      <div class="hint">名称/地址/联系人/邮箱均可直接点击修改，改完自动保存（右下角会闪现「✓ 已保存」）。删除 = 本地移除 + 加入隐藏(云端项不会被拉回);「已隐藏」可随时恢复。统一社会信用代码/海关注册编码用于报关表头生产销售单位。</div>
     </div>`;
 
   } else if(curTab==='sku'){
@@ -3995,6 +4004,8 @@ function mergeSharedCfg(cfg){
   if(cfg.parties&&cfg.parties.shippers){
     const lp=DB.parties;
     DB.parties=Object.assign({},lp,cfg.parties);
+    /* v2.18：profiles/codes 属「本地优先」对象 —— 先还原本地，云端稍后只补缺（修复：本地维护未发布的地址联系人被云端拉取覆盖丢失） */
+    DB.parties.profiles=lp.profiles||{};DB.parties.codes=lp.codes||{};
     /* 数组类(发货人/收货人/币种)做并集去重：云端与本地新增都保留，避免拉取覆盖掉本地刚维护的项 */
     ['shippers','consignees','currencyList'].forEach(k=>{
       const cl=cfg.parties[k], lo=lp[k];
@@ -4007,6 +4018,7 @@ function mergeSharedCfg(cfg){
   if(Array.isArray(cfg.tier1Suppliers)&&cfg.tier1Suppliers.length)DB.tier1Suppliers=union(DB.tier1Suppliers,cfg.tier1Suppliers);
   if(cfg.tier1Profiles)DB.tier1Profiles=Object.assign({},cfg.tier1Profiles,DB.tier1Profiles);
   if(cfg.parties&&cfg.parties.profiles)DB.parties.profiles=Object.assign({},cfg.parties.profiles,DB.parties.profiles);
+  if(cfg.parties&&cfg.parties.codes)DB.parties.codes=Object.assign({},cfg.parties.codes,DB.parties.codes);
   if(Array.isArray(cfg.extraSup2)&&cfg.extraSup2.length)DB.extraSup2=union(DB.extraSup2,cfg.extraSup2);
   if(Array.isArray(cfg.hiddenParties))DB.hiddenParties=union(DB.hiddenParties,cfg.hiddenParties);
   if(Array.isArray(cfg.hiddenSup2))DB.hiddenSup2=union(DB.hiddenSup2,cfg.hiddenSup2);
