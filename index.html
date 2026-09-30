@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.19 · 2026-09-30 10:43</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.20 · 2026-09-30 13:47</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -673,6 +673,29 @@ function normalizeBoxNo(lines){
     if(!(+l.nw>0)) l.nw = Math.max(0, Math.round((sum - 1.3*l.boxSeq.length)*1000)/1000);
   });
 }
+/* v2.20 款优先分段：把同组行按「款」(款号去色号段，如 104-1→104) 聚块，整款装箱进 ≤limit 字节的段；
+   同一款的色号永不跨段；仅当单款自身超限才在款内按色号切（兜底）。返回行数组的数组（每项=一段）。 */
+function splitKuan255(g,limit){
+  const ls=g.slice().sort(function(a,b){return String(a.sku)<String(b.sku)?-1:(String(a.sku)>String(b.sku)?1:0);});
+  const blocks=[];
+  ls.forEach(function(x){const ku=String(x.sku||'').replace(/-[^-]+$/,'');const last=blocks[blocks.length-1];
+    if(last&&last.ku===ku)last.lines.push(x);else blocks.push({ku:ku,lines:[x]});});
+  const segs=[];let cur=[],curBytes=0;
+  blocks.forEach(function(b){
+    const w=byteLen(b.lines.map(function(x){return String(x.sku||'');}).join(','))+1;
+    if(cur.length&&curBytes+w>limit){segs.push(cur);cur=[];curBytes=0;}
+    if(curBytes===0 && w-1>limit){ /* 单款自身超限：按色号逐行切（兜底，本单不存在） */
+      b.lines.forEach(function(x){const wb=byteLen(String(x.sku||''))+(cur.length?1:0);
+        if(cur.length&&curBytes+wb>limit){segs.push(cur);cur=[];curBytes=0;}
+        cur.push(x);curBytes+=wb;});
+      if(cur.length){segs.push(cur);cur=[];curBytes=0;}
+      return;
+    }
+    b.lines.forEach(function(x){if(cur.length)curBytes+=1;cur.push(x);curBytes+=byteLen(String(x.sku||''));});
+  });
+  if(cur.length)segs.push(cur);
+  return segs.length?segs:[g];
+}
 function mergeLines(lines,mode,sup){
   normalizeBoxNo(lines);   /* 箱号归一兜底(v2.14)：缺箱号时从 boxSeq/boxSeqW 生成，供重量分摊与 Ge.Crate 场景判定使用 */
   /* 重量口径修正（核心修复）：每行携带"整箱重"，同箱多行会重复。先按"整箱重 × 该行数量/箱内件数"分摊到每行，
@@ -691,7 +714,14 @@ function mergeLines(lines,mode,sup){
   const get=(l,kk)=>({hs:l.hs,sku:l.sku,nm:l.name,spu:getSpu(l),mat:l.mat})[kk];
   const groups={};
   lines.forEach(l=>{const _o=originCodeOf(l.supplier||''); l._origin=_o; const key=keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+consolidatedSupplier(l.supplier||'')):'')+('§ORIGIN:'+_o);(groups[key]=groups[key]||[]).push(l);});
-  return Object.keys(groups).map(k=>{const g=groups[k],rep=Object.assign({},g[0]);
+  /* v2.20：款优先 255 字节分段 —— 合并组款号串超限时按「款」(款号去色号段) 整款装箱切段（同款色号不跨段），
+     每段复用下方同一套归并聚合：数量/加权单价/重量分摊/箱数求和天然分段自洽，合计不变；未超限的组原样单段。 */
+  const segs=[];
+  Object.keys(groups).forEach(function(k){const g=groups[k];
+    const pre=byteLen('4|'+(g[0].enjoys||'0')+'|'+(g[0].name||'')+'|'+(g[0].mat||'')+'|'+(g[0].brand||'')+'|');
+    splitKuan255(g,255-pre).forEach(function(p){segs.push(p);});
+  });
+  return segs.map(g=>{const rep=Object.assign({},g[0]);
     rep.sku=[...new Set(g.map(x=>x.sku))].join(',');
     rep.style=[...new Set(g.map(x=>getSpu(x)))].filter(Boolean).join(',');
     rep.qty=g.reduce((a,x)=>a+(+x.qty||0),0);
