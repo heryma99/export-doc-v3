@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.18 · 2026-09-30 10:28</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.19 · 2026-09-30 10:43</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -3600,6 +3600,21 @@ function updParty(t,i,v){const a=t==='shipper'?DB.parties.shippers:DB.parties.co
   /* v2.18：改名同步搬迁 地址/联系人/邮箱 档案（修复：档案按名字作键，改名后读不到 → "维护的地址联系人不见了"） */
   if(DB.parties.profiles&&DB.parties.profiles[old]!==undefined){DB.parties.profiles[nv]=Object.assign({},DB.parties.profiles[old],DB.parties.profiles[nv]||{});delete DB.parties.profiles[old];}
   if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();savedTip();}
+/* v2.19：主体行默认只读防误触，点「编辑」进入单行编辑态（同一时刻仅一行），保存/取消显式生效 */
+let partyEdit=null;   /* {t:'shipper'|'buyer'|'consignee', di:原数组索引} —— 仅内存态，不落库 */
+function partyEditOn(t,di){partyEdit={t:t,di:di};renderSetBody();}
+function partyEditOff(){partyEdit=null;renderSetBody();}
+function partyEditSave(t,di){
+  const gv=function(id){const e=document.getElementById(id);return e?String(e.value).trim():'';};
+  const nv=gv('pe_name');
+  if(!nv){alert('名称不能为空');return;}
+  const old=t==='buyer'?DB.buyerParties[di]:DB.parties[t==='shipper'?'shippers':'consignees'][di];
+  if(nv!==old&&!confirm('名称将由「'+old+'」改为「'+nv+'」。\n地址/联系人/邮箱档案会同步迁移；已生成草单中的旧名称不会自动更新。确认修改？'))return;
+  if(nv!==old){if(t==='buyer')updBuyer(di,nv);else updParty(t,di,nv);}
+  if(t==='shipper'){updCode(di,'usci',gv('pe_usci'));updCode(di,'reg',gv('pe_reg'));}
+  if(t!=='buyer'){setPartyProfile(nv,'addr',gv('pe_addr'));setPartyProfile(nv,'contact',gv('pe_contact'));setPartyProfile(nv,'email',gv('pe_email'));}
+  partyEdit=null;renderSetBody();
+}
 /* 采购主体 */
 function addBuyer(){const el=document.getElementById('newBuyer');const v=(el&&el.value||'').trim();if(!v){alert('请输入采购主体名称');return;}if(!DB.buyerParties)DB.buyerParties=[];
   /* v2.17：同 addParty —— 已存在→提示；在隐藏名单→自动恢复显示 */
@@ -3750,21 +3765,27 @@ function renderSetBody(){
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#378ADD"></div><p class="ttl">境内发货人</p><span class="cnt">${shippers.length} 个</span></div>
         <table><tr><th style="width:16%">名称</th><th style="width:13%">统一社会信用代码</th><th style="width:12%">海关注册编码</th><th style="width:22%">地址(销售合同乙方/采购合同甲方)</th><th style="width:10%">联系人</th><th style="width:15%">邮箱</th><th style="width:12%">操作</th></tr><tbody>
-          ${shippers.map((s,i)=>{const di=DB.parties.shippers.indexOf(s);const c=(DB.parties.codes&&DB.parties.codes[s])||{};const p=partyProfile(s);return `<tr><td><input value="${esc(s)}" onchange="updParty('shipper',${di},this.value)"></td><td><input value="${esc(c.usci||'')}" placeholder="18位" onchange="updCode(${di},'usci',this.value)"></td><td><input value="${esc(c.reg||'')}" placeholder="10位" onchange="updCode(${di},'reg',this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setPartyProfile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setPartyProfile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setPartyProfile('${escQ(s)}','email',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该发货人?'))delParty('shipper',${di})">删除</button></td></tr>`;}).join('')}
+          ${shippers.map((s,i)=>{const di=DB.parties.shippers.indexOf(s);const c=(DB.parties.codes&&DB.parties.codes[s])||{};const p=partyProfile(s);const ed=partyEdit&&partyEdit.t==='shipper'&&partyEdit.di===di;
+if(ed)return `<tr><td><input id="pe_name" value="${esc(s)}"></td><td><input id="pe_usci" value="${esc(c.usci||'')}" placeholder="18位"></td><td><input id="pe_reg" value="${esc(c.reg||'')}" placeholder="10位"></td><td><input id="pe_addr" value="${esc(p.addr||'')}" placeholder="地址"></td><td><input id="pe_contact" value="${esc(p.contact||'')}" placeholder="联系人"></td><td><input id="pe_email" value="${esc(p.email||'')}" placeholder="邮箱"></td><td><button class="btn add" onclick="partyEditSave('shipper',${di})">保存</button> <button class="btn" onclick="partyEditOff()">取消</button></td></tr>`;
+return `<tr><td>${esc(s)}</td><td>${esc(c.usci||'')}</td><td>${esc(c.reg||'')}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||'')}</td><td>${esc(p.email||'')}</td><td><button class="btn" onclick="partyEditOn('shipper',${di})">编辑</button> <button class="btn del" onclick="if(confirm('删除该发货人?'))delParty('shipper',${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newParty_shipper" placeholder="+ 新增境内发货人"><button class="btn add" onclick="addParty('shipper')">添加</button></div>
       </div>
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">采购主体</p><span class="cnt">${buyers.length} 个</span></div>
         <table><tr><th style="width:74%">名称(采购合同「采购方」)</th><th style="width:26%">操作</th></tr><tbody>
-          ${buyers.map((s,i)=>{const di=DB.buyerParties.indexOf(s);return `<tr><td><input value="${esc(s)}" onchange="updBuyer(${di},this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该采购主体?'))delBuyer(${di})">删除</button></td></tr>`;}).join('')}
+          ${buyers.map((s,i)=>{const di=DB.buyerParties.indexOf(s);const ed=partyEdit&&partyEdit.t==='buyer'&&partyEdit.di===di;
+if(ed)return `<tr><td><input id="pe_name" value="${esc(s)}"></td><td><button class="btn add" onclick="partyEditSave('buyer',${di})">保存</button> <button class="btn" onclick="partyEditOff()">取消</button></td></tr>`;
+return `<tr><td>${esc(s)}</td><td><button class="btn" onclick="partyEditOn('buyer',${di})">编辑</button> <button class="btn del" onclick="if(confirm('删除该采购主体?'))delBuyer(${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newBuyer" placeholder="+ 新增采购主体"><button class="btn add" onclick="addBuyer()">添加</button></div>
       </div>
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#1D9E75"></div><p class="ttl">境外收货人</p><span class="cnt">${consignees.length} 个</span></div>
         <table><tr><th style="width:22%">名称</th><th style="width:30%">地址(销售合同甲方/客户发票抬头)</th><th style="width:13%">联系人</th><th style="width:20%">邮箱</th><th style="width:15%">操作</th></tr><tbody>
-          ${consignees.map((s,i)=>{const di=DB.parties.consignees.indexOf(s);const p=partyProfile(s);return `<tr><td><input value="${esc(s)}" onchange="updParty('consignee',${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setPartyProfile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setPartyProfile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setPartyProfile('${escQ(s)}','email',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该收货人?'))delParty('consignee',${di})">删除</button></td></tr>`;}).join('')}
+          ${consignees.map((s,i)=>{const di=DB.parties.consignees.indexOf(s);const p=partyProfile(s);const ed=partyEdit&&partyEdit.t==='consignee'&&partyEdit.di===di;
+if(ed)return `<tr><td><input id="pe_name" value="${esc(s)}"></td><td><input id="pe_addr" value="${esc(p.addr||'')}" placeholder="地址"></td><td><input id="pe_contact" value="${esc(p.contact||'')}" placeholder="联系人"></td><td><input id="pe_email" value="${esc(p.email||'')}" placeholder="邮箱"></td><td><button class="btn add" onclick="partyEditSave('consignee',${di})">保存</button> <button class="btn" onclick="partyEditOff()">取消</button></td></tr>`;
+return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||'')}</td><td>${esc(p.email||'')}</td><td><button class="btn" onclick="partyEditOn('consignee',${di})">编辑</button> <button class="btn del" onclick="if(confirm('删除该收货人?'))delParty('consignee',${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newParty_consignee" placeholder="+ 新增境外收货人"><button class="btn add" onclick="addParty('consignee')">添加</button></div>
       </div>
@@ -3789,7 +3810,7 @@ function renderSetBody(){
         <label class="small" style="background:#2a1a3a;color:#c9b;border:1px solid #5a3a7a;border-radius:6px;padding:4px 12px;cursor:pointer">📤 导入主体信息(JSON)
           <input type="file" accept=".json" onchange="impParty(event)" style="display:none"></label>
       </div>
-      <div class="hint">名称/地址/联系人/邮箱均可直接点击修改，改完自动保存（右下角会闪现「✓ 已保存」）。删除 = 本地移除 + 加入隐藏(云端项不会被拉回);「已隐藏」可随时恢复。统一社会信用代码/海关注册编码用于报关表头生产销售单位。</div>
+      <div class="hint">主体行默认只读防误触：点「编辑」进入修改，「保存」生效（右下角提示 ✓ 已保存）/「取消」放弃；改名称会先确认并同步搬迁地址联系人档案。删除 = 本地移除 + 加入隐藏(云端项不会被拉回);「已隐藏」可随时恢复。统一社会信用代码/海关注册编码用于报关表头生产销售单位。</div>
     </div>`;
 
   } else if(curTab==='sku'){
