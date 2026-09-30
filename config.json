@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-09-30T02:17:09.980Z",
+  "_at": "2026-09-30T02:58:57.128Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -50,12 +50,13 @@
   "supplierMap": {
     "广州革瓦拉贸易有限公司": "广州自衍空间科创有限公司",
     "广州革辉鞋业有限公司": "广州自衍空间科创有限公司",
-    "广州极优尼迅捷供应链管理有限公司": "广州自衍空间科创有限公司"
+    "广州极优尼迅捷供应链管理有限公司": "广州自衍空间科创有限公司",
+    "INDIGO COLLECTIVE LIMITED": "广州自衍空间科创有限公司",
+    "Lo Monte International Limited": "广州自衍空间科创有限公司"
   },
   "tier1Suppliers": [
     "广州自衍空间科创有限公司",
-    "Lo Monte International Limited",
-    "INDIGO COLLECTIVE LIMITED"
+    "Lo Monte International Limited"
   ],
   "tier1Profiles": {
     "广州自衍空间科创有限公司": {
@@ -81,9 +82,13 @@
   },
   "extraSup2": [],
   "hiddenParties": [
-    "Lo Monte International Limited"
+    "Lo Monte International Limited",
+    "INDIGO COLLECTIVE LIMITED"
   ],
-  "hiddenSup2": [],
+  "hiddenSup2": [
+    "璞景工厂",
+    "利景工厂"
+  ],
   "prefOverride": {},
   "prefHidden": [],
   "brandTypeMap": {
