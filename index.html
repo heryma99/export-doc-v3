@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.22 · 2026-09-30 14:49</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.23 · 2026-09-30 15:05</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -501,12 +501,17 @@ function specMap(l){ return {nm:l.name,mat:l.mat,ms:l.mat,brand:l.brand,style:l.
    miss=取不到值的要素中文名（界面据此红标，让缺失可见，不再静默） */
 function specDetail(l){
   const r=hsEntryOf(l.hs);
-  if(!r.entry) return {text:'⚠ 要素序列待填('+(l.hs||'?')+')',miss:null,unmatched:true,by:null,from:''};
+  if(!r.entry) {const _w='⚠ 要素序列待填('+(l.hs||'?')+')'; return {text:_w,xl:_w,miss:null,unmatched:true,by:null,from:''};}
   const map=specMap(l), miss=[];
-  const seqStr=r.entry.seq.map(k=>{ const v=map[k];
-      if(v==null||String(v).trim()===''){ miss.push(SEQ_CN[k]||k); return null; } return v; })
-    .filter(v=>v!=null).join(';');
+  const vals=r.entry.seq.map(k=>{ const v=map[k];
+      if(v==null||String(v).trim()===''){ miss.push(SEQ_CN[k]||k); return null; } return v; });
+  const seqStr=vals.filter(v=>v!=null).join(';');
+  /* v2.23：xl = 申报串（Excel 导出格式，与 buildData 的 spec 完全同构）——
+     255 字节校验/汇总统计一律用它，不再依赖行上存储的 l.spec（setMerge 重算后的行没有该字段） */
+  const parts=[resolveBrandType(l),l.enjoys||'0'].concat(r.entry.seq.map(k=>map[k]));
+  while(parts.length&&(parts[parts.length-1]==null||String(parts[parts.length-1]).trim()===''))parts.pop();
   return {text:[resolveBrandType(l),l.enjoys?('出口享惠'+l.enjoys):'',seqStr].filter(Boolean).join(' | '),
+    xl:parts.join('|'),
     miss:miss.length?miss:null,unmatched:false,by:r.by,from:r.from};
 }
 
@@ -1628,7 +1633,7 @@ function renderDrafts(){
   d.lines.forEach((l,i)=>{
     const _sd=specDetail(l);
     const spec=_sd.text;
-    const over=byteLen(String(l.spec||''))>255;   /* v2.22：按「申报串」（Excel 导出格式，与分段/单一窗口同口径）判超限；界面显示串(buildSpec)多「出口享惠」等修饰约12字节，不作判定依据 */
+    const over=byteLen(String(_sd.xl||''))>255;   /* v2.23：按「申报串」(specDetail.xl, 与 Excel 导出/分段/单一窗口同口径) 实时判定，不依赖行上存储的 l.spec */
     if(over)hasOver=true;
     /* 缺失可见：未配序列/要素取不到值 → 红标；靠前缀复用他码序列 → 黄标（两者可同时出现，复用本身需核对） */
     const specTag=(_sd.by==='prefix'
@@ -1653,7 +1658,7 @@ function renderDrafts(){
   const mh=d.monitor?renderMonitor(d.monitor):'';
   const rawCount=d.rawLines?d.rawLines.length:d.lines.length;
   let maxLen0=0,total0=0;
-  d.lines.forEach(l=>{const bl=byteLen(String(l.spec||''));if(bl>maxLen0)maxLen0=bl;total0+=(+l.decl)*(+l.qty);});   /* v2.22：maxLen0 同改申报串口径 */
+  d.lines.forEach(l=>{const bl=byteLen(String(specDetail(l).xl||''));if(bl>maxLen0)maxLen0=bl;total0+=(+l.decl)*(+l.qty);});   /* v2.23：maxLen0 同改申报串实时口径 */
   const hasSpu=(d.rawLines||[]).some(x=>getSpu(x));
   /* v2.21：旧版归并检测 —— 当前行有超255字节，而用 rawLines 按当前模式重新归并后无超长（新版分段可解决）
      → 提示一键重新归并（草单 lines 是生成/切模式时的快照，旧版生成的不会自动更新） */
@@ -1661,7 +1666,7 @@ function renderDrafts(){
   if(hasOver&&Array.isArray(d.rawLines)&&d.rawLines.length){
     try{
       const _fresh=mergeLines(d.rawLines,d.mergeMode,d.mergeSup);
-      if(_fresh.length&&!_fresh.some(l=>byteLen(buildSpec(l))>255))
+      if(_fresh.length&&!_fresh.some(l=>byteLen(String(specDetail(l).xl||''))>255))
         staleTip='<div style="margin-top:8px;border:1px solid #ffd479;border-radius:8px;padding:10px 12px;background:#2a2415;font-size:12px">检测到本单为<b>旧版归并数据</b>：新版已支持「超255字节按款自动分段」，重新归并即可消除红标（数量/金额/重量合计不变）。 <button class="small primary" onclick="setMerge(\''+d.id+'\',\''+(d.mergeMode||'M0')+'\')">一键重新归并</button></div>';
     }catch(e){}
   }
