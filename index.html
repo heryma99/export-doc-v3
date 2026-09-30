@@ -149,7 +149,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.16 · 2026-09-29 13:52</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.17 · 2026-09-30 10:05</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <button class="ghost small" onclick="resetAll()">清空本地数据</button>
@@ -3584,11 +3584,23 @@ function renderTabs(){document.getElementById('setTabs').innerHTML=TABS.map(t=>`
 function hiddenPush(h,v){if(!DB[h])DB[h]=[];const s=String(v||'').trim();if(s&&DB[h].indexOf(s)<0)DB[h].push(s);}
 function unhide(h,i){const arr=DB[h]||[];if(i>=0&&i<arr.length){arr.splice(i,1);save();renderSetBody();}}
 /* 境内发货人 / 境外收货人 */
-function addParty(t){const el=document.getElementById('newParty_'+t);const v=(el&&el.value||'').trim();const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(!v){alert('请输入名称');return;}if(a.indexOf(v)<0)a.push(v);save();renderSetBody();}
+function addParty(t){const el=document.getElementById('newParty_'+t);const v=(el&&el.value||'').trim();const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(!v){alert('请输入名称');return;}
+  /* v2.17：已存在→提示；在隐藏名单→自动恢复显示（修复"添加没反应"：名字被 hiddenParties 过滤导致永远不可见且零提示） */
+  const existed=a.indexOf(v)>=0, hi=DB.hiddenParties?DB.hiddenParties.indexOf(v):-1;
+  if(existed&&hi<0){alert('该名称已存在');return;}
+  if(!existed)a.push(v);
+  if(hi>=0){DB.hiddenParties.splice(hi,1);alert('「'+v+'」此前在隐藏名单中，已自动恢复显示');}
+  save();renderSetBody();}
 function delParty(t,i){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;if(a.length<=1){alert('至少保留一个'+(t==='shipper'?'境内发货人':'境外收货人'));return;}const v=a[i];a.splice(i,1);hiddenPush('hiddenParties',v);save();renderSetBody();}
 function updParty(t,i,v){const a=t==='shipper'?DB.parties.shippers:DB.parties.consignees;const old=a[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){a[i]=nv;if(DB.parties.codes&&DB.parties.codes[old]!==undefined){DB.parties.codes[nv]=DB.parties.codes[old];delete DB.parties.codes[old];}if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();}
 /* 采购主体 */
-function addBuyer(){const el=document.getElementById('newBuyer');const v=(el&&el.value||'').trim();if(!v){alert('请输入采购主体名称');return;}if(!DB.buyerParties)DB.buyerParties=[];if(DB.buyerParties.indexOf(v)<0)DB.buyerParties.push(v);save();renderSetBody();}
+function addBuyer(){const el=document.getElementById('newBuyer');const v=(el&&el.value||'').trim();if(!v){alert('请输入采购主体名称');return;}if(!DB.buyerParties)DB.buyerParties=[];
+  /* v2.17：同 addParty —— 已存在→提示；在隐藏名单→自动恢复显示 */
+  const existed=DB.buyerParties.indexOf(v)>=0, hi=DB.hiddenParties?DB.hiddenParties.indexOf(v):-1;
+  if(existed&&hi<0){alert('该采购主体已存在');return;}
+  if(!existed)DB.buyerParties.push(v);
+  if(hi>=0){DB.hiddenParties.splice(hi,1);alert('「'+v+'」此前在隐藏名单中，已自动恢复显示');}
+  save();renderSetBody();}
 function updBuyer(i,v){if(!DB.buyerParties)DB.buyerParties=[];const old=DB.buyerParties[i];const nv=String(v||'').trim();if(!nv){alert('名称不能为空');renderSetBody();return;}if(nv!==old){DB.buyerParties[i]=nv;if(DB.hiddenParties&&DB.hiddenParties.indexOf(nv)>=0)DB.hiddenParties.splice(DB.hiddenParties.indexOf(nv),1);}save();}
 function delBuyer(i){if(DB.buyerParties&&DB.buyerParties.length>1){const v=DB.buyerParties[i];DB.buyerParties.splice(i,1);hiddenPush('hiddenParties',v);}save();renderSetBody();}
 /* 统一社会信用代码 / 海关注册编码 */
