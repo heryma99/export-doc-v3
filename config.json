@@ -1,13 +1,13 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-09-17T09:37:49.331Z",
+  "_at": "2026-09-30T01:45:55.037Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
     ],
     "consignees": [
       "Leading Trade One Limited",
-      "Soyama limited"
+      "SOYAMA LIMITED"
     ],
     "currencyList": [
       "USD 美元",
@@ -35,7 +35,8 @@
         "addr": "UNIT 1102, 11/F, 29 AUSTIN ROAD, TSIM SHA TSUI, KOWLOON, HONG KONG"
       },
       "Soyama limited": {
-        "addr": "UNIT 1102, 11/F, 29 AUSTIN ROAD, TSIM SHA TSUI, KOWLOON, HONG KONG"
+        "addr": "ROOM 30 34/F TIMES SQUARE TOWER ONE 1 MATHESON STREET CAUSEWAY BAY HK",
+        "contact": "徐芳芳"
       }
     }
   },
@@ -48,7 +49,9 @@
     "广州极优尼迅捷供应链管理有限公司": "广州自衍空间科创有限公司"
   },
   "tier1Suppliers": [
-    "广州自衍空间科创有限公司"
+    "广州自衍空间科创有限公司",
+    "Lo Monte International Limited",
+    "INDIGO COLLECTIVE LIMITED"
   ],
   "tier1Profiles": {
     "广州自衍空间科创有限公司": {
@@ -60,7 +63,16 @@
       "originName": "广州其他"
     },
     "Lo Monte International Limited": {
-      "addr": "广州"
+      "addr": "广州",
+      "vatType": "small"
+    },
+    "张三": {
+      "originCode": "44019",
+      "originName": "广州其他",
+      "vatType": "small"
+    },
+    "INDIGO COLLECTIVE LIMITED": {
+      "vatType": "small"
     }
   },
   "extraSup2": [],
