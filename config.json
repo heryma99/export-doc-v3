@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-09-30T02:58:57.128Z",
+  "_at": "2026-10-12T05:48:57.570Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -56,7 +56,8 @@
   },
   "tier1Suppliers": [
     "广州自衍空间科创有限公司",
-    "Lo Monte International Limited"
+    "Lo Monte International Limited",
+    "INDIGO COLLECTIVE LIMITED"
   ],
   "tier1Profiles": {
     "广州自衍空间科创有限公司": {
@@ -83,7 +84,8 @@
   "extraSup2": [],
   "hiddenParties": [
     "Lo Monte International Limited",
-    "INDIGO COLLECTIVE LIMITED"
+    "INDIGO COLLECTIVE LIMITED",
+    "贝蒙沃森（深圳）商贸有限公司"
   ],
   "hiddenSup2": [
     "璞景工厂",
