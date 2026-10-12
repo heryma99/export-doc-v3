@@ -779,7 +779,7 @@ function defaultDB(){
       {sku:'BAG-002',style:'2T03-1',cn:'牛皮手拿包',en:'Leather Clutch Bag',noTax:160.0,tax:180.80,factory:'璞景工厂',hs:'4202220000',mat:'牛皮',brandType:'境内自主品牌',enjoys:'0'}
     ],
     price:{rate:0.20, exch:7.1},
-    templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null,客户发票:null,送货单:null,入库单:null},
+    templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null,客户发票:null,送货单:null,入库单:null,供应商报价单:null,销售报价单:null},
     /* 客户发票收款账户信息(给客户汇款用；客户发票模板底部展示) */
     bankInfo:{pay:'',account:'',bank:'',name:'',no:''},
     /* 主体档案：名称 → {addr,contact,email,tel}(发货人/收货人/采购主体共用，单据自动引用) */
@@ -796,7 +796,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.parties.profiles)d.parties.profiles={};if(!d.tier1Profiles)d.tier1Profiles={};if(!d.docCenter)d.docCenter=[];if(!d.docSnaps)d.docSnaps={};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.templates['送货单'])d.templates['送货单']=null;if(!d.templates['入库单'])d.templates['入库单']=null;if(!d.parties.codes)d.parties.codes={};if(!d.rebateOverride)d.rebateOverride={};if(!d.hsLibOverride)d.hsLibOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.parties.profiles)d.parties.profiles={};if(!d.tier1Profiles)d.tier1Profiles={};if(!d.docCenter)d.docCenter=[];if(!d.docSnaps)d.docSnaps={};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.templates['送货单'])d.templates['送货单']=null;if(!d.templates['入库单'])d.templates['入库单']=null;if(!d.templates['供应商报价单'])d.templates['供应商报价单']=null;if(!d.templates['销售报价单'])d.templates['销售报价单']=null;if(!d.parties.codes)d.parties.codes={};if(!d.rebateOverride)d.rebateOverride={};if(!d.hsLibOverride)d.hsLibOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -2058,7 +2058,10 @@ function confirmDraft(did){
     {type:'国内采购合同',n:suppliers.length,suppliers},
     /* 2026-10-12 v2.25：货流凭证链——送货单(供应商→井太兰,每家一份,同采购合同编号) + 入库单(井太兰收货,编号=采货单号-RK)。明细与全部单证同源 d.lines */
     {type:'送货单',n:suppliers.length,suppliers},
-    {type:'入库单',n:suppliers.length,suppliers}
+    {type:'入库单',n:suppliers.length,suppliers},
+    /* 2026-10-12 v2.25 报价层：供应商产品报价单(每家一份,含税采购价=cost×1.13) + 井太兰销售报价单(整票一份,售价公式价 decl) */
+    {type:'供应商报价单',n:suppliers.length,suppliers},
+    {type:'销售报价单',n:1}
   ];
   DB.docs.push({id:uid('DOC'),dftId:did,out,suppliers,at:new Date().toLocaleString()});
   DB.sel.doc=DB.docs.length-1;
@@ -2110,13 +2113,20 @@ function buildData(doc){
       /* Model 列：归并行显示该款全部 SKU(_keys)；M0 一行一款取 sku（含尺码；style 为 SPU 级无尺码，用户 09-23 确认须显示全）；显式 model 最优先 */
       model:l.model||(l._keys&&l._keys.length?l._keys.join(','):((d.mergeMode==='M0')?(l.sku||l.style):(l.style||l.sku)))};});
   const base=d.header.declDate||today();
+  /* 报价单行（2026-10-12 v2.25）：逐 SKU 一行（样本口径=M0，与送货单合并口径不同）。
+     purTax=不含税采购价×1.13（含税采购报价，与采购合同 taxPrice 同式）；sales=decl（售价公式价 noTax/(1-毛利)，即申报价）。
+     nameF/matF/unitF=繁体显示字段（井太兰销售报价单样本为繁体列，走 FAN_MAP）。 */
+  const qrows=(d.rawLines&&d.rawLines.length?d.rawLines:[]).map(l=>{const _sup=consolidatedSupplier(l.supplier||'');
+    return {name:l.name||'',model:l.sku||l.style||'',mat:l.mat||'',unit:l.unit||'个',qty:+l.qty||0,
+      purTax:decRound((+l.cost||0)*1.13,4).toFixed(4),sales:(+l.decl||0),sup:_sup,
+      nameF:fan(l.name||''),matF:fan(l.mat||''),unitF:fan(l.unit||'个')};});
   /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
   const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=decRound((+l.cost||0)*1.13,4);return {...l,taxPrice:tp.toFixed(4),taxAmount:decRound(tp*(+l.qty||0),2).toFixed(2)};});
     /* 乙方信息/账户按规则自动引用：乙方=一级供应商档案, 账户=该供应商绑定的账户(owner 匹配) */
     const _pb=tier1Profile(s),_pa=acctFor((d.header&&d.header.currency)||'',s);
-    return {supplier:s,items,_no:((d.header&&d.header.no)||'')+'-'+(ci+1),rkNo:((d.header&&d.header.no)||'')+'-'+(ci+1)+'-RK',qtyTotal:decRound(items.reduce((a,l)=>a+(+l.qty||0),0),0),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
+    return {supplier:s,items,qitems:qrows.filter(q=>q.sup===s),_no:((d.header&&d.header.no)||'')+'-'+(ci+1),rkNo:((d.header&&d.header.no)||'')+'-'+(ci+1)+'-RK',qtyTotal:decRound(items.reduce((a,l)=>a+(+l.qty||0),0),0),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
       purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
-  return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
+  return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,qrows,shipperFan:fan(d.header.shipper||''),
     cur:_curSym,curCode:_curCode,currencyRaw:_ccur,exch:_exch,
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
@@ -2436,6 +2446,25 @@ function builtin(name,data){
     <p style="margin:8px 0 2px">入库时间：{{dates.purchase}} &nbsp;&nbsp;&nbsp; 录入人员：____________</p>
     <p style="margin:2px 0">仓管员（签字）：____________ &nbsp;&nbsp;&nbsp; 审核人（签字）：____________</p>
     </div>{{/each}}</div>`;
+  /* ── 报价单两张（2026-10-12 v2.25）：报价层凭证，逐 SKU 一行（样本口径）；供应商版简体/销售版繁体 ── */
+  if(name==='供应商报价单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
+    {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
+    <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}} 产品报价单</h2>
+    <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
+    <tr><th>序号</th><th>产品名称</th><th>型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>单价</th></tr>
+    {{#each qitems}}<tr><td style="text-align:center">{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td style="text-align:center">{{unit}}</td><td style="text-align:right">{{qty}}</td><td style="text-align:right">{{purTax}}</td></tr>{{/each}}
+    </table>
+    <p style="margin:8px 0 2px;font-size:11px">报价单位：人民币元（含 13% 增值税） &nbsp;&nbsp;&nbsp; 报价方：{{supplier}} &nbsp;&nbsp;&nbsp; 日　期：____________</p>
+    </div>{{/each}}</div>`;
+  if(name==='销售报价单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
+    <div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
+    <h2 style="text-align:center;margin:4px 0;font-size:16px">{{shipperFan}}銷售報價單</h2>
+    <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
+    <tr><th>序號</th><th>產品名稱</th><th>型號</th><th>材質標準</th><th>單位</th><th>數量</th><th>單價</th></tr>
+    {{#each qrows}}<tr><td style="text-align:center">{{_i}}</td><td>{{nameF}}</td><td>{{model}}</td><td>{{matF}}</td><td style="text-align:center">{{unitF}}</td><td style="text-align:right">{{qty}}</td><td style="text-align:right">{{sales}}</td></tr>{{/each}}
+    </table>
+    <p style="margin:8px 0 2px;font-size:11px">報價單位：人民幣元 &nbsp;&nbsp;&nbsp; 報價方：{{shipperFan}} &nbsp;&nbsp;&nbsp; 日　期：____________</p>
+    </div></div>`;
   return '<p>未知模板</p>';
 }
 function renderOut(){
@@ -2465,7 +2494,7 @@ function renderOut(){
       if(isBroken(p)&&tplOf(o.type)) p=renderTpl(builtin(o.type,dt),extra||dt);
       return p;
     };
-    if(o.type==='国内采购合同'||o.type==='送货单'||o.type==='入库单'){
+    if(o.type==='国内采购合同'||o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'){
       h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
         <h4 style="margin:0 8px 0 0">${o.type} ×${dt.contracts.length}</h4>
         <button class="small" onclick="previewDoc(${docI},${idx})">预览全部</button>
@@ -2689,8 +2718,8 @@ function previewDoc(docI,idx){_cur={doc:docI,idx};const doc=DB.docs[docI];const 
 function closePrev(){document.getElementById('prevModal').classList.remove('open');}
 function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];const data=buildData(doc);
   if(o.type==='国内采购合同'){var _first='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_first)_first=one;dl('采购合同_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'Word×'+data.contracts.length,_first);return;}
-  /* 送货单/入库单（2026-10-12 v2.25）：每家一级供应商一份，文件名带供应商 */
-  if(o.type==='送货单'||o.type==='入库单'){var _fv='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fv)_fv=one;dl(o.type+'_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fv);return;}
+  /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份，文件名带供应商 */
+  if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'){var _fv='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fv)_fv=one;dl(o.type+'_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fv);return;}
   const _h=safeRender(o.type,data);dcLog('dl',doc.dftId,o.type,'Word',_h);dl(o.type,_h);}
 function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
 /* 通用下载：Chrome 127+ 对 URL.createObjectURL 的 Blob 同步下载会弹"需下载权限"。
@@ -3331,7 +3360,28 @@ function xlsVoucher(type,c,d){
   autoHeightsSheetJS(_ws);
   return _ws;
 }
-function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='送货单'||type==='入库单') return null; if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
+/* 报价单 xlsx 构建（2026-10-12 v2.25）：供应商版简体/销售版繁体，逐 SKU 一行 */
+function xlsQuoteSupplier(c,d){
+  const R=[]; const MG=[]; let r=0; const C=7;
+  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
+  R[r]=R[r]||[];R[r][0]={t:'s',v:(c.supplier||'')+' 产品报价单',s:{font:{name:'宋体',sz:16,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true}}};addMerge(MG,r,0,C-1);r++;
+  ['序号','产品名称','型号','材质标准','单位','数量','单价'].forEach((h,i)=>putCell(R,r,i,h)); r++;
+  (c.qitems||[]).forEach((q,i)=>{ [i+1,q.name,q.model,q.mat,q.unit,q.qty,q.purTax].forEach((v,j)=>putCell(R,r,j,v)); r++; });
+  row('报价单位：人民币元（含 13% 增值税）　　报价方：'+(c.supplier||''));
+  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:22},{wch:14},{wch:8},{wch:10},{wch:12}]);
+  autoHeightsSheetJS(_ws); return _ws;
+}
+function xlsQuoteSales(d){
+  const R=[]; const MG=[]; let r=0; const C=7;
+  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
+  R[r]=R[r]||[];R[r][0]={t:'s',v:(d.shipperFan||'')+'銷售報價單',s:{font:{name:'宋体',sz:16,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true}}};addMerge(MG,r,0,C-1);r++;
+  ['序號','產品名稱','型號','材質標準','單位','數量','單價'].forEach((h,i)=>putCell(R,r,i,h)); r++;
+  (d.qrows||[]).forEach((q,i)=>{ [i+1,q.nameF,q.model,q.matF,q.unitF,q.qty,q.sales].forEach((v,j)=>putCell(R,r,j,v)); r++; });
+  row('報價單位：人民幣元　　報價方：'+(d.shipperFan||''));
+  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:22},{wch:14},{wch:8},{wch:10},{wch:12}]);
+  autoHeightsSheetJS(_ws); return _ws;
+}
+function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='送货单'||type==='入库单') return null; if(type==='供应商报价单') return null; if(type==='销售报价单') return xlsQuoteSales(d); if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
 /* ========== A4 打印设置（2026-09-07）==========
    只注入打印层参数(paperSize/orientation/fitToPage/边距/居中/打印区域)，
    不触碰单元格内容/样式/合并 —— 屏幕显示 100% 不变，仅 Ctrl+P 打印时生效。
@@ -3367,8 +3417,8 @@ async function composeSetWorkbook(doc,prefix){
   const sj=XLSX.utils.book_new(); let addedSj=false;
   (doc.out||[]).forEach(function(o){
     if(o.type==='国内采购合同') return;
-    /* 送货单/入库单（v2.25）：每家一级供应商一份 sheet（与采购合同同源 contracts） */
-    if(o.type==='送货单'||o.type==='入库单'){ (d.contracts||[]).forEach(function(c){ XLSX.utils.book_append_sheet(sj,xlsVoucher(o.type,c,d),sheetName((prefix||'')+o.type+'_'+c.supplier)); addedSj=true; }); return; }
+    /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份 sheet（与采购合同同源 contracts） */
+    if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'){ (d.contracts||[]).forEach(function(c){ const wsV=(o.type==='供应商报价单')?xlsQuoteSupplier(c,d):xlsVoucher(o.type,c,d); XLSX.utils.book_append_sheet(sj,wsV,sheetName((prefix||'')+o.type+'_'+c.supplier)); addedSj=true; }); return; }
     const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(sj,ws,sheetName((prefix||'')+o.type)); addedSj=true; }
   });
   /* 采购页走 exceljs 模板盖章 → 与 SheetJS 页合成单工作簿 */
@@ -3427,9 +3477,9 @@ function downloadDocXlsx(docI,idx){
         else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); xlsDownload('国内采购合同',wb0); }
         return;
       }
-      /* 送货单/入库单（v2.25）：每家一级供应商一份 sheet */
-      if(o.type==='送货单'||o.type==='入库单'){
-        const wbv=XLSX.utils.book_new(); d.contracts.forEach(c=>XLSX.utils.book_append_sheet(wbv,xlsVoucher(o.type,c,d),sheetName(o.type+'_'+c.supplier)));
+      /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份 sheet */
+      if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'){
+        const wbv=XLSX.utils.book_new(); d.contracts.forEach(c=>{ const wsV=(o.type==='供应商报价单')?xlsQuoteSupplier(c,d):xlsVoucher(o.type,c,d); XLSX.utils.book_append_sheet(wbv,wsV,sheetName(o.type+'_'+c.supplier)); });
         xlsDownload(o.type,wbv); return;
       }
       const wb=XLSX.utils.book_new();
