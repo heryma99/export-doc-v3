@@ -1659,7 +1659,7 @@ function renderDrafts(){
       <td>${l.box}</td><td>${l.supplier}</td>
       <td><button class="ghost" onclick="openCls('${d.id}',${i})">选HS</button></td></tr>`;});
   t+='</tbody></table>';
-  const mh=d.monitor?renderMonitor(d.monitor):(d.confirmed?'':'<div class="monitor"><div class="mh" style="color:var(--mut)">⚠ 监控已过期或未运行（上次运行后价格有改动）——点「重跑监控」，锁定时也会自动重跑</div></div>');
+  const mh=d.monitor?renderMonitor(d.monitor,d.id):(d.confirmed?'':'<div class="monitor"><div class="mh" style="color:var(--mut)">⚠ 监控已过期或未运行（上次运行后价格有改动）——点「重跑监控」，锁定时也会自动重跑</div></div>');
   const rawCount=d.rawLines?d.rawLines.length:d.lines.length;
   let maxLen0=0,total0=0;
   d.lines.forEach(l=>{const bl=byteLen(String(specDetail(l).xl||''));if(bl>maxLen0)maxLen0=bl;total0+=(+l.decl)*(+l.qty);});   /* v2.23：maxLen0 同改申报串实时口径 */
@@ -1942,6 +1942,10 @@ function runMonitor(did){
   /* B11 价格倒挂·含税口径（2026-10-09 新增）：归集加权申报价 ≥ 组内最高采购含税价。
      容错不误杀：旧草单无字段→WARN 提示重算；商品库未维护/SKU未匹配→缺失计数跳过；
      非FOB（申报价含运保费）→ 降级 WARN 人工复核。口径恒为 CNY（行 decl/costTaxMax 均人民币，外币仅在输出层换算）。 */
+  let _b11Sug=null;
+  /* 一键拆行建议（2026-10-12）：B11 违例时静默试跑 M0~M6×供应商开关 共14种组合，
+     取「能通过且行数最少」者为建议存入 monitor.suggest（renderMonitor 渲染按钮）；全部违例则消息给调价修复值。
+     纯内存试跑，不改当前归并；基于 rawLines 与监控同源。 */
   (function(){
     const _isFob=H.tradeTerm==='FOB';
     const _old11=L.filter(l=>l.costTaxMax===undefined).length;
@@ -1949,10 +1953,21 @@ function runMonitor(did){
     const _noMatch=L.reduce((a,l)=>a+(+l._taxNoMatch||0),0);
     const _chk=L.filter(l=>+l.costTaxMax>0);
     const _inv=_chk.filter(l=>decRound(+l.decl,2)<decRound(+l.costTaxMax,2));
+    if(_inv.length){
+      const _src=(d.rawLines&&d.rawLines.length)?d.rawLines:L;
+      MODES.forEach(m=>{[false,true].forEach(sp=>{
+        const t=mergeLines(_src,m.id,sp);
+        const bad=t.some(l=>+l.costTaxMax>0&&decRound(+l.decl,2)<decRound(+l.costTaxMax,2));
+        if(!bad&&(!_b11Sug||t.length<_b11Sug.n))_b11Sug={mode:m.id,sup:sp,n:t.length};
+      });});
+      if(_b11Sug&&_b11Sug.mode===(d.mergeMode||'M0')&&!!_b11Sug.sup===!!d.mergeSup)_b11Sug=null; /* 当前即最优：防御 */
+    }
     let _sev='OK',_ok=true,_m='';
     if(_old11){_sev='WARN';_ok=false;_m=_old11+' 行无含税价字段(旧草单未重算)；重新生成草单/重跑归并后自动核';}
     else if(_inv.length){_sev=_isFob?'BLOCK':'WARN';_ok=false;
-      _m=_inv.length+' 行倒挂：'+_inv.slice(0,3).map(l=>String(l.sku||'')+' 加权申报价 '+decRound(+l.decl,2)+' < 组内最高含税 '+decRound(+l.costTaxMax,2)).join('；')+(_inv.length>3?('…共 '+_inv.length+' 行'):'');}
+      _m=_inv.length+' 行倒挂：'+_inv.slice(0,3).map(l=>String(l.sku||'')+' 加权申报价 '+decRound(+l.decl,2)+' < 组内最高含税 '+decRound(+l.costTaxMax,2)).join('；')+(_inv.length>3?('…共 '+_inv.length+' 行'):'');
+      if(!_b11Sug){const _need=Math.max.apply(null,_chk.map(l=>+l.costTaxMax||0).concat([0]));
+        _m+=' 💡各归并组合均倒挂（拆行救不了），需调价：将违例行申报价上调至各自组内最高含税价（本票最高需 '+decRound(_need,2)+'）';}}
     else if(_noLib||_noMatch){_sev='WARN';_ok=false;_m='已核 '+_chk.length+' 行通过；含税价缺失：商品库未维护 '+_noLib+' 行、SKU未匹配 '+_noMatch+' 行(已跳过不阻断)';}
     else{_m='全部通过（CNY口径，本票 '+L.length+' 行）';}
     if(!_isFob){_m+=(_m?';':'')+'非FOB申报价含运保费，倒挂需人工复核';if(_sev==='OK'){_sev='WARN';_ok=false;}}
@@ -1968,15 +1983,25 @@ function runMonitor(did){
   add('B','B8','申报日期在退税申报期内','OK','OK','申报日 '+H.declDate);
   const b9=L.every(l=>(+l.decl)>(+l.cost));
   add('B','B9','申报价>成本(防倒挂)',b9?'OK':'BLOCK',b9,'存在申报价≤成本，倒挂影响退税基数');
-  d.monitor={list:R,block,warn};save();renderDrafts();
+  d.monitor={list:R,block,warn,suggest:_b11Sug};save();renderDrafts();
 }
-function renderMonitor(m){
+function renderMonitor(m,did){
   let h=`<div class="monitor"><div class="mh">监控结果：`;
   h+=m.block?`<span class="badge bad">${m.block} 阻断</span>`:`<span class="badge ok">无阻断</span>`;
   h+=` <span class="badge warn">${m.warn} 提示</span> <span class="muted">（阻断=BLOCK不可锁定；提示=WARN标红可继续）</span></div>`;
   m.list.forEach(r=>{const cls=r.ok?'ok':(r.sev==='BLOCK'?'bad':'warn');const ic=r.ok?'✓':(r.sev==='BLOCK'?'✕':'!');
     h+=`<div class="mline"><span class="ic badge ${cls}">${ic}</span><span><b>[${r.cat}${r.id}]</b> ${r.desc}${(r.ok&&!r.always)?'':' — '+r.msg}</span></div>`;});
+  if(m.suggest&&did)h+=`<div class="mline"><span class="ic badge ok">💡</span><span>已试跑 14 种归并组合：建议切换 <b>${m.suggest.mode}${m.suggest.sup?'+供应商分行':''}</b>（拆为 ${m.suggest.n} 行，预计全部通过） <button class="primary" style="padding:2px 10px;font-size:11px" onclick="applySuggest('${did}')">一键切换</button></span></div>`;
   h+='</div>';return h;
+}
+/* B11 一键拆行（2026-10-12）：按 monitor.suggest 切换归并组合并重跑监控；复用 mergeLines，不新增归并逻辑 */
+function applySuggest(did){
+  const d=DB.drafts.find(x=>x.id===did);if(!d||!d.monitor||!d.monitor.suggest)return;
+  const s=d.monitor.suggest;
+  d.mergeMode=s.mode;d.mergeSup=!!s.sup;
+  d.lines=mergeLines(d.rawLines&&d.rawLines.length?d.rawLines:d.lines,d.mergeMode,d.mergeSup);
+  d.monitor=null;save();
+  runMonitor(did); /* 重跑后 B11 应转通过，界面即时反映 */
 }
 
 /* ============== 阶段4 输出 ============== */
