@@ -1892,6 +1892,13 @@ function exportRebate(){
 
 
 /* ============== 监控体系 A/B ============== */
+/* MON_CATALOG：监控规则单一事实源（2026-10-12 方案B单源化）。
+   设置中心「监控规则」Tab 渲染本常量；runMonitor 每次执行后比对实际 add 的 id 集合，
+   不一致则写 DB.monSync 报警（设置中心目录顶部标红）——加/删规则时只改这里+runMonitor，忘了同步会自报警。 */
+const MON_CATALOG={
+ A:[{id:'A1',t:'表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售合同防倒签)'}],
+ B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购含税价(防倒挂·含税口径)'}]
+};
 function runMonitor(did){
   const d=DB.drafts.find(x=>x.id===did);const R=[];let block=0,warn=0;
   /* add(...,msg,always)：第 7 参数 always=true 时，即使检查通过也显示 msg（用于把算出来的金额亮出来）。
@@ -1983,6 +1990,13 @@ function runMonitor(did){
   add('B','B8','申报日期在退税申报期内','OK','OK','申报日 '+H.declDate);
   const b9=L.every(l=>(+l.decl)>(+l.cost));
   add('B','B9','申报价>成本(防倒挂)',b9?'OK':'BLOCK',b9,'存在申报价≤成本，倒挂影响退税基数');
+  /* 单源自检（2026-10-12 方案B）：实际执行的规则 id 集合 vs MON_CATALOG，不一致写 DB.monSync，设置中心标红报警。
+     注意 id 本身已含 A/B 前缀（cat 是分组、id 是唯一键），直接用 r.id 比对，勿拼 cat+id（会变 AA1 双前缀）。 */
+  (function(){
+    const _exec=R.map(r=>r.id);
+    const _cat=Object.keys(MON_CATALOG).reduce((a,c)=>a.concat(MON_CATALOG[c].map(x=>x.id)),[]);
+    DB.monSync={missing:_cat.filter(id=>_exec.indexOf(id)<0),extra:_exec.filter(id=>_cat.indexOf(id)<0),at:new Date().toLocaleString()};
+  })();
   d.monitor={list:R,block,warn,suggest:_b11Sug};save();renderDrafts();
 }
 function renderMonitor(m,did){
@@ -4011,12 +4025,13 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
       <div class="field"><label>美元汇率（换汇成本核用）</label><input value="${DB.price.exch}" onchange="DB.price.exch=+this.value;save();"></div></div>
       <div class="note">定价公式（未来/现行口径 = 毛利率法）：<br><code>申报价 = 不含税采购价 ÷ (1 − 毛利率)</code><br>例：不含税 102.9 ÷ 0.8 = <b>128.625</b>。退税基数 = 不含税采购价；应退 = 不含税采购价 × 13%。历史旧单 3 步法（×1.20575）已弃用。</div>`;
   } else if(curTab==='mon'){
-    h='<p class="muted">监控规则库（生成时后台静默跑，分 <span class="badge bad">BLOCK</span> 阻断 / <span class="badge warn">WARN</span> 提示）。仅两大类，覆盖你要求的两套合规：</p>';
-    h+='<h4 style="margin:12px 0 6px">A · 报关单填制规范</h4>';
-    /* 规则目录（2026-10-12 与 runMonitor 逐字对齐：补 A13/A14/B10/B11，修 A5/B2 旧文案）。⚠ 加新规则时此处必须同步 */
-    ['A1 表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)','A2 贸易国≠运抵国(转售场景应区分)','A3 成交方式与运费/保费一致(非FOB需核对)','A4 申报要素无空值(品牌类型/HS齐全)','A5 HS为10位商品编号','A6 法定计量单位与申报单位匹配','A7 单价×数量=总价(金额一致)','A8 毛重≥净重','A9 币制与随附发票一致','A10 生产销售单位=境内发货人(铁律)','A11 归类归并正确(同HS+同要素+同单价可归并)','A12 出口享惠与目的国协定一致','A13 商品项数≤50项/单(海关总署公告2019-18号)','A14 交货日期≥签订日期(销售合同防倒签)'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
-    h+='<h4 style="margin:12px 0 6px">B · 国家出口退税政策</h4>';
-    ['B1 采购进项发票与报关单品名/数量一致(票流一致)','B2 应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)','B3 供货企业具退税资格','B4 换汇成本合理','B5 商品退税率与HS匹配','B6 收汇完成(资金流一致)','B7 同票多品类不同退税率分项核算','B8 申报日期在退税申报期内','B9 申报价>成本(防倒挂)','B10 货源地与供应商档案一致(退税归属)','B11 归集加权申报价≥组内最高采购含税价(防倒挂·含税口径)'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
+    /* 方案B单源化（2026-10-12）：目录渲染 MON_CATALOG（与 runMonitor 同源），并显示 DB.monSync 自检结果 */
+    const _ms=DB.monSync||null;
+    const _bad=_ms&&(_ms.missing.length||_ms.extra.length);
+    h='<p class="muted">监控规则库（生成时后台静默跑，分 <span class="badge bad">BLOCK</span> 阻断 / <span class="badge warn">WARN</span> 提示）。本目录与执行层 runMonitor 单源联动'+(_ms?('，最近校验 '+_ms.at):'（尚未运行监控——打开任一草单点「重跑监控」即校验）')+'：</p>';
+    if(_bad)h+='<div class="note" style="color:#f85149;border:1px solid #f85149">⚠ 规则库与执行层不同步 —— 目录有但执行层缺失：'+(_ms.missing.join('、')||'无')+'；执行层有但目录缺失：'+(_ms.extra.join('、')||'无')+'。请同步 MON_CATALOG 与 runMonitor 后刷新。</div>';
+    ['A','B'].forEach(c=>{h+='<h4 style="margin:12px 0 6px">'+(c==='A'?'A · 报关单填制规范':'B · 国家出口退税政策')+'</h4>';
+      MON_CATALOG[c].forEach(x=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${x.id} ${x.t}</div>`);});
     h+='<div class="note">B1/B6 需外部凭证（进项发票/收汇水单）核对，系统在监控中标记「待补」；其余规则实时校验数据。</div>';
   } else if(curTab==='tmpl'){
     const keys=Object.keys(DB.templates);
