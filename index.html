@@ -2410,8 +2410,8 @@ function builtin(name,data){
   /* ── 送货单/入库单（2026-10-12 v2.25）：货流凭证，与采购合同同源 contracts，每家一级供应商一份 ── */
   if(name==='送货单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
     {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
-    <h2 style="text-align:center;margin:4px 0;font-size:18px">{{supplier}}</h2>
-    <h3 style="text-align:center;margin:2px 0 8px;font-size:15px;letter-spacing:8px">送 货 单</h3>
+    <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}}</h2>
+    <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">送 货 单</h3>
     <p style="margin:2px 0">录单日期：{{dates.purchase}} &nbsp;&nbsp;&nbsp; 送货单号：<b>{{_no}}</b></p>
     <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：____________</p>
     <p style="margin:2px 0">送货地址：{{header.partyB.addr}}</p>
@@ -2425,8 +2425,8 @@ function builtin(name,data){
     </div>{{/each}}</div>`;
   if(name==='入库单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
     {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
-    <h2 style="text-align:center;margin:4px 0;font-size:18px">{{header.partyB.name}}</h2>
-    <h3 style="text-align:center;margin:2px 0 8px;font-size:15px;letter-spacing:8px">入 库 单</h3>
+    <h2 style="text-align:center;margin:4px 0;font-size:16px">{{header.partyB.name}}</h2>
+    <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">入 库 单</h3>
     <p style="margin:2px 0">采货单号：<b>{{_no}}</b> &nbsp;&nbsp;&nbsp; 入库单号：<b>{{rkNo}}</b></p>
     <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
     <tr><th>序号</th><th>产品名称</th><th>具体型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>备注</th></tr>
