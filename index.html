@@ -3316,8 +3316,10 @@ function xlsVoucher(type,c,d){
   const C=7;
   const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
   const two=(lt,rt)=>{putCell(R,r,0,lt);addMerge(MG,r,0,3);putCell(R,r,4,rt);addMerge(MG,r,4,6);r++;};
-  row(coTitle);
-  row(type==='送货单'?'送 货 单':'入 库 单');
+  /* 表头两行(公司名/单据标题)统一 16 号宋体加粗(2026-10-12)：与 HTML 版式 16px 对齐，机制同 INVOICE/PACKING LIST 标题 */
+  const trow=(t)=>{R[r]=R[r]||[];R[r][0]={t:'s',v:t,s:{font:{name:'宋体',sz:16,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true}}};addMerge(MG,r,0,C-1);r++;};
+  trow(coTitle);
+  trow(type==='送货单'?'送 货 单':'入 库 单');
   if(isIn){ two('采货单号：'+(c._no||''),'入库单号：'+(c.rkNo||'')); }
   else{ two('录单日期：'+(d.dates&&d.dates.purchase||''),'送货单号：'+(c._no||'')); row('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||'')+'　　审核：____________'); row('送货地址：'+((H.partyB&&H.partyB.addr)||'')); }
   ['序号','产品名称','具体型号','材质标准','单位','数量','备注'].forEach((h,i)=>putCell(R,r,i,h)); r++;
