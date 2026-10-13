@@ -371,7 +371,7 @@ async function purchaseTplDownload(d,suffix){
     var items=(c.items||[]).map(function(l){ var up=decRound((+l.cost||0)*1.13,4); return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:up.toFixed(4),sub:decRound(up*(+l.qty||0),2).toFixed(2)}; });
     var pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
       deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.deliveryDate)||'':(H.deliveryDate||''),
-      deliveryPlace:H.deliveryPlace||'',acctBank:PA.bank||'',acctNo:PA.no||'',
+      deliveryPlace:H.deliveryPlace||partyProfile(H.shipper||'').addr||'',acctBank:PA.bank||'',acctNo:PA.no||'',
       signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
     await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
   }
@@ -1605,7 +1605,7 @@ function renderDrafts(){
     <div class="field"><label>合同簽訂地點</label><input value="${H.signPlace||'【東莞】'}" onchange="setHeader('${d.id}','signPlace',this.value)"></div>
     <div class="field"><label>合同簽訂日期</label><input type="date" value="${H.signDate||''}" onchange="setHeader('${d.id}','signDate',this.value)"></div>
     <div class="field"><label>交货日期</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
-    <div class="field"><label>交货地点(采购/销售合同)</label><input value="${H.deliveryPlace||''}" onchange="setHeader('${d.id}','deliveryPlace',this.value)" placeholder="如 广东省东莞市厚街镇恒通路6号3栋"></div>
+    <div class="field"><label>交货地点(采购/销售合同,默认=发货人档案地址)</label><input value="${H.deliveryPlace||((DB.parties.profiles&&DB.parties.profiles[H.shipper]||{}).addr||'')}" onchange="setHeader('${d.id}','deliveryPlace',this.value)" placeholder="如 广东省东莞市厚街镇恒通路6号3栋"></div>
     <div class="field" style="flex:1 1 100%"><label>销售合同 甲乙方 / 采购合同 甲乙方(自动引用)</label>
       <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--mut);padding:4px 8px;background:var(--panel2);border:1px dashed var(--line);border-radius:6px">
         <span>销售合同<b>甲方</b>=境外收货人 <b>${esc(H.consignee||'')}</b></span>
@@ -2128,6 +2128,8 @@ function buildData(doc){
     return {supplier:s,items,qitems:qrows.filter(q=>q.sup===s),_no:((d.header&&d.header.no)||'')+'-'+(ci+1),rkNo:((d.header&&d.header.no)||'')+'-'+(ci+1)+'-RK',qtyTotal:decRound(items.reduce((a,l)=>a+(+l.qty||0),0),0),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
       purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,qrows,shipperFan:fan(d.header.shipper||''),
+    /* 交货地点兜底（2026-10-13 用户拍板）：表头未填时默认取发货人档案地址（井太兰=东莞厚街仓），表头可覆盖 */
+    deliveryPlace:(d.header&&d.header.deliveryPlace)||partyProfile((d.header&&d.header.shipper)||'').addr||'',
     cur:_curSym,curCode:_curCode,currencyRaw:_ccur,exch:_exch,
     dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
@@ -2407,7 +2409,7 @@ function builtin(name,data){
     <p>2.付款时间：甲方收到合规发票后15个工作日内付全款。</p>
     <p>3.乙方账户信息：开户行：{{purchaseAcct.bank}} &nbsp; 账号：{{purchaseAcct.no}} &nbsp; 户名：{{purchaseAcct.name}}</p>
     <p><b>三、交货时间、地点</b></p>
-    <p>1.交货时间：{{deliveryDateCN}}前 &nbsp;&nbsp; 2.交货地点：{{header.deliveryPlace}}</p>
+    <p>1.交货时间：{{deliveryDateCN}}前 &nbsp;&nbsp; 2.交货地点：{{deliveryPlace}}</p>
     <p>运输及费用：由乙方承担。乙方负责陆运送货至指定地点，承担运输风险，包装需符合国家标准。</p>
     <p><b>四、验收及质保</b></p>
     <p>1.验收方式：甲方收到货物3日内，完成验收；不合格甲方有权拒收，乙方须3日内更换至合格。</p>
@@ -3314,7 +3316,7 @@ function xlsContract(c,d,idx){
   rrow('乙方账户信息应与合同及所开发票信息相一致。若因乙方原因导致合同、发票等信息有误，付款时间做相应顺延，甲方不承担任何责任。');
   row('');
   row('三、交货时间、地点');
-  two('1.交货时间：'+(fmtDateCN(H.deliveryDate)||'____')+'前','2.交货地点：'+(H.deliveryPlace||''));
+  two('1.交货时间：'+(fmtDateCN(H.deliveryDate)||'____')+'前','2.交货地点：'+(H.deliveryPlace||partyProfile(H.shipper||'').addr||''));
   lrow('运输及费用：由乙方承担。乙方负责陆运送货至指定地点，承担运输风险，包装需符合国家标准。');
   row('');
   row('四、验收及质保');
@@ -3439,7 +3441,7 @@ async function composeSetWorkbook(doc,prefix){
       const items=(c.items||[]).map(function(l){ var up=(l.taxPrice!==undefined&&l.taxPrice!=='')?(+l.taxPrice):decRound((+l.cost||0)*1.13,4); return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:(+up).toFixed(4),sub:(l.taxAmount!==undefined&&l.taxAmount!=='')?(+l.taxAmount).toFixed(2):decRound((+up)*(+l.qty||0),2).toFixed(2)}; });
       const pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
         deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.deliveryDate)||'':(H.deliveryDate||''),
-        deliveryPlace:H.deliveryPlace||'',acctBank:PA.bank||'',acctNo:PA.no||'',
+        deliveryPlace:H.deliveryPlace||partyProfile(H.shipper||'').addr||'',acctBank:PA.bank||'',acctNo:PA.no||'',
         signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
       await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
     }
