@@ -2312,14 +2312,14 @@ function builtin(name,data){
 </tr>
 </table></div>`;
   }
-  if(name==='Invoice发票')return head+`<p>Invoice No: {{header.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
+  if(name==='Invoice发票')return head+`<p>Invoice No: {{invNoF}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
     <tr><td colspan="5">总计{{cur}}:</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="5">TOTAL:{{cur}}</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr></table>`;
-  if(name==='客户发票')return head+`<p>Invoice No: {{header.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
+  if(name==='客户发票')return head+`<p>Invoice No: {{invNoF}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
@@ -2330,7 +2330,7 @@ function builtin(name,data){
     <tr><td colspan="6">Bank: {{bankInfo.bank}}</td></tr>
     <tr><td colspan="6">Account Name: {{bankInfo.name}}</td></tr>
     <tr><td colspan="6">Account Number: {{bankInfo.no}}</td></tr></table>`;
-  if(name==='Packing List装箱单')return head+`<p>Date: {{dates.invoice}} &nbsp; Invoice No: {{header.no}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
+  if(name==='Packing List装箱单')return head+`<p>Date: {{dates.invoice}} &nbsp; Invoice No: {{invNoF}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
     <p>Shipped: From 东莞 to {{destCn}} &nbsp; Terms of Pay: {{header.tradeTerm}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
