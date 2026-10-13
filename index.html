@@ -2425,7 +2425,7 @@ function builtin(name,data){
     {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
     <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}}</h2>
     <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">送货单</h3>
-    <p style="margin:2px 0">录单日期：{{dates.purchase}} &nbsp;&nbsp;&nbsp; 送货单号<br>采购单号：<b>{{_no}}</b></p>
+    <p style="margin:2px 0">录单日期：{{dates.purchase}} &nbsp;&nbsp;&nbsp; <span style="display:inline-block;vertical-align:top;line-height:1.35">送货单号<br>采购单号</span>：<b>{{_no}}</b></p>
     <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：____________</p>
     <p style="margin:2px 0">送货地址：{{deliveryPlace}} &nbsp;&nbsp; 联 系 人：{{purchaseB.contact}}</p>
     <p style="margin:2px 0">手　机：{{purchaseB.tel}} &nbsp;&nbsp; 电　话：____________</p>
@@ -3355,8 +3355,9 @@ function xlsVoucher(type,c,d){
   trow(type==='送货单'?'送货单':type);
   const PB=(type==='送货单')?(tier1Profile(c.supplier||'')||{}):{};
   if(isIn){ two('采货单号：'+(c._no||''),'入库单号：'+(c.rkNo||'')); }
-  else{ /* 对齐供应商原版(2026-10-13)：两行标签堆叠+联系人+手机/电话 */
-    two('录单日期：'+(d.dates&&d.dates.purchase||''),'送货单号\n采购单号：'+(c._no||''));
+  else{ /* 对齐供应商原版(2026-10-13)：标签格两行堆叠+数值独立相邻格（原版 E3/F3:G3 结构） */
+    putCell(R,r,0,'录单日期：'+(d.dates&&d.dates.purchase||'')); addMerge(MG,r,0,3);
+    putCell(R,r,4,'送货单号\n采购单号'); putCell(R,r,5,(c._no||'')); addMerge(MG,r,5,6); r++;
     two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：____________');
     two('送货地址：'+cleanDeliveryPlace((H.partyB&&H.partyB.addr)||''),'联 系 人：'+(PB.contact||'____________'));
     two('手　机：'+(PB.tel||'____________'),'电　话：____________'); }
