@@ -2126,7 +2126,7 @@ function buildData(doc){
     /* 乙方信息/账户按规则自动引用：乙方=一级供应商档案, 账户=该供应商绑定的账户(owner 匹配) */
     const _pb=tier1Profile(s),_pa=acctFor((d.header&&d.header.currency)||'',s);
     return {supplier:s,items,qitems:qrows.filter(q=>q.sup===s),_no:((d.header&&d.header.no)||'')+'-'+(ci+1),rkNo:((d.header&&d.header.no)||'')+'-'+(ci+1)+'-RK',qtyTotal:decRound(items.reduce((a,l)=>a+(+l.qty||0),0),0),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
-      purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
+      purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||''},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,qrows,shipperFan:fan(d.header.shipper||''),
     /* 交货地点兜底（2026-10-13 用户拍板）：表头未填时默认取发货人档案地址（井太兰=东莞厚街仓），表头可覆盖 */
     deliveryPlace:(d.header&&d.header.deliveryPlace)||cleanDeliveryPlace(partyProfile((d.header&&d.header.shipper)||'').addr),
@@ -2424,17 +2424,19 @@ function builtin(name,data){
   if(name==='送货单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
     {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
     <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}}</h2>
-    <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">送 货 单</h3>
-    <p style="margin:2px 0">录单日期：{{dates.purchase}} &nbsp;&nbsp;&nbsp; 送货单号：<b>{{_no}}</b></p>
+    <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">送货单</h3>
+    <p style="margin:2px 0">录单日期：{{dates.purchase}} &nbsp;&nbsp;&nbsp; 送货单号<br>采购单号：<b>{{_no}}</b></p>
     <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：____________</p>
-    <p style="margin:2px 0">送货地址：{{header.partyB.addr}}</p>
+    <p style="margin:2px 0">送货地址：{{deliveryPlace}} &nbsp;&nbsp; 联 系 人：{{purchaseB.contact}}</p>
+    <p style="margin:2px 0">手　机：{{purchaseB.tel}} &nbsp;&nbsp; 电　话：____________</p>
     <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
     <tr><th>序号</th><th>产品名称</th><th>具体型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>备注</th></tr>
     {{#each items}}<tr><td style="text-align:center">{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td style="text-align:center">{{unit}}</td><td style="text-align:right">{{qty}}</td><td></td></tr>{{/each}}
     <tr><td colspan="5" style="text-align:right"><b>合　计</b></td><td style="text-align:right"><b>{{qtyTotal}}</b></td><td></td></tr>
     </table>
     <p style="margin:8px 0 2px;font-size:11px">注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。</p>
-    <p style="margin:2px 0">开单人：____________ &nbsp;&nbsp;&nbsp; 收货人：____________ &nbsp;&nbsp;&nbsp; 日　期：____________</p>
+    <p style="margin:2px 0">开单人：____________ &nbsp;&nbsp;&nbsp; 收货人：____________</p>
+    <p style="margin:2px 0">日　期：____________ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 日　期：____________</p>
     </div>{{/each}}</div>`;
   if(name==='入库单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
     {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
@@ -3350,14 +3352,19 @@ function xlsVoucher(type,c,d){
   /* 表头两行(公司名/单据标题)统一 16 号宋体加粗(2026-10-12)：与 HTML 版式 16px 对齐，机制同 INVOICE/PACKING LIST 标题 */
   const trow=(t)=>{R[r]=R[r]||[];R[r][0]={t:'s',v:t,s:{font:{name:'宋体',sz:16,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true}}};addMerge(MG,r,0,C-1);r++;};
   trow(coTitle);
-  trow(type==='送货单'?'送 货 单':'入 库 单');
+  trow(type==='送货单'?'送货单':type);
+  const PB=(type==='送货单')?(tier1Profile(c.supplier||'')||{}):{};
   if(isIn){ two('采货单号：'+(c._no||''),'入库单号：'+(c.rkNo||'')); }
-  else{ two('录单日期：'+(d.dates&&d.dates.purchase||''),'送货单号：'+(c._no||'')); row('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||'')+'　　审核：____________'); row('送货地址：'+((H.partyB&&H.partyB.addr)||'')); }
+  else{ /* 对齐供应商原版(2026-10-13)：两行标签堆叠+联系人+手机/电话 */
+    two('录单日期：'+(d.dates&&d.dates.purchase||''),'送货单号\n采购单号：'+(c._no||''));
+    two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：____________');
+    two('送货地址：'+cleanDeliveryPlace((H.partyB&&H.partyB.addr)||''),'联 系 人：'+(PB.contact||'____________'));
+    two('手　机：'+(PB.tel||'____________'),'电　话：____________'); }
   ['序号','产品名称','具体型号','材质标准','单位','数量','备注'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   c.items.forEach((l,i)=>{ [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,''].forEach((v,j)=>putCell(R,r,j,v)); r++; });
   putCell(R,r,0,'合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
   if(isIn){ two('入库时间：'+(d.dates&&d.dates.purchase||''),'录入人员：____________'); }
-  else{ row('注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。'); two('开单人：____________','收货人：____________'); row('日　期：____________'); }
+  else{ row('注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。'); two('开单人：____________','收货人：____________'); two('日　期：____________','日　期：____________'); }
   const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:26},{wch:14},{wch:8},{wch:10},{wch:12}]);
   autoHeightsSheetJS(_ws);
   return _ws;
@@ -4113,7 +4120,7 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">一级供应商(签约主体)</p><span class="cnt">${t1.length} 个</span></div>
         <table><tr><th style="width:14%">名称(采购合同抬头)</th><th style="width:17%">地址(乙方)</th><th style="width:9%">联系人</th><th style="width:11%">邮箱</th><th style="width:8%">货源地代码</th><th style="width:10%">货源地名称</th><th style="width:12%">纳税人性质</th><th style="width:8%">征收率</th><th style="width:11%">操作</th></tr><tbody>
-          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><select onchange="setVatType('${escQ(s)}',this.value)" title="退税测算用：缺省一般纳税人(不设限)"><option value="gen"${p.vatType==='small'?'':' selected'}>一般纳税人</option><option value="small"${p.vatType==='small'?' selected':''}>小规模纳税人</option></select></td><td><input type="number" min="0" max="17" step="1" value="${(p.vatType==='small'&&p.vatRate!==undefined&&p.vatRate!=='')?esc(p.vatRate):(p.vatType==='small'?'3':'13')}"${p.vatType==='small'?'':' disabled'} style="width:56px" title="小规模纳税人票面征收率(1/3)" onchange="setTier1Profile('${escQ(s)}','vatRate',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
+          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.tel||'')}" placeholder="手机" onchange="setTier1Profile('${escQ(s)}','tel',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><select onchange="setVatType('${escQ(s)}',this.value)" title="退税测算用：缺省一般纳税人(不设限)"><option value="gen"${p.vatType==='small'?'':' selected'}>一般纳税人</option><option value="small"${p.vatType==='small'?' selected':''}>小规模纳税人</option></select></td><td><input type="number" min="0" max="17" step="1" value="${(p.vatType==='small'&&p.vatRate!==undefined&&p.vatRate!=='')?esc(p.vatRate):(p.vatType==='small'?'3':'13')}"${p.vatType==='small'?'':' disabled'} style="width:56px" title="小规模纳税人票面征收率(1/3)" onchange="setTier1Profile('${escQ(s)}','vatRate',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newTier1" placeholder="+ 新一级供应商(签约主体)"><button class="btn add" onclick="addTier1()">添加</button></div>
       </div>
