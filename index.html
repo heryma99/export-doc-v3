@@ -3472,7 +3472,9 @@ function exportFname(d,suffix){
   const cn=String(H.destCountry||'').split(' ').slice(1).join('').trim();
   const tm=String(H.transMode||'');
   let tr=''; if(tm.indexOf('航空')>=0)tr='空运'; else if(tm.indexOf('水路')>=0)tr='海运'; else tr=tm.replace(/^\d+\s*/,'').replace(/运输/g,'').trim();
-  return exportNo(d)+(cn?'_'+cn:'')+(tr?'_'+tr:'')+(suffix||'');
+  /* 境外收货人=表头 consignee（2026-10-13 补段：此前实现遗漏） */
+  const cns=String(H.consignee||'').replace(/[\\/:*?"<>|]/g,'').trim();
+  return exportNo(d)+(cn?'_'+cn:'')+(tr?'_'+tr:'')+(cns?'_'+cns:'')+(suffix||'');
 }
 async function downloadSetExcel(doc,fname,prefix){
   const r=await composeSetWorkbook(doc,prefix);
