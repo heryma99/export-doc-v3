@@ -63,11 +63,14 @@
   "tier1Profiles": {
     "广州自衍空间科创有限公司": {
       "addr": "广州市白云区锦石四路57号1801房",
-      "contact": "",
+      "contact": "曾丽娴",
       "email": "",
       "usci": "91440111MAEH87G029",
       "originCode": "44019",
-      "originName": "广州其他"
+      "originName": "广州其他",
+      "tel": "13827251893",
+      "phone": "/",
+      "shr": "黄新娣"
     },
     "Lo Monte International Limited": {
       "addr": "广州",
