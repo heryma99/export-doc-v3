@@ -352,7 +352,7 @@ async function stampPurchaseSheet(ws,tpl,items,pctx){
   ws.getCell(tailStart+24,4).value='  乙方（盖章）：'+(pctx.bName||'');
   ws.getCell(tailStart+25,1).value='授权代表（签字）：________________________';
   ws.getCell(tailStart+25,4).value='授权代表（签字）：________________________';
-  if(pctx.signDate) ws.getCell(tailStart+26,1).value=pctx.signDate+'                 '; /* src R49 */
+  /* 2026-10-13 用户拍板A：采购合同日期口径=交货日期，删除尾部「签订日期」行（原与销售合同共用 signDate 字段，口径错误） */
   autoHeightsExcelJS(ws,widths);   /* 行高自适应(2026-09-11): 模板个别行高不足(如 R24/R35/R40/R41)按内容加高, 只增不减 */
 }
 async function purchaseTplDownload(d,suffix){
@@ -1605,6 +1605,7 @@ function renderDrafts(){
     <div class="field"><label>合同簽訂地點</label><input value="${H.signPlace||'【東莞】'}" onchange="setHeader('${d.id}','signPlace',this.value)"></div>
     <div class="field"><label>合同簽訂日期</label><input type="date" value="${H.signDate||''}" onchange="setHeader('${d.id}','signDate',this.value)"></div>
     <div class="field"><label>交货日期</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
+    <div class="field"><label>送货/入库日期(送货单/入库单,可空导出后补)</label><input type="date" value="${H.shipDate||''}" onchange="setHeader('${d.id}','shipDate',this.value)"></div>
     <div class="field"><label>交货地点(采购/销售合同,默认=发货人档案地址)</label><input value="${H.deliveryPlace||((v=>{const m=String(v||'').replace(/[,，]?\s*\d+室/g,'').trim();return m;})((DB.parties.profiles&&DB.parties.profiles[H.shipper]||{}).addr||''))}" onchange="setHeader('${d.id}','deliveryPlace',this.value)" placeholder="如 广东省东莞市厚街镇恒通路6号3栋"></div>
     <div class="field" style="flex:1 1 100%"><label>销售合同 甲乙方 / 采购合同 甲乙方(自动引用)</label>
       <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--mut);padding:4px 8px;background:var(--panel2);border:1px dashed var(--line);border-radius:6px">
@@ -1622,8 +1623,9 @@ function renderDrafts(){
     <div class="field"><label>运抵国</label><input value="${H.arrivalCountry}"></div>
     <div class="field"><label>产终国</label><input value="${H.originCountry}"></div>
     <div class="field"><label>申报日期</label><input type="date" value="${H.declDate}" onchange="setHeader('${d.id}','declDate',this.value)"></div>
+    <div class="field"><label>出口日期(海关回执后填,可空)</label><input type="date" value="${H.exportDate||''}" onchange="setHeader('${d.id}','exportDate',this.value)"></div>
     <div class="field"><label>合同协议号(=外部单号)</label><input value="${H.no||''}" onchange="setHeader('${d.id}','no',this.value)"></div>
-    <div class="field"><label>发票号(缺省=合同号)</label><input value="${H.invNo||H.no||''}" onchange="setHeader('${d.id}','invNo',this.value)"></div>
+    <div class="field"><label>发票号(INV+年月日6位+序号)</label><input value="${H.invNo||''}" onchange="setHeader('${d.id}','invNo',this.value)" placeholder="INV26100101" title="INV+年月日6位(YYMMDD)+序号≥2位；日期须晚于合同簽訂日期；客户发票/装箱单/Invoice 的日期自动取此日期"></div>
     <div class="field"><label>委托协议号</label><input value="${H.entrustNo||''}" onchange="setHeader('${d.id}','entrustNo',this.value)"></div>
     <div class="field"><label>备案号</label><input value="${H.recordNo||''}" onchange="setHeader('${d.id}','recordNo',this.value)"></div>
     <div class="field"><label>境内货源地/产地</label><input value="${H.domSrc||''}" onchange="setHeader('${d.id}','domSrc',this.value)" placeholder="如 广州其他(44019)"></div>
@@ -1896,7 +1898,7 @@ function exportRebate(){
    设置中心「监控规则」Tab 渲染本常量；runMonitor 每次执行后比对实际 add 的 id 集合，
    不一致则写 DB.monSync 报警（设置中心目录顶部标红）——加/删规则时只改这里+runMonitor，忘了同步会自报警。 */
 const MON_CATALOG={
- A:[{id:'A1',t:'表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'}],
+ A:[{id:'A1',t:'表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'},{id:'A16',t:'发票号规范(格式/日期晚于签订日期,WARN)'}],
  B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购价(防倒挂·不含税口径)'}]
 };
 function runMonitor(did){
@@ -1944,6 +1946,15 @@ function runMonitor(did){
     }
     add('A','A15','净重自洽(净≈毛/隐含皮重超界/同票离群)',_n?'WARN':'OK',!_n,
       _n?('可疑 '+_n+' 行：'+_bad.join('；')+(_n>3?(' 等 '+_n+' 行'):'')+' —— WARN 仅提示，请人工核对'):'上传净重与本票毛重/皮重三角自洽');
+  })();
+  /* A16 发票号（2026-10-13 用户定稿，WARN级）：格式 INV+年月日6位+序号≥2位；日期须晚于合同簽訂日期；客户发票/PL/Invoice 的 DATE 取发票号日期（补全年），发票号未填则留空 */
+  (function(){
+    const _iv=String(H.invNo||'').trim();
+    if(!_iv){ add('A','A16','发票号规范(格式/日期晚于签订日期)','OK',true,'未填发票号——相关单据发票号/日期留空（不造值）'); return; }
+    const _p=parseInvNo(_iv);
+    if(!_p){ add('A','A16','发票号规范(格式/日期晚于签订日期)','WARN',false,'发票号 '+_iv+' 不符合 INV+年月日6位+序号≥2位（如 INV26100101=2026-10-01 第01号）'); return; }
+    if(H.signDate&&_p.date<=H.signDate){ add('A','A16','发票号规范(格式/日期晚于签订日期)','WARN',false,'发票号日期 '+_p.date+' 应晚于合同簽訂日期 '+H.signDate); return; }
+    add('A','A16','发票号规范(格式/日期晚于签订日期)','OK',true,'发票号 '+_iv+'，日期 '+_p.date);
   })();
   const a5=L.every(l=>/^\d{10}$/.test(l.hs));
   add('A','A5','HS为10位商品编号',a5?'OK':'BLOCK',a5,'HS非10位');
@@ -2130,10 +2141,12 @@ function buildData(doc){
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,qrows,shipperFan:fan(d.header.shipper||''),
     /* 交货地点兜底（2026-10-13 用户拍板）：表头未填时默认取发货人档案地址（井太兰=东莞厚街仓），表头可覆盖 */
     deliveryPlace:(d.header&&d.header.deliveryPlace)||cleanDeliveryPlace(partyProfile((d.header&&d.header.shipper)||'').addr),
-    /* 发票号兜底（2026-10-13）：报关草单 HTML 与 EXCEL 版(xlsCur)口径统一——手填优先，缺省=合同号 */
-    invNoF:(d.header&&d.header.invNo)||(d.header&&d.header.no)||'',
+    /* 发票号（2026-10-13 用户定稿）：只认手填 invNo，不填=空值，系统不造值；日期取发票号中年月日补全年 */
+    invNoF:String((d.header&&d.header.invNo)||'').trim(),
+    invDateF:(parseInvNo((d.header&&d.header.invNo)||'')||{}).date||'',
     cur:_curSym,curCode:_curCode,currencyRaw:_ccur,exch:_exch,
-    dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
+    /* dates 收缩（2026-10-13 用户拍板）：−30/−25/−20/−2 推算全部废除（送货/入库=手填shipDate、发票/PL=发票号日期、出口日期=空待海关回执），仅保留申报日期 */
+    dates:{customs:fmt(base)},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
     totalAmount:decRound(lines.reduce((a,l)=>a+(+l.decl)*(+l.qty),0),2).toFixed(2),
     totalAmountCur:decRound(lines.reduce((a,l)=>a+decl2cur((+l.decl)*(+l.qty)),0),2).toFixed(2),
@@ -2198,7 +2211,7 @@ function builtin(name,data){
 <tr>
 <td colspan="6"><b>{{header.shipper}}</b><br><span style="font-size:9px">信用代码 {{header.shipperUSCI}}　海关注册 {{header.shipperReg}}</span></td>
 <td colspan="2"><b>{{header.port}}</b></td>
-<td colspan="2"><b>{{dates.exportDate}}</b></td>
+<td colspan="2"><b>{{header.exportDate}}</b></td>
 <td colspan="2"><b>{{dates.customs}}</b></td>
 <td colspan="2"><b>{{header.recordNo}}</b></td>
 </tr>
@@ -2312,14 +2325,14 @@ function builtin(name,data){
 </tr>
 </table></div>`;
   }
-  if(name==='Invoice发票')return head+`<p>Invoice No: {{invNoF}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
+  if(name==='Invoice发票')return head+`<p>Invoice No: {{invNoF}} &nbsp; DATE: {{invDateF}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
     <tr><td colspan="5">总计{{cur}}:</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="5">TOTAL:{{cur}}</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr></table>`;
-  if(name==='客户发票')return head+`<p>Invoice No: {{invNoF}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
+  if(name==='客户发票')return head+`<p>Invoice No: {{invNoF}} &nbsp; DATE: {{invDateF}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
@@ -2330,7 +2343,7 @@ function builtin(name,data){
     <tr><td colspan="6">Bank: {{bankInfo.bank}}</td></tr>
     <tr><td colspan="6">Account Name: {{bankInfo.name}}</td></tr>
     <tr><td colspan="6">Account Number: {{bankInfo.no}}</td></tr></table>`;
-  if(name==='Packing List装箱单')return head+`<p>Date: {{dates.invoice}} &nbsp; Invoice No: {{invNoF}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
+  if(name==='Packing List装箱单')return head+`<p>Date: {{invDateF}} &nbsp; Invoice No: {{invNoF}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
     <p>Shipped: From 东莞 to {{destCn}} &nbsp; Terms of Pay: {{header.tradeTerm}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
@@ -2427,7 +2440,7 @@ function builtin(name,data){
     {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
     <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}}</h2>
     <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">送货单</h3>
-    <p style="margin:2px 0">录单日期：{{dates.purchase}} &nbsp;&nbsp;&nbsp; <span style="display:inline-block;vertical-align:top;line-height:1.35">送货单号<br>采购单号</span>：<b>{{_no}}</b></p>
+    <p style="margin:2px 0">录单日期：{{header.shipDate}} &nbsp;&nbsp;&nbsp; <span style="display:inline-block;vertical-align:top;line-height:1.35">送货单号<br>采购单号</span>：<b>{{_no}}</b></p>
     <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：{{purchaseB.shrF}}</p>
     <p style="margin:2px 0">送货地址：{{deliveryPlace}} &nbsp;&nbsp; 联 系 人：{{purchaseB.contact}}</p>
     <p style="margin:2px 0">手　机：{{purchaseB.tel}} &nbsp;&nbsp; 电　话：{{purchaseB.phoneF}}</p>
@@ -2450,7 +2463,7 @@ function builtin(name,data){
     {{#each items}}<tr><td style="text-align:center">{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td style="text-align:center">{{unit}}</td><td style="text-align:right">{{qty}}</td><td></td></tr>{{/each}}
     <tr><td colspan="5" style="text-align:right"><b>合　计</b></td><td style="text-align:right"><b>{{qtyTotal}}</b></td><td></td></tr>
     </table>
-    <p style="margin:8px 0 2px">入库时间：{{dates.purchase}} &nbsp;&nbsp;&nbsp; 录入人员：____________</p>
+    <p style="margin:8px 0 2px">入库时间：{{header.shipDate}} &nbsp;&nbsp;&nbsp; 录入人员：____________</p>
     </div>{{/each}}</div>`;
   /* ── 报价单两张（2026-10-12 v2.25）：报价层凭证，逐 SKU 一行（样本口径）；供应商版简体/销售版繁体 ── */
   if(name==='供应商报价单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
@@ -2530,7 +2543,7 @@ function renderOut(){
   });
 
   /* ── 4. 当前整套快捷操作（单套，非批量）── */
-  h+=`<p class="seq">日期前后逻辑：国内采购合同(${dt.dates.purchase}) &lt; 销售合同(${dt.dates.sales}) ≤ 发票/装箱单(${dt.dates.invoice}) &lt; 报关单申报(${dt.dates.customs})。</p>`;
+  h+=`<p class="seq">日期时序：合同簽訂(手填) → 送货/入库(手填,可空) → 发票/装箱单(取发票号日期,补全年) → 报关申报(手填申报日期)；出口日期留空待海关回执。</p>`;
   h+=`<div class="row" style="margin-top:10px"><button class="primary" onclick="downloadAll()">下载当前整套(单据)</button>
       <button class="primary xbtn" onclick="downloadAllXlsx()">下载当前整套EXCEL(工作簿)</button>
       <button class="ghost" onclick="printAll()">打印当前整套</button>
@@ -2832,7 +2845,7 @@ function xlsCur(d){
   /* 顶栏信息（页码/页数 置右上角，与预览一致） */
   set(1,0,'预录入编号：'+(H.preNo||''),1);
   set(1,2,'海关编号：'+(H.customsNo||''),3);
-  set(1,4,'发票号：'+(H.no||H.invNo||''),6); /* 发票号=合同协议号(H.no)，与全系统一致；H.invNo 仅作兜底 */
+  set(1,4,'发票号：'+(H.invNo||'').trim(),6); /* 2026-10-13 用户定稿：发票号只认手填，不填=空，不再用合同号顶替 */
   set(1,7,'委托协议号：'+(H.entrustNo||''),9);
   set(1,10,'页码/页数：1/1',13);
   /* 境内发货人 / 出境关别 / 出口日期 / 申报日期 / 备案号 */
@@ -2993,11 +3006,11 @@ function xlsTable(type,d){
     /* R4 发票编号:(16号粗体右对齐)+编号(不合并F:G,便于手动填充) */
     R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
     R[r][5]={t:'s',v:'发票编号：',s:{alignment:{horizontal:'right',vertical:'center'}}};
-    putCell(R,r,6,no||''); noB.push(r); r++;
+    putCell(R,r,6,(d.invNoF||'')); noB.push(r); r++;
     /* R5 致 / 日期(16号粗体右对齐,G列不合并便于填充) */
     addRow(['致：',H.consignee,'','','','','']); noB.push(r); addMerge(MG,r,1,4);
     R[r][5]={t:'s',v:'日期：',s:{alignment:{horizontal:'right',vertical:'center'}}};
-    putCell(R,r,6,H.invoiceDate||''); r++;
+    putCell(R,r,6,d.invDateF||''); r++;
     /* R6 付款方式:(16号粗体右对齐,G列不合并便于填充) */
     R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
     R[r][5]={t:'s',v:'付款方式：',s:{alignment:{horizontal:'right',vertical:'center'}}};
@@ -3054,7 +3067,7 @@ function xlsTable(type,d){
     R[r][0]={t:'s',v:'PACKING LIST',s:{alignment:{horizontal:'center',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
     addMerge(MG,r,0,NC2-1); noB.push(r); r++;
     /* R2 Date: */
-    addRow2(['','','','','','','Date：',H.invoiceDate||'']); noB.push(r); r++;
+    addRow2(['','','','','','','Date：',d.invDateF||'']); noB.push(r); r++;
     /* 补列宽：实际 NC2=8 但需 8 列; 但模板 H 用了 N.W.。改为 7 列 G:H 合并的方式更贴近模板 */
     /* 改回 7 列 A-G + 8 列 H 但保持 H 列参与 G:H 合并表达"GW 和 NW 一对" */
     /* 模板 R6: A6:F6列头(G6:G.W.(KG): H6 隐含) R7: A7:N/M  B7:Desc ... G7:9.6  H7:8.4 */
@@ -3062,7 +3075,7 @@ function xlsTable(type,d){
     /* 上面 addRow2 已写到 H 列; 但我们的 noB 集合只对 xwsStyle 有效,边框按列渲染 */
 
     /* R3 Invoice No: */
-    addRow2(['','','','','','','Invoice No:',no]); noB.push(r); r++;
+    addRow2(['','','','','','','Invoice No:',(d.invNoF||'')]); noB.push(r); r++;
     /* R4 To Messrs + Contract No */
     addRow2(['To  Messrs: ',H.consignee,'','','','','Contract No:',H.no||no]); noB.push(r); addMerge(MG,r,1,5); r++;
     /* R5 Shipped(从东莞 至 最终目的国) + Terms of Payment */
@@ -3110,8 +3123,8 @@ function xlsTable(type,d){
     /* R1 空 */ noB.push(r); r++;
     /* R2 标题 */ R[r]=R[r]||[]; for(let c=1;c<NC;c++) R[r][c]=''; R[r][0]={t:'s',v:'INVOICE',s:{alignment:{horizontal:'center',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}}; addMerge(MG,r,0,6); noB.push(r); r++;
     /* R3 空 */ noB.push(r); r++;
-    /* R4 Invoice No(标签F列/值G列,不合并) */ addRow(['','','','','','Invoice No: ',no]); noB.push(r); r++;
-    /* R5 To Messrs / DATE(标签F/值G不合并) */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,1,4); r++;
+    /* R4 Invoice No(标签F列/值G列,不合并) */ addRow(['','','','','','Invoice No: ',(d.invNoF||'')]); noB.push(r); r++;
+    /* R5 To Messrs / DATE(标签F/值G不合并) */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',d.invDateF||'']); noB.push(r); addMerge(MG,r,1,4); r++;
     /* R6 Terms(标签F/值G不合并) */ addRow(['','','','','','Terms of Payment: ',H.tradeTerm||'']); noB.push(r); r++;
     /* R7 列头 */ addRow(['Mark & No','Description','Model','Quantity','','Unit price('+d.cur+')','Amount('+d.cur+')']); r++;
     /* R8-R12 数据 (繁体 fan) */
@@ -3146,15 +3159,8 @@ function xlsTable(type,d){
     return wsCI;
   }
 
-  /* 销售合同 - 保持原样 */
-  title='销售合同'; const headArr=[['卖方(供货)：'+H.shipper,'买方：'+H.consignee],['合同号：'+(H.no||no)+'  日期：'+d.dates.sales+'  成交方式：'+H.tradeTerm+'  目的国：'+cnCountry(H.destCountry)]];
-  putCell(R,r,0,title); addMerge(MG,r,0,5); noB.push(r); r++;
-  headArr.forEach(line=>{ putCell(R,r,0,line.join('    ')); addMerge(MG,r,0,5); noB.push(r); r++; });
-  const cols=[['SKU',18],['品名',28],['HS',14],['数量',10],['单价('+H.currency+')',14],['金额',14]];
-  cols.forEach((c,i)=>putCell(R,r,i,c[0])); r++;
-  d.lines.forEach(l=>{ [l.sku,l.name,l.hs,l.qty,l.decl,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
-  putCell(R,r,0,'合同总额'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++;
-  return xwsFrom(R,MG,CN(cols),{noBorderRows:noB,lrRows:lrR});
+  /* 2026-10-13 删除死代码：旧版简体销售合同分支（dates.sales 自动日期）——xlsSheetFor 已将「销售合同」路由到繁体主版式 xlsSalesContract(手填签订日期)，此分支永不执行；同时废弃其旧注释「发票号=合同协议号」口径 */
+  return null;
 }
 /* 销售合同(繁体，仿用户模板 合約編號：HT1781940.docx)：
    甲方/乙方随报关草单可编辑(非写死)；成交價格/合約貨幣/運輸方式/交貨日期随草单；
@@ -3358,7 +3364,7 @@ function xlsVoucher(type,c,d){
   const PB=(type==='送货单')?(tier1Profile(c.supplier||'')||{}):{};
   if(isIn){ two('采货单号：'+(c._no||''),'入库单号：'+(c.rkNo||'')); }
   else{ /* 对齐供应商原版(2026-10-13)：标签格两行堆叠+数值独立相邻格（原版 E3/F3:G3 结构） */
-    putCell(R,r,0,'录单日期：'+(d.dates&&d.dates.purchase||'')); addMerge(MG,r,0,3);
+    putCell(R,r,0,'录单日期：'+((d.header&&d.header.shipDate)||'')); addMerge(MG,r,0,3);
     putCell(R,r,4,'送货单号\n采购单号'); putCell(R,r,5,(c._no||'')); addMerge(MG,r,5,6); r++;
     two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：'+(PB.shr||'____________'));
     two('送货地址：'+cleanDeliveryPlace((H.partyB&&H.partyB.addr)||''),'联 系 人：'+(PB.contact||'____________'));
@@ -3366,7 +3372,7 @@ function xlsVoucher(type,c,d){
   ['序号','产品名称','具体型号','材质标准','单位','数量','备注'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   c.items.forEach((l,i)=>{ [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,''].forEach((v,j)=>putCell(R,r,j,v)); r++; });
   putCell(R,r,0,'合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
-  if(isIn){ two('入库时间：'+(d.dates&&d.dates.purchase||''),'录入人员：____________'); }
+  if(isIn){ two('入库时间：'+((d.header&&d.header.shipDate)||''),'录入人员：____________'); }
   else{ row('注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。'); two('开单人：____________','收货人：____________'); two('日　期：____________','日　期：____________'); }
   const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:26},{wch:14},{wch:8},{wch:10},{wch:12}]);
   autoHeightsSheetJS(_ws);
@@ -3928,6 +3934,14 @@ function acctFor(cur,owner){
 function partyProfile(name){return (DB.parties.profiles&&DB.parties.profiles[name])||{};}
 /* 交货地点清洗（2026-10-13 用户要求）：档案地址兜底时去掉「N室」段（如 601室）；仅作用于兜底值，表头手填值保持原样 */
 function cleanDeliveryPlace(s){return String(s||'').replace(/[,，]?\s*\d+室/g,'').trim();}
+/* 发票号解析（2026-10-13 用户定稿）：INV+年月日6位(YYMMDD)+序号≥2位，如 INV26100101=2026-10-01 第01号 */
+function parseInvNo(v){
+  const m=/^INV(\d{6})\d{2,}$/i.exec(String(v||'').trim());
+  if(!m) return null;
+  const y=m[1].slice(0,2),mo=m[1].slice(2,4),dd=m[1].slice(4,6);
+  if(+mo<1||+mo>12||+dd<1||+dd>31) return null;
+  return {date:'20'+y+'-'+mo+'-'+dd};
+}
 function setPartyProfile(name,f,v){if(!DB.parties.profiles)DB.parties.profiles={};if(!DB.parties.profiles[name])DB.parties.profiles[name]={};DB.parties.profiles[name][f]=v;save();savedTip();}
 /* v2.18：行内自动保存的右下角反馈（"✓ 已保存"闪现 1.4s）—— 主体维护无保存按钮，靠它确认修改已生效 */
 function savedTip(){let t=document.getElementById('savedTipEl');if(!t){t=document.createElement('div');t.id='savedTipEl';t.style.cssText='position:fixed;right:18px;bottom:18px;z-index:99999;background:#123c26;color:#7fe0a7;border:1px solid #2a6b45;padding:6px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none';document.body.appendChild(t);}t.textContent='✓ 已保存';t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},1400);}
