@@ -711,7 +711,7 @@ function mergeLines(lines,mode,sup){
   /* 横向混箱(行带 boxSeq 物理箱序号)自 v2.12 起不再在此按箱合并 —— 该逻辑整体移至 boxView()，
      仅 PACKING LIST 渲染时使用；报关/发票/合同恢复 M0-M6 归并口径（兑现 plView 处已确认的
      「只改 PL，报关仍按 M0-M6」设计；此前本分支抢先 return 导致 M0 失效、报关单被按箱合并）。 */
-  if(mode==='M0'||!lines.length) return lines.map(function(x){var r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); var b=String(r.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+r.qty||0)/BQ:0; r.gw=Math.round((_bgw[b]||0)*sh*1000)/1000; r.nw=Math.round((_bnw[b]||0)*sh*1000)/1000; /* B11：M0 行直接带自身含税价与缺失归因 */ r.costTaxMax=+r.tax||0; r._taxNoLib=(r.matched&&!(+r.tax>0))?1:0; r._taxNoMatch=r.matched?0:1; return r;});
+  if(mode==='M0'||!lines.length) return lines.map(function(x){var r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); var b=String(r.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+r.qty||0)/BQ:0; r.gw=Math.round((_bgw[b]||0)*sh*1000)/1000; r.nw=Math.round((_bnw[b]||0)*sh*1000)/1000; /* B11（2026-10-13 改不含税口径）：M0 行直接带自身不含税采购价与缺失归因 */ r.costMaxNoTax=+r.cost||0; r._costNoLib=(r.matched&&!(+r.cost>0))?1:0; r._taxNoMatch=r.matched?0:1; return r;});
   const m=MODES.find(x=>x.id===mode)||MODES[0];
   // 降级保护：M4/M5 的"款式"维度依赖真SPU；取不到(显式列无值且SKU无法推导)时退化为按SKU分行
   const hasStyle=lines.some(l=>getSpu(l));
@@ -732,9 +732,9 @@ function mergeLines(lines,mode,sup){
     rep.qty=g.reduce((a,x)=>a+(+x.qty||0),0);
     /* 加权平均单价（按数量加权）：Σ(各款申报价×数量)/Σ数量；归并不同单价 SKU 时避免取首行价导致申报金额失真，单证一致 */
     (function(){var _q=g.reduce((a,x)=>a+(+x.qty||0),0);if(_q>0){var _d=g.reduce((a,x)=>a+(+x.decl||0)*(+x.qty||0),0);var _c=g.reduce((a,x)=>a+(+x.cost||+x.noTax||0)*(+x.qty||0),0);rep.decl=Math.round(_d/_q*1e6)/1e6;rep.cost=Math.round(_c/_q*1e6)/1e6;rep.noTax=rep.cost;}})();
-    /* B11 追加（2026-10-09）：组内最高采购含税价（不加权，max 即 max）+ 含税价缺失归因计数（监控 B11 消费用） */
-    rep.costTaxMax=Math.max(0,Math.max.apply(null,g.map(x=>+x.tax||0)));
-    rep._taxNoLib=g.filter(x=>x.matched&&!(+x.tax>0)).length;
+    /* B11 追加（2026-10-13 改不含税口径，原含税口径弃用）：组内最高不含税采购价（不加权，max 即 max）+ 采购价缺失归因计数（监控 B11 消费用） */
+    rep.costMaxNoTax=Math.max(0,Math.max.apply(null,g.map(x=>+x.cost||0)));
+    rep._costNoLib=g.filter(x=>x.matched&&!(+x.cost>0)).length;
     rep._taxNoMatch=g.filter(x=>!x.matched).length;
     /* 重量：按整箱重 × 数量/箱件数 分摊到每行，再按归并行求和（等价 model 单件重×数量）；不受 dedupe 清零影响 */
     var _gw=0,_nw=0;
@@ -1897,7 +1897,7 @@ function exportRebate(){
    不一致则写 DB.monSync 报警（设置中心目录顶部标红）——加/删规则时只改这里+runMonitor，忘了同步会自报警。 */
 const MON_CATALOG={
  A:[{id:'A1',t:'表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'}],
- B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购含税价(防倒挂·含税口径)'}]
+ B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购价(防倒挂·不含税口径)'}]
 };
 function runMonitor(did){
   const d=DB.drafts.find(x=>x.id===did);const R=[];let block=0,warn=0;
@@ -1971,23 +1971,24 @@ function runMonitor(did){
   add('B','B10','货源地与供应商档案一致(退税归属)',missOrig.length?'WARN':'OK',!missOrig.length,missOrig.length?('以下供应商未维护境内货源地：'+missOrig.join('、')):'全部已配置货源地');
   /* B11 价格倒挂·含税口径（2026-10-09 新增）：归集加权申报价 ≥ 组内最高采购含税价。
      容错不误杀：旧草单无字段→WARN 提示重算；商品库未维护/SKU未匹配→缺失计数跳过；
-     非FOB（申报价含运保费）→ 降级 WARN 人工复核。口径恒为 CNY（行 decl/costTaxMax 均人民币，外币仅在输出层换算）。 */
+     非FOB（申报价含运保费）→ 降级 WARN 人工复核。口径恒为 CNY（行 decl/costMaxNoTax 均人民币，外币仅在输出层换算）。
+     2026-10-13 用户拍板改不含税口径：与 B9（申报价>不含税成本）口径统一；含税口径（=cost×1.13）弃用，防线相应变松已告知。 */
   let _b11Sug=null;
   /* 一键拆行建议（2026-10-12）：B11 违例时静默试跑 M0~M6×供应商开关 共14种组合，
      取「能通过且行数最少」者为建议存入 monitor.suggest（renderMonitor 渲染按钮）；全部违例则消息给调价修复值。
      纯内存试跑，不改当前归并；基于 rawLines 与监控同源。 */
   (function(){
     const _isFob=H.tradeTerm==='FOB';
-    const _old11=L.filter(l=>l.costTaxMax===undefined).length;
-    const _noLib=L.reduce((a,l)=>a+(+l._taxNoLib||0),0);
+    const _old11=L.filter(l=>l.costMaxNoTax===undefined).length;
+    const _noLib=L.reduce((a,l)=>a+(+l._costNoLib||0),0);
     const _noMatch=L.reduce((a,l)=>a+(+l._taxNoMatch||0),0);
-    const _chk=L.filter(l=>+l.costTaxMax>0);
-    const _inv=_chk.filter(l=>decRound(+l.decl,2)<decRound(+l.costTaxMax,2));
+    const _chk=L.filter(l=>+l.costMaxNoTax>0);
+    const _inv=_chk.filter(l=>decRound(+l.decl,2)<decRound(+l.costMaxNoTax,2));
     if(_inv.length){
       const _src=(d.rawLines&&d.rawLines.length)?d.rawLines:L;
       MODES.forEach(m=>{[false,true].forEach(sp=>{
         const t=mergeLines(_src,m.id,sp);
-        const bad=t.some(l=>+l.costTaxMax>0&&decRound(+l.decl,2)<decRound(+l.costTaxMax,2));
+        const bad=t.some(l=>+l.costMaxNoTax>0&&decRound(+l.decl,2)<decRound(+l.costMaxNoTax,2));
         if(!bad&&(!_b11Sug||t.length<_b11Sug.n))_b11Sug={mode:m.id,sup:sp,n:t.length};
       });});
       if(_b11Sug&&_b11Sug.mode===(d.mergeMode||'M0')&&!!_b11Sug.sup===!!d.mergeSup)_b11Sug=null; /* 当前即最优：防御 */
@@ -1995,13 +1996,13 @@ function runMonitor(did){
     let _sev='OK',_ok=true,_m='';
     if(_old11){_sev='WARN';_ok=false;_m=_old11+' 行无含税价字段(旧草单未重算)；重新生成草单/重跑归并后自动核';}
     else if(_inv.length){_sev=_isFob?'BLOCK':'WARN';_ok=false;
-      _m=_inv.length+' 行倒挂：'+_inv.slice(0,3).map(l=>String(l.sku||'')+' 加权申报价 '+decRound(+l.decl,2)+' < 组内最高含税 '+decRound(+l.costTaxMax,2)).join('；')+(_inv.length>3?('…共 '+_inv.length+' 行'):'');
-      if(!_b11Sug){const _need=Math.max.apply(null,_chk.map(l=>+l.costTaxMax||0).concat([0]));
-        _m+=' 💡各归并组合均倒挂（拆行救不了），需调价：将违例行申报价上调至各自组内最高含税价（本票最高需 '+decRound(_need,2)+'）';}}
-    else if(_noLib||_noMatch){_sev='WARN';_ok=false;_m='已核 '+_chk.length+' 行通过；含税价缺失：商品库未维护 '+_noLib+' 行、SKU未匹配 '+_noMatch+' 行(已跳过不阻断)';}
+      _m=_inv.length+' 行倒挂：'+_inv.slice(0,3).map(l=>String(l.sku||'')+' 加权申报价 '+decRound(+l.decl,2)+' < 组内最高采购价(不含税) '+decRound(+l.costMaxNoTax,2)).join('；')+(_inv.length>3?('…共 '+_inv.length+' 行'):'');
+      if(!_b11Sug){const _need=Math.max.apply(null,_chk.map(l=>+l.costMaxNoTax||0).concat([0]));
+        _m+=' 💡各归并组合均倒挂（拆行救不了），需调价：将违例行申报价上调至各自组内最高不含税采购价（本票最高需 '+decRound(_need,2)+'）';}}
+    else if(_noLib||_noMatch){_sev='WARN';_ok=false;_m='已核 '+_chk.length+' 行通过；采购价缺失：商品库未维护 '+_noLib+' 行、SKU未匹配 '+_noMatch+' 行(已跳过不阻断)';}
     else{_m='全部通过（CNY口径，本票 '+L.length+' 行）';}
     if(!_isFob){_m+=(_m?';':'')+'非FOB申报价含运保费，倒挂需人工复核';if(_sev==='OK'){_sev='WARN';_ok=false;}}
-    add('B','B11','归集加权申报价≥组内最高采购含税价(防倒挂·含税口径)',_sev,_ok,_m);
+    add('B','B11','归集加权申报价≥组内最高采购价(防倒挂·不含税口径)',_sev,_ok,_m);
   })();
   add('B','B4','换汇成本合理',(H.currency.includes('USD')&&DB.price.exch)?'OK':'WARN',(H.currency.includes('USD')&&DB.price.exch)>0,'未设汇率无法核换汇成本');
   add('B','B5','商品退税率与HS匹配',_unHs.length?'WARN':'OK',!_unHs.length,
