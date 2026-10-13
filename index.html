@@ -377,7 +377,7 @@ async function purchaseTplDownload(d,suffix){
   }
   outWb.worksheets.forEach(function(w){ applyA4PageSetup(w,'国内采购合同'); });
   var b=await outWb.xlsx.writeBuffer();
-  _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),suffix?('国内采购合同_'+suffix+'.xlsx'):'国内采购合同.xlsx');
+  _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),(suffix||'国内采购合同')+'.xlsx');
 }
 </script>
 <script>
@@ -2721,10 +2721,10 @@ function previewDoc(docI,idx){_cur={doc:docI,idx};const doc=DB.docs[docI];const 
   dcLog('gen',doc.dftId,o.type,'预览',_h);}
 function closePrev(){document.getElementById('prevModal').classList.remove('open');}
 function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];const data=buildData(doc);
-  if(o.type==='国内采购合同'){var _first='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_first)_first=one;dl('采购合同_'+exportFname(d)+'_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'Word×'+data.contracts.length,_first);return;}
+  if(o.type==='国内采购合同'){var _first='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_first)_first=one;dl((c._no||exportNo(d))+'_采购合同_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'Word×'+data.contracts.length,_first);return;}
   /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份，文件名带供应商 */
-  if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'){var _fv='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fv)_fv=one;dl(o.type+'_'+exportFname(data)+'_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fv);return;}
-  const _h=safeRender(o.type,data);dcLog('dl',doc.dftId,o.type,'Word',_h);dl(o.type+'_'+exportFname(data),_h);}
+  if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'){var _fv='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fv)_fv=one;dl((c._no||exportNo(data))+'_'+o.type+'_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fv);return;}
+  const _h=safeRender(o.type,data);dcLog('dl',doc.dftId,o.type,'Word',_h);dl((o.type==='报关草单'?exportFname(data)+'_报关草单':exportNo(data)+'_'+o.type),_h);}
 function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
 /* 通用下载：Chrome 127+ 对 URL.createObjectURL 的 Blob 同步下载会弹"需下载权限"。
    统一走 DataURL(FileReader)绕过。注：DataURL 不受 URL 长度限制影响（实际可到 50MB+）。 */
@@ -3460,17 +3460,19 @@ async function composeSetWorkbook(doc,prefix){
   if(hasPur){ (d.contracts||[]).forEach(function(c,idx){ XLSX.utils.book_append_sheet(sj,xlsContract(c,d,idx),sheetName((prefix||'')+'采购合同_'+c.supplier)); addedSj=true; }); }
   return addedSj?{type:'sheetjs', wb:sj}:null;
 }
-/* 导出文件名规则（2026-10-12 v2.25 用户拍板 B）：{合同号}_{国家}_{运输方式}；字段缺失跳过该段；非法文件名字符消毒；全空回退「整套出口单证」。
-   运输映射：transMode 含「航空」→空运、「水路」→海运，其余取原文去「运输」二字（如 铁路）。 */
+/* 导出文件名（2026-10-13 v2.25 用户拍板最终版）：
+   exportNo(d)={合同号}——通用段（消毒）；exportFname(d)={合同号}_{国家}_{空运|海运}——仅报关草单用（富名）。
+   单据类型段/供应商段由调用方拼接；采购侧单据合同号段用采购合同编号(-1/-2=c._no)。 */
+function exportNo(d){
+  const H=(d&&d.header)||{};
+  return String(H.no||'').replace(/[,，]/g,'-').replace(/[\\/:*?"<>|]/g,'').trim()||'未编合同号';
+}
 function exportFname(d,suffix){
   const H=(d&&d.header)||{};
-  const no=String(H.no||'').replace(/[,，]/g,'-').replace(/[\\/:*?"<>|]/g,'').trim();
   const cn=String(H.destCountry||'').split(' ').slice(1).join('').trim();
   const tm=String(H.transMode||'');
   let tr=''; if(tm.indexOf('航空')>=0)tr='空运'; else if(tm.indexOf('水路')>=0)tr='海运'; else tr=tm.replace(/^\d+\s*/,'').replace(/运输/g,'').trim();
-  let f=(no+'_'+cn+'_'+tr).replace(/_+/g,'_').replace(/^_|_$/g,'');
-  if(!f) f='整套出口单证';
-  return f+(suffix||'');
+  return exportNo(d)+(cn?'_'+cn:'')+(tr?'_'+tr:'')+(suffix||'');
 }
 async function downloadSetExcel(doc,fname,prefix){
   const r=await composeSetWorkbook(doc,prefix);
@@ -3493,16 +3495,18 @@ function downloadDocXlsx(docI,idx){
   ensureXLSX(function(){
     try{
       const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
+      const _PUR=['国内采购合同','送货单','入库单','供应商报价单'];
+      const _fx=(o.type==='报关草单')?(exportFname(d)+'_报关草单'):(((_PUR.indexOf(o.type)>=0)&&d.contracts&&d.contracts.length===1)?((d.contracts[0]._no||exportNo(d))+'_'+o.type):(((_PUR.indexOf(o.type)>=0)?exportNo(d):exportNo(d))+'_'+o.type));
       dcLog('dl',doc.dftId,o.type,'Excel',safeRender(o.type,d));
       if(o.type==='国内采购合同'){
-        if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
-        else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); xlsDownload('国内采购合同',wb0); }
+        if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d,_fx).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
+        else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); xlsDownload(_fx,wb0); }
         return;
       }
       /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份 sheet */
       if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'){
         const wbv=XLSX.utils.book_new(); d.contracts.forEach(c=>{ const wsV=(o.type==='供应商报价单')?xlsQuoteSupplier(c,d):xlsVoucher(o.type,c,d); XLSX.utils.book_append_sheet(wbv,wsV,sheetName(o.type+'_'+c.supplier)); });
-        xlsDownload(o.type,wbv); return;
+        xlsDownload(_fx,wbv); return;
       }
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(o.type));
@@ -3514,8 +3518,8 @@ function downloadDocXlsx(docI,idx){
             const ej=new ExcelJS.Workbook(); await ej.xlsx.load(sjBuf);
             ej.worksheets.forEach(function(w){ applyA4PageSetup(w,o.type); });
             const b=await ej.xlsx.writeBuffer();
-            _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),o.type+'.xlsx');
-          }catch(e2){ console.warn('A4 注入失败回退 SheetJS',e2); xlsDownload(o.type,wb); }
+            _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),_fx+'.xlsx');
+          }catch(e2){ console.warn('A4 注入失败回退 SheetJS',e2); xlsDownload(_fx,wb); }
         })();
       });
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
@@ -3545,7 +3549,7 @@ function downloadDocWord(docI,idx){
       html=renderTpl(builtin(o.type,d),d);
     }
     dcLog('dl',doc.dftId,o.type,'Word(doc)',html);
-    docFromHtml(html,name+'_'+exportFname(d));
+    docFromHtml(html,exportNo(d)+'_'+name);
   }catch(e){ alert('Word 导出出错：'+e.message); console.error(e); }
 }
 function downloadAllXlsx(){
@@ -3556,7 +3560,7 @@ function downloadAllXlsx(){
       const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
       /* 含采购页 → exceljs 合成单工作簿(采购页并入)；否则 SheetJS 多sheet */
       if(hasPur && window.__PURCHASE_TPL_B64__){
-        ensureExcelJS(function(){ downloadSetExcel(doc,exportFname(buildData(doc)),'').catch(function(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }); });
+        ensureExcelJS(function(){ downloadSetExcel(doc,exportNo(buildData(doc)),'').catch(function(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }); });
         return;
       }
       const wb=XLSX.utils.book_new(); let added=false;
@@ -3564,7 +3568,7 @@ function downloadAllXlsx(){
         if(o.type==='国内采购合同'){ (buildData(doc).contracts||[]).forEach(function(c,ix){ XLSX.utils.book_append_sheet(wb,xlsContract(c,buildData(doc),ix),sheetName('采购合同_'+c.supplier)); added=true; }); return; }
         const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
       });
-      if(added){ xlsDownload(exportFname(buildData(doc)), wb); }
+      if(added){ xlsDownload(exportNo(buildData(doc)), wb); }
       else { alert('暂无可导出的单据'); return; }
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
@@ -3624,10 +3628,10 @@ function batchDownloadHTML(){
           if(o.type==='国内采购合同'){
             d.contracts.forEach(function(c){
               const one=safeRender(o.type,d,{contracts:[c]});
-              dl('采购合同_'+exportFname(d)+'_'+c.supplier,one);
+              dl((c._no||exportNo(d))+'_采购合同_'+c.supplier,one);
             });
           } else {
-            dl(o.type+'_'+exportFname(d),safeRender(o.type,d));
+            dl((o.type==='报关草单'?exportFname(d)+'_报关草单':exportNo(d)+'_'+o.type),safeRender(o.type,d));
           }
         });
       }catch(e){ alert('批量 HTML 下载出错：'+e.message); }
@@ -3645,7 +3649,7 @@ function batchDownloadXlsx(){
             const doc=DB.docs[docI]; if(!doc) return;
             dcLog('dl',doc.dftId,'整套单据(批量)','Excel',safeRender('报关草单',buildData(doc)));
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
-            const fname=exportFname(buildData(doc));
+            const fname=exportNo(buildData(doc));
             if(hasPur && window.__PURCHASE_TPL_B64__){
               ensureExcelJS(function(){ downloadSetExcel(doc,fname,'').catch(function(e){ alert('批量 EXCEL 导出出错：'+e.message); console.error(e); }); });
             } else {
@@ -3678,7 +3682,7 @@ function batchDownloadMergedXlsx(){
             const doc=DB.docs[docI]; if(!doc) return;
             dcLog('dl',doc.dftId,'整套单据(合并)','Excel',safeRender('报关草单',buildData(doc)));
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
-            const fname=exportFname(buildData(doc));
+            const fname=exportNo(buildData(doc));
             if(hasPur){ ensureExcelJS(function(){ downloadSetExcel(doc,fname,'set'+(idx+1)+'_').catch(function(e){ alert('合并 EXCEL 导出出错：'+e.message); console.error(e); }); }); }
             else {
               const wb=XLSX.utils.book_new(); let added=false;
@@ -3703,7 +3707,7 @@ function batchDownloadMergedXlsx(){
         });
       });
       if(!added){ alert('所选无内容'); return; }
-      xlsDownload(exportFname(buildData(DB.docs[sels[0]]),'等'+sels.length+'套'), wb);
+      xlsDownload(exportNo(buildData(DB.docs[sels[0]]))+'_等'+sels.length+'套', wb);
     }catch(e){ alert('合并 EXCEL 出错：'+e.message); console.error(e); }
   });
 }
