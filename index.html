@@ -2447,7 +2447,6 @@ function builtin(name,data){
     <tr><td colspan="5" style="text-align:right"><b>合　计</b></td><td style="text-align:right"><b>{{qtyTotal}}</b></td><td></td></tr>
     </table>
     <p style="margin:8px 0 2px">入库时间：{{dates.purchase}} &nbsp;&nbsp;&nbsp; 录入人员：____________</p>
-    <p style="margin:2px 0">仓管员（签字）：____________ &nbsp;&nbsp;&nbsp; 审核人（签字）：____________</p>
     </div>{{/each}}</div>`;
   /* ── 报价单两张（2026-10-12 v2.25）：报价层凭证，逐 SKU 一行（样本口径）；供应商版简体/销售版繁体 ── */
   if(name==='供应商报价单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
@@ -3357,7 +3356,7 @@ function xlsVoucher(type,c,d){
   ['序号','产品名称','具体型号','材质标准','单位','数量','备注'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   c.items.forEach((l,i)=>{ [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,''].forEach((v,j)=>putCell(R,r,j,v)); r++; });
   putCell(R,r,0,'合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
-  if(isIn){ two('入库时间：'+(d.dates&&d.dates.purchase||''),'录入人员：____________'); row('仓管员（签字）：____________　　审核人（签字）：____________'); }
+  if(isIn){ two('入库时间：'+(d.dates&&d.dates.purchase||''),'录入人员：____________'); }
   else{ row('注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。'); two('开单人：____________','收货人：____________'); row('日　期：____________'); }
   const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:26},{wch:14},{wch:8},{wch:10},{wch:12}]);
   autoHeightsSheetJS(_ws);
