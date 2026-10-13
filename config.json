@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-10-12T05:48:57.570Z",
+  "_at": "2026-10-13T05:56:53.660Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -40,7 +40,8 @@
       },
       "SOYAMA LIMITED": {
         "addr": "ROOM 30 34/F TIMES SQUARE TOWER ONE 1 MATHESON STREET CAUSEWAY BAY HK",
-        "contact": "徐芳芳"
+        "contact": "徐芳芳",
+        "email": "product@soyamagroup.com"
       }
     }
   },
@@ -108,7 +109,11 @@
     "Packing List装箱单": null,
     "销售合同": null,
     "国内采购合同": null,
-    "客户发票": null
+    "客户发票": null,
+    "送货单": null,
+    "入库单": null,
+    "供应商报价单": null,
+    "销售报价单": null
   },
   "skuOverride": {},
   "bankInfo": {
