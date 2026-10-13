@@ -2126,7 +2126,7 @@ function buildData(doc){
     /* 乙方信息/账户按规则自动引用：乙方=一级供应商档案, 账户=该供应商绑定的账户(owner 匹配) */
     const _pb=tier1Profile(s),_pa=acctFor((d.header&&d.header.currency)||'',s);
     return {supplier:s,items,qitems:qrows.filter(q=>q.sup===s),_no:((d.header&&d.header.no)||'')+'-'+(ci+1),rkNo:((d.header&&d.header.no)||'')+'-'+(ci+1)+'-RK',qtyTotal:decRound(items.reduce((a,l)=>a+(+l.qty||0),0),0),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
-      purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||'',phone:_pb.phone||'',shr:_pb.shr||'',shrF:_pb.shr||'____________'},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
+      purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||'',phone:_pb.phone||'',shr:_pb.shr||'',shrF:_pb.shr||'____________',phoneF:_pb.phone||'____________'},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,qrows,shipperFan:fan(d.header.shipper||''),
     /* 交货地点兜底（2026-10-13 用户拍板）：表头未填时默认取发货人档案地址（井太兰=东莞厚街仓），表头可覆盖 */
     deliveryPlace:(d.header&&d.header.deliveryPlace)||cleanDeliveryPlace(partyProfile((d.header&&d.header.shipper)||'').addr),
@@ -2428,7 +2428,7 @@ function builtin(name,data){
     <p style="margin:2px 0">录单日期：{{dates.purchase}} &nbsp;&nbsp;&nbsp; <span style="display:inline-block;vertical-align:top;line-height:1.35">送货单号<br>采购单号</span>：<b>{{_no}}</b></p>
     <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：{{purchaseB.shrF}}</p>
     <p style="margin:2px 0">送货地址：{{deliveryPlace}} &nbsp;&nbsp; 联 系 人：{{purchaseB.contact}}</p>
-    <p style="margin:2px 0">手　机：{{purchaseB.tel}} &nbsp;&nbsp; 电　话：____________</p>
+    <p style="margin:2px 0">手　机：{{purchaseB.tel}} &nbsp;&nbsp; 电　话：{{purchaseB.phoneF}}</p>
     <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
     <tr><th>序号</th><th>产品名称</th><th>具体型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>备注</th></tr>
     {{#each items}}<tr><td style="text-align:center">{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td style="text-align:center">{{unit}}</td><td style="text-align:right">{{qty}}</td><td></td></tr>{{/each}}
@@ -3358,9 +3358,9 @@ function xlsVoucher(type,c,d){
   else{ /* 对齐供应商原版(2026-10-13)：标签格两行堆叠+数值独立相邻格（原版 E3/F3:G3 结构） */
     putCell(R,r,0,'录单日期：'+(d.dates&&d.dates.purchase||'')); addMerge(MG,r,0,3);
     putCell(R,r,4,'送货单号\n采购单号'); putCell(R,r,5,(c._no||'')); addMerge(MG,r,5,6); r++;
-    two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：____________');
+    two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：'+(PB.shr||'____________'));
     two('送货地址：'+cleanDeliveryPlace((H.partyB&&H.partyB.addr)||''),'联 系 人：'+(PB.contact||'____________'));
-    two('手　机：'+(PB.tel||'____________'),'电　话：____________'); }
+    two('手　机：'+(PB.tel||'____________'),'电　话：'+(PB.phone||'____________')); }
   ['序号','产品名称','具体型号','材质标准','单位','数量','备注'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   c.items.forEach((l,i)=>{ [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,''].forEach((v,j)=>putCell(R,r,j,v)); r++; });
   putCell(R,r,0,'合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
