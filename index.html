@@ -2757,8 +2757,9 @@ function closePrev(){document.getElementById('prevModal').classList.remove('open
 function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];const data=buildData(doc);
   if(o.type==='国内采购合同'){var _first='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_first)_first=one;dl((c._no||exportNo(d))+'_采购合同_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'Word×'+data.contracts.length,_first);return;}
   /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份，文件名带供应商 */
-  if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'||o.type==='询价单'){var _fv='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fv)_fv=one;dl((c._no||exportNo(data))+'_'+o.type+'_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fv);return;}
-  const _h=safeRender(o.type,data);dcLog('dl',doc.dftId,o.type,'Word',_h);dl((o.type==='报关草单'?exportFname(data)+'_报关草单':exportNo(data)+'_'+o.type),_h);}
+  if(o.type==='供应商报价单'||o.type==='询价单'){var _fq='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fq)_fq=one;dl(o.type+'_'+supShort(c.supplier)+'_'+dtStamp(),one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fq);return;}
+  if(o.type==='送货单'||o.type==='入库单'){var _fv='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fv)_fv=one;dl((c._no||exportNo(data))+'_'+o.type+'_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fv);return;}
+  const _h=safeRender(o.type,data);dcLog('dl',doc.dftId,o.type,'Word',_h);dl((o.type==='报关草单'?exportFname(data)+'_报关草单':(o.type==='销售报价单'?o.type+'_'+dtStamp():exportNo(data)+'_'+o.type)),_h);}
 function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
 /* 通用下载：Chrome 127+ 对 URL.createObjectURL 的 Blob 同步下载会弹"需下载权限"。
    统一走 DataURL(FileReader)绕过。注：DataURL 不受 URL 长度限制影响（实际可到 50MB+）。 */
@@ -3502,6 +3503,10 @@ async function composeSetWorkbook(doc,prefix){
 /* 导出文件名（2026-10-13 v2.25 用户拍板最终版）：
    exportNo(d)={合同号}——通用段（消毒）；exportFname(d)={合同号}_{国家}_{空运|海运}——仅报关草单用（富名）。
    单据类型段/供应商段由调用方拼接；采购侧单据合同号段用采购合同编号(-1/-2=c._no)。 */
+/* 供应商简称（2026-10-14 用户定稿）：档案 tier1Profiles.short，未维护回退全名（不造值） */
+function supShort(sv){const _p=tier1Profile(sv||'');const _s=_p&&String(_p.short||'').trim();return _s||sv||'';}
+/* 导出时间戳：YYYYMMDD_HHmm（报价单类文件名用，同天多版不撞名） */
+function dtStamp(){const n=new Date(),z=x=>String(x).padStart(2,'0');return ''+n.getFullYear()+z(n.getMonth()+1)+z(n.getDate())+'_'+z(n.getHours())+z(n.getMinutes());}
 function exportNo(d){
   const H=(d&&d.header)||{};
   return String(H.no||'').replace(/[,，]/g,'-').replace(/[\\/:*?"<>|]/g,'').trim()||'未编合同号';
@@ -3536,8 +3541,9 @@ function downloadDocXlsx(docI,idx){
   ensureXLSX(function(){
     try{
       const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
-      const _PUR=['国内采购合同','送货单','入库单','供应商报价单','询价单'];
-      const _fx=(o.type==='报关草单')?(exportFname(d)+'_报关草单'):(((_PUR.indexOf(o.type)>=0)&&d.contracts&&d.contracts.length===1)?((d.contracts[0]._no||exportNo(d))+'_'+o.type):(((_PUR.indexOf(o.type)>=0)?exportNo(d):exportNo(d))+'_'+o.type));
+      const _PUR=['国内采购合同','送货单','入库单'];
+      const _QT=['供应商报价单','询价单'];
+      const _fx=(o.type==='报关草单')?(exportFname(d)+'_报关草单'):((o.type==='销售报价单')?(o.type+'_'+dtStamp()):((_QT.indexOf(o.type)>=0)?(o.type+((d.contracts&&d.contracts.length===1)?('_'+supShort(d.contracts[0].supplier)):'')+'_'+dtStamp()):(((_PUR.indexOf(o.type)>=0)&&d.contracts&&d.contracts.length===1)?((d.contracts[0]._no||exportNo(d))+'_'+o.type):(exportNo(d)+'_'+o.type))));
       dcLog('dl',doc.dftId,o.type,'Excel',safeRender(o.type,d));
       if(o.type==='国内采购合同'){
         if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d,_fx).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
@@ -3672,7 +3678,7 @@ function batchDownloadHTML(){
               dl((c._no||exportNo(d))+'_采购合同_'+c.supplier,one);
             });
           } else {
-            dl((o.type==='报关草单'?exportFname(d)+'_报关草单':exportNo(d)+'_'+o.type),safeRender(o.type,d));
+            dl((o.type==='报关草单'?exportFname(d)+'_报关草单':((o.type==='销售报价单'||o.type==='供应商报价单'||o.type==='询价单')?o.type+'_'+dtStamp():exportNo(d)+'_'+o.type)),safeRender(o.type,d));
           }
         });
       }catch(e){ alert('批量 HTML 下载出错：'+e.message); }
@@ -4173,8 +4179,8 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
     h=`<div class="erp">
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">一级供应商(签约主体)</p><span class="cnt">${t1.length} 个</span></div>
-        <table><tr><th style="width:12%">名称(采购合同抬头)</th><th style="width:14%">地址(乙方)</th><th style="width:7%">联系人</th><th style="width:8%">手机</th><th style="width:6%">电话</th><th style="width:7%">审核人</th><th style="width:8%">邮箱</th><th style="width:7%">货源地代码</th><th style="width:8%">货源地名称</th><th style="width:8%">纳税人性质</th><th style="width:6%">征收率</th><th style="width:8%">操作</th></tr><tbody>
-          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.tel||'')}" placeholder="手机" onchange="setTier1Profile('${escQ(s)}','tel',this.value)"></td><td><input value="${esc(p.phone||'')}" placeholder="如/" onchange="setTier1Profile('${escQ(s)}','phone',this.value)"></td><td><input value="${esc(p.shr||'')}" placeholder="审核人" onchange="setTier1Profile('${escQ(s)}','shr',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><select onchange="setVatType('${escQ(s)}',this.value)" title="退税测算用：缺省一般纳税人(不设限)"><option value="gen"${p.vatType==='small'?'':' selected'}>一般纳税人</option><option value="small"${p.vatType==='small'?' selected':''}>小规模纳税人</option></select></td><td><input type="number" min="0" max="17" step="1" value="${(p.vatType==='small'&&p.vatRate!==undefined&&p.vatRate!=='')?esc(p.vatRate):(p.vatType==='small'?'3':'13')}"${p.vatType==='small'?'':' disabled'} style="width:56px" title="小规模纳税人票面征收率(1/3)" onchange="setTier1Profile('${escQ(s)}','vatRate',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
+        <table><tr><th style="width:11%">名称(采购合同抬头)</th><th style="width:8%">简称(文件名用)</th><th style="width:12%">地址(乙方)</th><th style="width:7%">联系人</th><th style="width:8%">手机</th><th style="width:6%">电话</th><th style="width:7%">审核人</th><th style="width:8%">邮箱</th><th style="width:7%">货源地代码</th><th style="width:8%">货源地名称</th><th style="width:8%">纳税人性质</th><th style="width:6%">征收率</th><th style="width:8%">操作</th></tr><tbody>
+          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.short||'')}" placeholder="如 广州自衍" onchange="setTier1Profile('${escQ(s)}','short',this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.tel||'')}" placeholder="手机" onchange="setTier1Profile('${escQ(s)}','tel',this.value)"></td><td><input value="${esc(p.phone||'')}" placeholder="如/" onchange="setTier1Profile('${escQ(s)}','phone',this.value)"></td><td><input value="${esc(p.shr||'')}" placeholder="审核人" onchange="setTier1Profile('${escQ(s)}','shr',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><select onchange="setVatType('${escQ(s)}',this.value)" title="退税测算用：缺省一般纳税人(不设限)"><option value="gen"${p.vatType==='small'?'':' selected'}>一般纳税人</option><option value="small"${p.vatType==='small'?' selected':''}>小规模纳税人</option></select></td><td><input type="number" min="0" max="17" step="1" value="${(p.vatType==='small'&&p.vatRate!==undefined&&p.vatRate!=='')?esc(p.vatRate):(p.vatType==='small'?'3':'13')}"${p.vatType==='small'?'':' disabled'} style="width:56px" title="小规模纳税人票面征收率(1/3)" onchange="setTier1Profile('${escQ(s)}','vatRate',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newTier1" placeholder="+ 新一级供应商(签约主体)"><button class="btn add" onclick="addTier1()">添加</button></div>
       </div>
