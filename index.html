@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.26 · 2026-10-13 23:10（封板版：发票号INV规则+日期全手填+双交货日期+B11不含税口径+A15净重自洽）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.27 · 2026-10-14（v2.26 封板之上：发票号/销售交货日期/采购交货日期 纳入必填 BLOCK）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -1604,8 +1604,8 @@ function renderDrafts(){
     <div class="field"><label>汇率(CNY→本币,留空用全局默认 ${DB.price.exch})</label><input type="number" step="0.0001" min="0" value="${H.exch||''}" onchange="setHeader('${d.id}','exch',this.value?+this.value:0)" placeholder="${DB.price.exch}"></div>
     <div class="field"><label>合同簽訂地點</label><input value="${H.signPlace||'【東莞】'}" onchange="setHeader('${d.id}','signPlace',this.value)"></div>
     <div class="field"><label>合同簽訂日期</label><input type="date" value="${H.signDate||''}" onchange="setHeader('${d.id}','signDate',this.value)"></div>
-    <div class="field"><label>销售交货日期(销售合同)</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
-    <div class="field"><label>采购交货日期(采购合同)</label><input type="date" value="${H.pdeliveryDate||''}" onchange="setHeader('${d.id}','pdeliveryDate',this.value)"></div>
+    <div class="field"><label><span style="color:#d33;font-weight:bold">*</span>销售交货日期(销售合同)</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
+    <div class="field"><label><span style="color:#d33;font-weight:bold">*</span>采购交货日期(采购合同)</label><input type="date" value="${H.pdeliveryDate||''}" onchange="setHeader('${d.id}','pdeliveryDate',this.value)"></div>
     <div class="field"><label>送货/入库日期(送货单/入库单,可空导出后补)</label><input type="date" value="${H.shipDate||''}" onchange="setHeader('${d.id}','shipDate',this.value)"></div>
     <div class="field"><label>交货地点(采购/销售合同,默认=发货人档案地址)</label><input value="${H.deliveryPlace||((v=>{const m=String(v||'').replace(/[,，]?\s*\d+室/g,'').trim();return m;})((DB.parties.profiles&&DB.parties.profiles[H.shipper]||{}).addr||''))}" onchange="setHeader('${d.id}','deliveryPlace',this.value)" placeholder="如 广东省东莞市厚街镇恒通路6号3栋"></div>
     <div class="field" style="flex:1 1 100%"><label>销售合同 甲乙方 / 采购合同 甲乙方(自动引用)</label>
@@ -1626,7 +1626,7 @@ function renderDrafts(){
     <div class="field"><label>申报日期</label><input type="date" value="${H.declDate}" onchange="setHeader('${d.id}','declDate',this.value)"></div>
     <div class="field"><label>出口日期(海关回执后填,可空)</label><input type="date" value="${H.exportDate||''}" onchange="setHeader('${d.id}','exportDate',this.value)"></div>
     <div class="field"><label>合同协议号(=外部单号)</label><input value="${H.no||''}" onchange="setHeader('${d.id}','no',this.value)"></div>
-    <div class="field"><label>发票号(INV+年月日6位+序号)</label><input value="${H.invNo||''}" onchange="setHeader('${d.id}','invNo',this.value)" placeholder="INV26100101" title="INV+年月日6位(YYMMDD)+序号≥2位；日期须晚于合同簽訂日期；客户发票/装箱单/Invoice 的日期自动取此日期"></div>
+    <div class="field"><label><span style="color:#d33;font-weight:bold">*</span>发票号(INV+年月日6位+序号)</label><input value="${H.invNo||''}" onchange="setHeader('${d.id}','invNo',this.value)" placeholder="INV26100101" title="INV+年月日6位(YYMMDD)+序号≥2位；日期须晚于合同簽訂日期；客户发票/装箱单/Invoice 的日期自动取此日期"></div>
     <div class="field"><label>委托协议号</label><input value="${H.entrustNo||''}" onchange="setHeader('${d.id}','entrustNo',this.value)"></div>
     <div class="field"><label>备案号</label><input value="${H.recordNo||''}" onchange="setHeader('${d.id}','recordNo',this.value)"></div>
     <div class="field"><label>境内货源地/产地</label><input value="${H.domSrc||''}" onchange="setHeader('${d.id}','domSrc',this.value)" placeholder="如 广州其他(44019)"></div>
@@ -1899,7 +1899,7 @@ function exportRebate(){
    设置中心「监控规则」Tab 渲染本常量；runMonitor 每次执行后比对实际 add 的 id 集合，
    不一致则写 DB.monSync 报警（设置中心目录顶部标红）——加/删规则时只改这里+runMonitor，忘了同步会自报警。 */
 const MON_CATALOG={
- A:[{id:'A1',t:'表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售/采购合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'},{id:'A16',t:'发票号规范(格式/日期晚于签订日期,WARN)'}],
+ A:[{id:'A1',t:'表头必填项齐全(9项报关要素+发票号/销售交货日期/采购交货日期)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售/采购合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'},{id:'A16',t:'发票号规范(格式/日期晚于签订日期,WARN)'}],
  B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购价(防倒挂·不含税口径)'}]
 };
 function runMonitor(did){
@@ -1909,8 +1909,10 @@ function runMonitor(did){
   const add=(cat,id,desc,sev,ok,msg,always)=>{R.push({cat,id,desc,sev,ok,msg,always:!!always});if(!ok){sev==='BLOCK'?block++:warn++;}};
   const H=d.header, L=d.lines;
   // A 报关单填制规范
-  const a1=H.shipper&&H.consignee&&H.tradeMode&&H.transMode&&H.tradeTerm&&H.levy&&H.currency&&H.port&&H.destCountry;
-  add('A','A1','表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)',a1?'OK':'BLOCK',!!a1,'缺表头必填项');
+  /* A1 必填（2026-10-14 用户拍板）：9项报关要素 + 发票号/销售交货日期/采购交货日期（BLOCK）；消息点名缺失项 */
+  const _a1miss=[['发货人',H.shipper],['境外收货人',H.consignee],['贸易方式',H.tradeMode],['运输方式',H.transMode],['成交方式',H.tradeTerm],['征免性质',H.levy],['币制',H.currency],['出境关别',H.port],['运抵国',H.destCountry],['发票号',H.invNo],['销售交货日期',H.deliveryDate],['采购交货日期',H.pdeliveryDate]].filter(x=>!String(x[1]==null?'':x[1]).trim()).map(x=>x[0]);
+  const a1=_a1miss.length===0;
+  add('A','A1','表头必填项齐全(9项报关要素+发票号/销售交货日期/采购交货日期)',a1?'OK':'BLOCK',!!a1,a1?'必填12项全部齐全':('缺必填：'+_a1miss.join('、')));
   add('A','A2','贸易国≠运抵国(转售场景应区分)',(H.tradeCountry&&H.arrivalCountry&&H.tradeCountry===H.arrivalCountry)?'WARN':'OK',!(H.tradeCountry&&H.arrivalCountry&&H.tradeCountry===H.arrivalCountry),'贸易国与运抵国相同，请确认是否转售');
   add('A','A3','成交方式与运费/保费一致(非FOB需核对)',H.tradeTerm==='FOB'?'OK':'WARN',H.tradeTerm==='FOB','非FOB，请确认运费/保费栏');
   const a4=L.every(l=>l.hs&&l.brandType);
@@ -1954,7 +1956,7 @@ function runMonitor(did){
   /* A16 发票号（2026-10-13 用户定稿，WARN级）：格式 INV+年月日6位+序号≥2位；日期须晚于合同簽訂日期；客户发票/PL/Invoice 的 DATE 取发票号日期（补全年），发票号未填则留空 */
   (function(){
     const _iv=String(H.invNo||'').trim();
-    if(!_iv){ add('A','A16','发票号规范(格式/日期晚于签订日期)','OK',true,'未填发票号——相关单据发票号/日期留空（不造值）'); return; }
+    if(!_iv){ add('A','A16','发票号规范(格式/日期晚于签订日期)','BLOCK',false,'发票号为必填项，未填（缺失由 A1 点名阻断）；补填后本条自动复检'); return; }
     const _p=parseInvNo(_iv);
     if(!_p){ add('A','A16','发票号规范(格式/日期晚于签订日期)','WARN',false,'发票号 '+_iv+' 不符合 INV+年月日6位+序号≥2位（如 INV26100101=2026-10-01 第01号）'); return; }
     if(H.signDate&&_p.date<=H.signDate){ add('A','A16','发票号规范(格式/日期晚于签订日期)','WARN',false,'发票号日期 '+_p.date+' 应晚于合同簽訂日期 '+H.signDate); return; }
