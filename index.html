@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.30 · 2026-10-15（单写多读第一批：记录按货件单号原地替换+订单引用化不拷快照+合并实时读记录）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.30 · 2026-10-15（单写多读：记录原地替换+订单引用化+草单派生化(setLine覆盖层保留)+A17明细=表头闸+箱重优先级修复）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -1528,6 +1528,7 @@ function genDraft(ordId){
   const dft={id:uid('D'),ordId,locked,
     header:defaultHeader(o),
     rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false,sum:(rec&&rec.sum)||null}; /* 单写多读(2026-10-15)：权威合计实时读记录 */
+  dft.refVers={};dft.refVers[rec.id]=+rec.recVer||1;dft.overrides=[];
   /* 自动补全报关草单编码：从主体信息维护(发货人档案)取 信用代码/海关注册编码，改发货人时 setHeader 也会联动 */
   const _cd=(DB.parties.codes&&DB.parties.codes[dft.header.shipper])||{};
   dft.header.shipperUSCI=_cd.usci||''; dft.header.shipperReg=_cd.reg||'';
@@ -1548,20 +1549,21 @@ function genMergedDraft(ids){
   if(bad){alert('合并拦截：订单 '+bad.id+' 的「'+describeDiff(base,bad)+'」与其它单不一致，禁止同桶合并。请只选同红线维度的订单。');return;}
   const destCountry=base.destCountry;
   /* 合并箱序全局错位（2026-10-14 修复）：各票 boxSeq 均从 1 起数，直接合并会跨票碰撞——按累计箱数偏移 */
-  let _shift=0;const items=[];const _sums=[];
+  let _shift=0;const items=[];const _sums=[];const _refVers={};
   for(const o of ords){
     const rc=DB.records.find(r=>r.id===o.recId);
     if(!rc){alert('订单 '+o.id+' 的来源记录不存在（可能已删除），请重新上传文件后重新生单');return;}
     ordItems(o).forEach(i=>{const cp=Object.assign({},i);if(Array.isArray(cp.boxSeq))cp.boxSeq=cp.boxSeq.map(function(b){return +b+_shift;});items.push(cp);});
     _shift+=(+(rc.sum&&rc.sum.boxCount)||0);
     if(rc.sum)_sums.push(rc.sum);
+    _refVers[rc.id]=+rc.recVer||1;
   }
   const rawLines=buildRawLines(items,destCountry);
   /* 权威合计（2026-10-15 改实时读记录）：各票解析层 packSummary 合计相加；任一缺失则 null 回退旧重算路径 */
 
   const sum=(_sums.length===ords.length)?{boxCount:_sums.reduce((a,x)=>a+(+x.boxCount||0),0),totalGW:+_sums.reduce((a,x)=>a+(+x.totalGW||0),0).toFixed(3),totalNW:+_sums.reduce((a,x)=>a+(+x.totalNW||0),0).toFixed(3)}:null;
   const dft={id:uid('D'),ordId:'__merged__',isMerged:true,sourceOrderIds:ords.map(o=>o.id),bucketKey:bucketKey(base),locked:false,
-    header:defaultHeader(base),rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false,sum:sum};
+    header:defaultHeader(base),rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false,sum:sum,refVers:_refVers,overrides:[]};
   dft.header.no=ords.map(o=>o.no||o.id).join(',');
   const _cd=(DB.parties.codes&&DB.parties.codes[dft.header.shipper])||{};
   dft.header.shipperUSCI=_cd.usci||''; dft.header.shipperReg=_cd.reg||'';
@@ -1744,6 +1746,9 @@ function renderDrafts(){
 }
 function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;const dot=f.indexOf('.');if(dot>0){const k=f.slice(0,dot),sk=f.slice(dot+1);if(!d.header[k]||typeof d.header[k]!=='object')d.header[k]={};d.header[k][sk]=v;}else{d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}/* 主体变更 → 销售合同甲乙方自动跟随(档案引用) */if(f==='shipper'||f==='consignee'){const pa=partyProfile(d.header.consignee),pb=partyProfile(d.header.shipper);d.header.partyA={name:d.header.consignee||'',addr:pa.addr||'',contact:pa.contact||'',email:pa.email||''};d.header.partyB={name:d.header.shipper||'',addr:pb.addr||'',contact:pb.contact||'',email:pb.email||''};}}save();renderDrafts();}
 function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
+  /* 单写多读第二批（2026-10-15）：手工修改记入覆盖层——记录刷新重建行后可重新应用 */
+  d.overrides=d.overrides||[];
+  d.overrides.push({keys:(d.lines[i]._keys||[d.lines[i].sku]).slice(),k:k,v:v});
   /* B11 配套（2026-10-09）：改关键字段后旧监控结果作废——防止「跑完监控→改价→直接锁定」绕过 B9/B11 阻断 */
   if(k==='decl'||k==='cost'||k==='qty'||k==='gw'||k==='nw'||k==='boxCnt')d.monitor=null;
   if(d.rawLines&&d.lines[i]._keys){d.rawLines.forEach(r=>{if(d.lines[i]._keys.indexOf(r.sku)>=0)r[k]=v;});}
@@ -1935,7 +1940,7 @@ function exportRebate(){
    设置中心「监控规则」Tab 渲染本常量；runMonitor 每次执行后比对实际 add 的 id 集合，
    不一致则写 DB.monSync 报警（设置中心目录顶部标红）——加/删规则时只改这里+runMonitor，忘了同步会自报警。 */
 const MON_CATALOG={
- A:[{id:'A1',t:'表头必填项齐全(9项报关要素+发票号/销售交货日期/采购交货日期)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售/采购合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'},{id:'A16',t:'发票号规范(格式/日期晚于签订日期,WARN)'}],
+ A:[{id:'A1',t:'表头必填项齐全(9项报关要素+发票号/销售交货日期/采购交货日期)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售/采购合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'},{id:'A16',t:'发票号规范(格式/日期晚于签订日期,WARN)'},{id:'A17',t:'明细行合计=表头合计(毛/净)'}],
  B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购价(防倒挂·不含税口径)'}]
 };
 function runMonitor(did){
@@ -1997,6 +2002,13 @@ function runMonitor(did){
     if(!_p){ add('A','A16','发票号规范(格式/日期晚于签订日期)','WARN',false,'发票号 '+_iv+' 不符合 INV+年月日6位+序号≥2位（如 INV26100101=2026-10-01 第01号）'); return; }
     if(H.signDate&&_p.date<=H.signDate){ add('A','A16','发票号规范(格式/日期晚于签订日期)','WARN',false,'发票号日期 '+_p.date+' 应晚于合同簽訂日期 '+H.signDate); return; }
     add('A','A16','发票号规范(格式/日期晚于签订日期)','OK',true,'发票号 '+_iv+'，日期 '+_p.date);
+  })();
+  /* A17 明细合计一致（2026-10-15 v2.30 第二批）：Σ明细行(毛/净)=表头——三单一致铁律的机器执行；无权威合计(旧草单)跳过 */
+  (function(){
+    if(!d.sum){ add('A','A17','明细行合计=表头合计(毛/净)','OK',true,'无权威合计(旧草单)，跳过校验'); return; }
+    const _sgw=L.reduce((a,l)=>a+(+l.gw||0),0),_snw=L.reduce((a,l)=>a+(+l.nw||0),0);
+    const _bad=Math.abs(_sgw-+d.sum.totalGW)>0.005||Math.abs(_snw-+d.sum.totalNW)>0.005;
+    add('A','A17','明细行合计=表头合计(毛/净)',_bad?'BLOCK':'OK',!_bad,_bad?('明细Σ('+_sgw.toFixed(2)+'/'+_snw.toFixed(2)+'）≠表头('+d.sum.totalGW+'/'+d.sum.totalNW+')——请重新生单/重跑归并'):'Σ明细行=表头('+_sgw.toFixed(2)+'/'+_snw.toFixed(2)+'），三单一致');
   })();
   const a5=L.every(l=>/^\d{10}$/.test(l.hs));
   add('A','A5','HS为10位商品编号',a5?'OK':'BLOCK',a5,'HS非10位');
@@ -2124,8 +2136,46 @@ function confirmDraft(did){
   DB.sel.docsSet=DB.docs.map((_,i)=>i);
   save();renderOut();
 }
+/* 单写多读第二批（2026-10-15）：草单明细派生化——记录(recVer)更新时草单自动按最新解析数据重建行，用户手工修改(setLine)以覆盖层保留 */
+function draftRecsOf(d){
+  const ids=(d.ordId==='__merged__')?(d.sourceOrderIds||[]):[d.ordId];
+  return ids.map(id=>DB.orders.find(x=>x.id===id)).filter(Boolean)
+    .map(o=>({o:o,rec:DB.records.find(r=>r.id===o.recId)})).filter(x=>x.rec);
+}
+function deriveRawLines(d){
+  const pairs=draftRecsOf(d);
+  let shift=0;const items=[];
+  pairs.forEach(x=>{
+    ordItems(x.o).forEach(i=>{const cp=Object.assign({},i);if(Array.isArray(cp.boxSeq))cp.boxSeq=cp.boxSeq.map(function(b){return +b+shift;});items.push(cp);});
+    shift+=(+(x.rec.sum&&x.rec.sum.boxCount)||0);
+  });
+  return buildRawLines(items,(pairs[0]&&pairs[0].o&&pairs[0].o.destCountry)||(d.header&&d.header.destCountry)||'');
+}
+function applyOverrides(d,raw){
+  (d.overrides||[]).forEach(ov=>{
+    raw.forEach(r=>{ if(ov.keys?(ov.keys.indexOf(r.sku)>=0):(r.sku===ov.sku)) r[ov.k]=ov.v; });
+  });
+  return raw;
+}
+function ensureFreshLines(d){
+  if(!d||!d.id)return;
+  const pairs=draftRecsOf(d);
+  if(!pairs.length)return;                      /* legacy/引用缺失：保持快照不重建 */
+  let changed=false;const cur={};
+  pairs.forEach(x=>{const v=+x.rec.recVer||1;cur[x.rec.id]=v;if(d.refVers&&(+d.refVers[x.rec.id]||0)!==v)changed=true;});
+  if(!d.refVers){d.refVers=cur;return;}         /* legacy 采纳当前版本：不重建（存量行为不变） */
+  if(!changed)return;
+  d.rawLines=applyOverrides(d,deriveRawLines(d));
+  d.lines=mergeLines(d.rawLines,d.mergeMode||'M0',!!d.mergeSup);
+  d.refVers=cur;d.monitor=null;
+  const _ok=pairs.every(x=>x.rec.sum)&&pairs.length>0;
+  d.sum=_ok?{boxCount:pairs.reduce((a,x)=>a+(+(x.rec.sum.boxCount)||0),0),totalGW:+pairs.reduce((a,x)=>a+(+(x.rec.sum.totalGW)||0),0).toFixed(3),totalNW:+pairs.reduce((a,x)=>a+(+(x.rec.sum.totalNW)||0),0).toFixed(3)}:null;
+  if((d.overrides||[]).length)alert('记录已更新，草单「'+((d.header&&d.header.no)||d.id)+'」已按最新解析数据重建，'+d.overrides.length+' 处手工修改已重新应用，请复核重量与价格。');
+  save();renderDrafts();
+}
 function buildData(doc){
   const d=DB.drafts.find(x=>x.id===doc.dftId);
+  ensureFreshLines(d);
   /* 币种跟随报关草单：外币(USD/EUR...)时把单价/金额从 CNY 换算成本币（除汇率 exch）；CNY 保持原值
      汇率优先级：单笔 H.exch 优先（可逐单填），为空才用全局默认 DB.price.exch；都无效则按 1（等同于不换算并预警） */
   const _ccur=(d.header&&d.header.currency)||'CNY 人民币';
