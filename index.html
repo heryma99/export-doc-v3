@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.29 · 2026-10-14（v2.28 封版之上：合并生单合计修复——权威合计直通+明细拉平+金额舍入统一）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.30 · 2026-10-15（单写多读第一批：记录按货件单号原地替换+订单引用化不拷快照+合并实时读记录）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -1347,12 +1347,25 @@ function ingestGrid(src,grid,forceSku){
   const r=parseGrid(grid,forceSku,{fixedBoxWeight:fixed, sourceName:src.replace(/\.[^.]+$/,'')});
   if(!r.rows.length){ PEND={src:src,grid:grid}; showDiag(r); return; }
   const ps=packSummary(r.rows, (r.missing||[]).indexOf('nw')>=0 ? {perBoxBw:(fixed||1.3)} : null);
-  const rec={id:uid('R'),fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
+  /* 单写多读（2026-10-15 v2.30 第一批）：同货件单号原地替换记录（recId 不变），下游订单/草单引用自动指向新数据 */
+  const res=upsertRecord(src,r,ps);
+  DB.sel.rec=res.rec.id;save();renderRecords();
+  showOk(r,ps);
+  if(res.replaced&&res.downOrders)alert('记录已按新文件原地更新（货件单号 '+res.key+'）：下游 '+res.downOrders+' 个订单引用自动生效（解析版本 recVer='+res.rec.recVer+'）。');
+}
+/* 记录按货件单号 upsert：存在则原地替换（保 recId/recVer递增），否则新建。返回 {rec,replaced,key,downOrders} */
+function upsertRecord(src,r,ps){
+  const key=(r.rows[0]&&r.rows[0].no)||src.replace(/\.[^.]+$/,'');
+  const fresh={fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
     sum:ps,head:r.head,missing:r.missing,
     boxCols:r.boxCols||[],mixedBox:!!r.mixedBox,
-    boxCountMixed:(r.mixedBox&&r.boxCols)?r.boxCols.length:null};
-  DB.records.push(rec);DB.sel.rec=rec.id;save();renderRecords();
-  showOk(r,ps);
+    boxCountMixed:(r.mixedBox&&r.boxCols)?r.boxCols.length:null,_skey:key,recVer:1};
+  const idx=DB.records.findIndex(x=>((x.items&&x.items[0]&&x.items[0].no)||x._skey||x.fileName)===key);
+  if(idx<0){const rec=Object.assign({id:uid('R')},fresh);DB.records.push(rec);return {rec:rec,replaced:false,key:key,downOrders:0};}
+  const old=DB.records[idx];
+  const rec=Object.assign({},fresh,{id:old.id,recVer:(+old.recVer||1)+1}); /* 覆盖顺序：fresh 在前，id/recVer 强制在后（fresh 自带 recVer:1 不可覆盖递增） */
+  DB.records[idx]=rec;
+  return {rec:rec,replaced:true,key:key,downOrders:DB.orders.filter(o=>o.recId===old.id).length};
 }
 function diagEl(){return document.getElementById('parseDiag');}
 function clearDiag(){const el=diagEl();if(el)el.innerHTML='';}
@@ -1428,9 +1441,12 @@ function delRec(id){
 }
 
 /* ============== 阶段2 订单 ============== */
+/* 单写多读（2026-10-15 v2.30 第一批）：订单明细实时读记录——重新上传原地替换后，下游自动用新数据；legacy 快照仅作记录缺失时兜底 */
+function ordItems(o){const rec=o&&DB.records.find(r=>r.id===o.recId);return (rec&&rec.items)||o.items||[];}
 function genOrder(recId){
   const rec=DB.records.find(r=>r.id===recId);if(!rec)return;
-  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'中国香港',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',consignee:'',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i})),sum:rec.sum||null}; /* sum=解析层 packSummary 权威合计(2026-10-14 修复:合并重算丢合计) */
+  /* 订单不再快照明细（引用 recId），重量/明细唯一事实源=解析记录 */
+  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'中国香港',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',consignee:'',no:rec.items[0]?.no||''};
   DB.orders.push(ord);DB.sel.ord=ord.id;save();renderOrders();
 }
 function renderOrders(){
@@ -1450,7 +1466,7 @@ function renderOrders(){
       <td><select style="width:120px" onchange="setOrd('${o.id}','tradeMode',this.value)"><option value="">监管</option>${opt(CODE.tradeMode,o.tradeMode.split(' ')[0])}</select></td>
       <td><select style="width:90px" onchange="setOrd('${o.id}','tradeTerm',this.value)"><option value="">成交</option>${opt(CODE.tradeTerm,o.tradeTerm)}</select></td>
       <td><select class="req" style="width:160px" onchange="setOrd('${o.id}','consignee',this.value)"><option value="">选收货人</option>${optStr(DB.parties.consignees,o.consignee)}</select></td>
-      <td>${o.items.length}</td>
+      <td>${ordItems(o).length}</td>
       <td><button class="primary" ${ok?'':'disabled'} onclick="genDraft('${o.id}')">生成草单→</button> <button class="ghost small" onclick="delOrd('${o.id}')">删</button></td></tr>`;});
   h+='</tbody></table><p class="seq">* 红框=必填红线；贸易国=买方所在地(如HK→110)、运抵国=货物实际到达国、产终国=中国、最终目的国=订单红线。四者独立录入。</p>';
   document.getElementById('ordTable').innerHTML=h;
@@ -1497,12 +1513,14 @@ function bucketKey(o){return bucketDims().map(d=>String(o[d[0]]||'')).join('|');
 function describeDiff(a,b){return bucketDims().filter(d=>String(a[d[0]]||'')!==String(b[d[0]]||'')).map(d=>d[1]).join('、')||'未知';}
 function genDraft(ordId){
   const o=DB.orders.find(x=>x.id===ordId);if(!o)return;
+  const rec=DB.records.find(r=>r.id===o.recId);
+  if(!rec){alert('订单 '+o.id+' 的来源记录不存在（可能已删除），请重新上传文件后重新生单');return;}
   const locked=!(o.destCountry&&o.currency);
   const e0=enjoysOf(o.destCountry);
-  const rawLines=buildRawLines(o.items,o.destCountry);
+  const rawLines=buildRawLines(ordItems(o),o.destCountry);
   const dft={id:uid('D'),ordId,locked,
     header:defaultHeader(o),
-    rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false,sum:o.sum||null};
+    rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false,sum:(rec&&rec.sum)||null}; /* 单写多读(2026-10-15)：权威合计实时读记录 */
   /* 自动补全报关草单编码：从主体信息维护(发货人档案)取 信用代码/海关注册编码，改发货人时 setHeader 也会联动 */
   const _cd=(DB.parties.codes&&DB.parties.codes[dft.header.shipper])||{};
   dft.header.shipperUSCI=_cd.usci||''; dft.header.shipperReg=_cd.reg||'';
@@ -1523,14 +1541,17 @@ function genMergedDraft(ids){
   if(bad){alert('合并拦截：订单 '+bad.id+' 的「'+describeDiff(base,bad)+'」与其它单不一致，禁止同桶合并。请只选同红线维度的订单。');return;}
   const destCountry=base.destCountry;
   /* 合并箱序全局错位（2026-10-14 修复）：各票 boxSeq 均从 1 起数，直接合并会跨票碰撞——按累计箱数偏移 */
-  let _shift=0;const items=[];
-  ords.forEach(o=>{
-    o.items.forEach(i=>{const cp=Object.assign({},i);if(Array.isArray(cp.boxSeq))cp.boxSeq=cp.boxSeq.map(function(b){return +b+_shift;});items.push(cp);});
-    _shift+=(+(o.sum&&o.sum.boxCount)||0);
-  });
+  let _shift=0;const items=[];const _sums=[];
+  for(const o of ords){
+    const rc=DB.records.find(r=>r.id===o.recId);
+    if(!rc){alert('订单 '+o.id+' 的来源记录不存在（可能已删除），请重新上传文件后重新生单');return;}
+    ordItems(o).forEach(i=>{const cp=Object.assign({},i);if(Array.isArray(cp.boxSeq))cp.boxSeq=cp.boxSeq.map(function(b){return +b+_shift;});items.push(cp);});
+    _shift+=(+(rc.sum&&rc.sum.boxCount)||0);
+    if(rc.sum)_sums.push(rc.sum);
+  }
   const rawLines=buildRawLines(items,destCountry);
-  /* 权威合计（2026-10-14 修复）：各票解析层 packSummary 合计相加；任一票缺失则 null 回退旧重算路径 */
-  const _sums=ords.map(o=>o.sum).filter(Boolean);
+  /* 权威合计（2026-10-15 改实时读记录）：各票解析层 packSummary 合计相加；任一缺失则 null 回退旧重算路径 */
+
   const sum=(_sums.length===ords.length)?{boxCount:_sums.reduce((a,x)=>a+(+x.boxCount||0),0),totalGW:+_sums.reduce((a,x)=>a+(+x.totalGW||0),0).toFixed(3),totalNW:+_sums.reduce((a,x)=>a+(+x.totalNW||0),0).toFixed(3)}:null;
   const dft={id:uid('D'),ordId:'__merged__',isMerged:true,sourceOrderIds:ords.map(o=>o.id),bucketKey:bucketKey(base),locked:false,
     header:defaultHeader(base),rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false,sum:sum};
@@ -1557,7 +1578,7 @@ function renderMergePanel(){
     h+='<div class="bucket" style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:12px;margin-bottom:12px">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="th" style="font-size:14px">'+esc(label)+'</span><span class="ts">'+gs.length+' 单</span></div>';
     gs.forEach(o=>{const on=DB.mergeSel.indexOf(o.id)>=0?'checked':'';
-      h+='<label class="oc" style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" '+on+' onchange="toggleMergeSel(\''+o.id+'\',this.checked)"> <span>'+o.id+' · '+esc(o.no||'(无单号)')+' · '+o.items.length+'项</span></span></label>';});
+      h+='<label class="oc" style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" '+on+' onchange="toggleMergeSel(\''+o.id+'\',this.checked)"> <span>'+o.id+' · '+esc(o.no||'(无单号)')+' · '+ordItems(o).length+'项</span></span></label>';});
     h+='<button class="btn merge" style="background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)" onclick="mergeBucket(\''+escQ(k)+'\')">合并本桶选中单 →</button></div>';
   });
   h+='</div>';
