@@ -2174,10 +2174,17 @@ function buildData(doc){
       const seq=Array.isArray(l.boxSeq)?l.boxSeq:null;
       if(seq&&seq.length&&seq.every(function(b){return b in W;})){
         let g=0,n=0;seq.forEach(function(b){g+=W[b]/SH[b];n+=(W[b]-_bw)/SH[b];});
-        l.gw=Math.round(g*1000)/1000;l.nw=Math.round(n*1000)/1000;
+        /* NaN 防御（2026-10-14）：分摊结果非有限值时保留原行值，绝不把 NaN 写进单据 */
+        if(isFinite(g)&&isFinite(n)){l.gw=Math.round(g*1000)/1000;l.nw=Math.round(n*1000)/1000;}
       } else if(l.__own&&l.__own.length){
-        l.nw=Math.round(((+l.gw||0)-_bw*l.__own.length)*1000)/1000;if(l.nw<0)l.nw=0;
+        const _n=Math.round(((+l.gw||0)-_bw*l.__own.length)*1000)/1000;
+        if(isFinite(_n)){l.nw=Math.max(_n,0);}
       }
+    });
+    /* 终检：仍为非有限值的行按 行毛重−皮重×箱数 回退；再不行保留原值 */
+    lines.forEach(function(l){
+      if(!isFinite(+l.nw)){const _f=(+l.gw||0)-_bw*(+l.boxCnt||1);l.nw=isFinite(_f)&&_f>0?Math.round(_f*1000)/1000:(isFinite(_f)?0:l.nw);}
+      if(!isFinite(+l.gw))l.gw=0;
     });
   } else {
     if(d.sum&&+d.sum.totalNW>0)adjustResidual(lines,+d.sum.totalNW,'nw');
