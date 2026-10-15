@@ -2154,42 +2154,11 @@ function buildData(doc){
     const _pb=tier1Profile(s),_pa=acctFor((d.header&&d.header.currency)||'',s);
     return {supplier:s,items,qitems:qrows.filter(q=>q.sup===s),_no:((d.header&&d.header.no)||'')+'-'+(ci+1),rkNo:((d.header&&d.header.no)||'')+'-'+(ci+1)+'-RK',qtyTotal:decRound(items.reduce((a,l)=>a+(+l.qty||0),0),0),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
       purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||'',phone:_pb.phone||'',shr:_pb.shr||'',shrF:_pb.shr||'____________',phoneF:_pb.phone||'____________'},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
-  /* 合计对齐（2026-10-14 修复）：有权威合计时按箱分摊重修行毛/净——
-     每箱毛重均分给共享该箱的行；箱净=箱毛−每箱皮重（皮重=(毛合计−净合计)/箱数，自洽于权威合计）→ Σ行=表头 恒等。
-     行箱重来源优先 boxSeqW(精确每箱重)，否则行 gw/箱数均摊；无箱序行按 boxCnt 独占箱处理。无权威合计回退 adjustResidual 尾差修正 */
-  if(d.sum&&+d.sum.totalGW>0&&+d.sum.totalNW>0&&+d.sum.boxCount>0){
-    const _bw=(+d.sum.totalGW-+d.sum.totalNW)/+d.sum.boxCount;
-    const W={},SH={};
-    lines.forEach(function(l){
-      const seq=Array.isArray(l.boxSeq)?l.boxSeq:null;
-      if(seq&&seq.length&&Array.isArray(l.boxSeqW)&&l.boxSeqW.length===seq.length&&l.boxSeqW.every(function(w){return +w>0;})){
-        seq.forEach(function(b,k){const w=+l.boxSeqW[k];if(!(b in W)){W[b]=w;SH[b]=0;}SH[b]++;});
-      } else if(seq&&seq.length&&+l.gw>0){
-        seq.forEach(function(b){const w=+l.gw/seq.length;if(!(b in W)){W[b]=w;}else{W[b]=(W[b]+w)/2;}SH[b]++;});
-      } else if(+l.gw>0){
-        const cnt=+l.boxCnt||1;l.__own=[];for(let k=1;k<=cnt;k++){const b='__o_'+(l.sku||('r'+lines.indexOf(l)))+'_'+k;W[b]=+l.gw/cnt;SH[b]=1;l.__own.push(b);}
-      }
-    });
-    lines.forEach(function(l){
-      const seq=Array.isArray(l.boxSeq)?l.boxSeq:null;
-      if(seq&&seq.length&&seq.every(function(b){return b in W;})){
-        let g=0,n=0;seq.forEach(function(b){g+=W[b]/SH[b];n+=(W[b]-_bw)/SH[b];});
-        /* NaN 防御（2026-10-14）：分摊结果非有限值时保留原行值，绝不把 NaN 写进单据 */
-        if(isFinite(g)&&isFinite(n)){l.gw=Math.round(g*1000)/1000;l.nw=Math.round(n*1000)/1000;}
-      } else if(l.__own&&l.__own.length){
-        const _n=Math.round(((+l.gw||0)-_bw*l.__own.length)*1000)/1000;
-        if(isFinite(_n)){l.nw=Math.max(_n,0);}
-      }
-    });
-    /* 终检：仍为非有限值的行按 行毛重−皮重×箱数 回退；再不行保留原值 */
-    lines.forEach(function(l){
-      if(!isFinite(+l.nw)){const _f=(+l.gw||0)-_bw*(+l.boxCnt||1);l.nw=isFinite(_f)&&_f>0?Math.round(_f*1000)/1000:(isFinite(_f)?0:l.nw);}
-      if(!isFinite(+l.gw))l.gw=0;
-    });
-  } else {
-    if(d.sum&&+d.sum.totalNW>0)adjustResidual(lines,+d.sum.totalNW,'nw');
-    if(d.sum&&+d.sum.totalGW>0)adjustResidual(lines,+d.sum.totalGW,'gw');
-  }
+  /* 合计对齐（2026-10-15 定稿）：mergeLines 自带按箱分摊已保证 Σ明细行=权威合计（真实三票复现验证），
+     此处仅做分级尾差对齐（adjustResidual 自带保护：差额超过每行1分即拒绝涂改，不会掩盖真实错误）。
+     此前在此处按残缺 boxSeq 重分摊的做法已撤销——它会覆盖 mergeLines 的正确行值并产生 NaN。 */
+  if(d.sum&&+d.sum.totalNW>0)adjustResidual(lines,+d.sum.totalNW,'nw');
+  if(d.sum&&+d.sum.totalGW>0)adjustResidual(lines,+d.sum.totalGW,'gw');
   return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,qrows,shipperFan:fan(d.header.shipper||''),
     /* 交货地点兜底（2026-10-13 用户拍板）：表头未填时默认取发货人档案地址（井太兰=东莞厚街仓），表头可覆盖 */
     deliveryPlace:(d.header&&d.header.deliveryPlace)||cleanDeliveryPlace(partyProfile((d.header&&d.header.shipper)||'').addr),
