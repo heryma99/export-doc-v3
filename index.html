@@ -1097,6 +1097,7 @@ function parseGrid(grid,forceSku,opts){
     if(headKey&&normHead(sku)===headKey) continue;   /* 跳过重复表头行 */
     let gw=numv(g('gw'));
     let nw=numv(g('nw'));
+    const nwUp=!!numv(g('nw'));   /* 2026-10-15：标记净重是否来自上传列（兜底/推导值可被箱重重算覆盖） */
     const srcBw=numv(g('bw'));
     let bw=srcBw;
     /* 纸箱重量兜底链：源文件「包装箱重量」列 → 固定值 → 默认1.3kg/箱
@@ -1153,7 +1154,13 @@ function parseGrid(grid,forceSku,opts){
            不能用箱序当下标(否则右移一列且漏末箱，重量少算) */
         boxSeqW=boxCols.filter(function(j){ return numv(c[j])>0; }).map(function(j){ return numv(boxWeights[j]); });
         const wsum=boxSeqW.reduce(function(a,x){return a+x;},0);
-        if(!gw && wsum>0) gw=Math.round(wsum*1000)/1000;
+        /* 2026-10-15 修复优先级反转：文件箱重(实际称重)必须优先于商品库单件推导——
+           此前 if(!gw) 使库兜底值(净重×qty / +1.3×件数)抢占 gw，有箱重数据的票反而用库值(31.04事故)。
+           现在：有箱重数据一律取箱重之和为行毛重；净重若非上传值则按 毛−皮×占用箱数 重算自洽 */
+        if(wsum>0){
+          gw=Math.round(wsum*1000)/1000;
+          if(!nwUp) nw=Math.max(0,Math.round((gw-bw*boxSeq.length)*1000)/1000);
+        }
       }
     }
     /* 修复装箱清单 PL 两列空白：name(Description) 空时回退 商品库cn/en → SKU代码；
