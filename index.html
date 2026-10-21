@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.30 · 2026-10-15（单写多读：记录原地替换+订单引用化+草单派生化(setLine覆盖层保留)+A17明细=表头闸+箱重优先级修复）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.31 · 2026-10-21（金额舍入对齐海关单一窗口「四舍六入五成双」：decRound 恰为.5边界奇进偶舍，草单/发票总价与单一窗口逐行一致；浮点边界防御保留）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -845,15 +845,18 @@ function getSku(s){
 
 /* ============== 工具 ============== */
 const PRICE_RATE=()=>DB.price.rate;
-/* 金额半进位舍入(标准四舍五入, 2026-09-08 用户确认): Math.round/toFixed 在 x.xx5 边界因浮点存储(如 1855.975→1855.97499…)会舍错 1 分;
-   decRound 在 |小数-0.5|<1e-6 的边界用 toFixed(dp+2) 高精度字符串判定真实方向, 非边界走普通 Math.round, 无双重舍入陷阱 */
+/* 金额舍入(2026-10-21 v2.31 用户确认对齐海关单一窗口「四舍六入五成双」): 非边界走普通进位(与五成双等价),
+   恰为 .5 边界时按前一位奇偶——奇进偶舍; 保留 toFixed(dp+2) 高精度字符串判定真实方向(1855.975 浮点事故防御),
+   使 182.145→182.14 / 182.155→182.16, 与单一窗口逐行报文一致, 草单金额可对上 */
 function decRound(x,dp){
   if(!isFinite(x)) return x;
   var neg=x<0, a=neg?-x:x;
   var m=Math.pow(10,dp), scaled=a*m, fl=Math.floor(scaled), frac=scaled-fl, r;
   if(Math.abs(frac-0.5)<1e-6){
     var s=a.toFixed(dp+2), dec=(s.split('.')[1]||'');
-    r=(+(dec[dp]||'0')>=5)? fl+1 : fl;
+    if(+(dec[dp]||'0')>5) r=fl+1;                 /* 尾数>5 → 进位 */
+    else if(+(dec[dp]||'0')<5) r=fl;              /* 尾数<5 → 舍去(浮点略低于.5的假边界) */
+    else r=(fl%2===0)? fl : fl+1;                 /* 恰为5 → 五成双: 奇进偶舍 */
   } else r=Math.round(scaled);
   return neg? -(r/m) : r/m;
 }
