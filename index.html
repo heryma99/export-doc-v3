@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.31 · 2026-10-21（金额舍入对齐海关单一窗口「四舍六入五成双」：decRound 恰为.5边界奇进偶舍，草单/发票总价与单一窗口逐行一致；浮点边界防御保留）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.32 · 2026-10-21（总价口径对齐海关：总价=报告单价(4位)×数量 再舍2位，修复全精度申报价直乘导致与单一窗口差1分；五成双 v2.31 基础上完善）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -1706,7 +1706,7 @@ function renderDrafts(){
   const mh=d.monitor?renderMonitor(d.monitor,d.id):(d.confirmed?'':'<div class="monitor"><div class="mh" style="color:var(--mut)">⚠ 监控已过期或未运行（上次运行后价格有改动）——点「重跑监控」，锁定时也会自动重跑</div></div>');
   const rawCount=d.rawLines?d.rawLines.length:d.lines.length;
   let maxLen0=0,total0=0;
-  d.lines.forEach(l=>{const bl=byteLen(String(specDetail(l).xl||''));if(bl>maxLen0)maxLen0=bl;total0+=(+l.decl)*(+l.qty);});   /* v2.23：maxLen0 同改申报串实时口径 */
+  d.lines.forEach(l=>{const bl=byteLen(String(specDetail(l).xl||''));if(bl>maxLen0)maxLen0=bl;total0+=decRound(decRound((+l.decl),4)*(+l.qty),2);});   /* v2.23：maxLen0 同改申报串实时口径；v2.32：合计同海关口径(4位单价×数量) */
   const hasSpu=(d.rawLines||[]).some(x=>getSpu(x));
   /* v2.21：旧版归并检测 —— 当前行有超255字节，而用 rawLines 按当前模式重新归并后无超长（新版分段可解决）
      → 提示一键重新归并（草单 lines 是生成/切模式时的快照，旧版生成的不会自动更新） */
@@ -2207,7 +2207,10 @@ function buildData(doc){
       while(parts.length&&(parts[parts.length-1]==null||String(parts[parts.length-1]).trim()===''))parts.pop();
       spec=parts.join('|');
     }
-    const _amt=((+l.decl)*(+l.qty));
+    /* v2.32 海关口径对齐（2026-10-21 用户确认）：总价=报告单价(4位舍入)×数量 再舍2位——与单一窗口"录入4位单价→算总价"算式一致；
+       此前用全精度 decl 乘（72.18971×17→1227.23），海关按 4 位单价算（72.1897×17→1227.22），差 1 分 */
+    const _upC=decRound(+l.decl,4),_up4=decRound(decl2cur(l.decl),4);
+    const _amt=decRound(_upC*(+l.qty),2);
     return {...l,spec,en:l.en||'',unit:l.unit||'',
       /* 境内货源地/产地：导出层此前只在 safeRender 预览克隆里计算, buildData 返回行从未带 _origin → Excel N 列恒空(旧草单尤甚);
          此处补齐: 存储有值(非空)优先, 空/缺失则按供应商实时重算(归集到一级→读 tier1Profiles.originCode), 保证 Excel 与预览一致 */
@@ -2215,9 +2218,9 @@ function buildData(doc){
       decl:l.decl,
       decl4:(+l.decl).toFixed(4),            /* 销售合同單價 4 位显示(单价统一4位/汇总2位) */
       nameF:fan(l.name||''),matF:fan(l.mat||''),unitF:fan(l.unit||''),   /* 繁体显示字段(销售合同用: 单位等必须繁体) */
-      amount:decRound(_amt,2).toFixed(2),
-      declCur:decRound(decl2cur(l.decl),4).toFixed(4),
-      amountCur:decRound(decl2cur(_amt),2).toFixed(2),
+      amount:_amt.toFixed(2),
+      declCur:_up4.toFixed(4),
+      amountCur:decRound(_up4*(+l.qty),2).toFixed(2),
       boxCnt:(+l.boxCnt||0),
       /* Model 列：归并行显示该款全部 SKU(_keys)；M0 一行一款取 sku（含尺码；style 为 SPU 级无尺码，用户 09-23 确认须显示全）；显式 model 最优先 */
       model:l.model||(l._keys&&l._keys.length?l._keys.join(','):((d.mergeMode==='M0')?(l.sku||l.style):(l.style||l.sku)))};});
@@ -2250,9 +2253,9 @@ function buildData(doc){
     /* dates 收缩（2026-10-13 用户拍板）：−30/−25/−20/−2 推算全部废除（送货/入库=手填shipDate、发票/PL=发票号日期、出口日期=空待海关回执），仅保留申报日期 */
     dates:{customs:fmt(base)},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
-    /* 金额合计（2026-10-14 修复）：Σ各明细行(先行内舍入2位)后再舍入一次 → TOTAL 与明细逐行显示值严格相等 */
-    totalAmount:decRound(lines.reduce((a,l)=>a+decRound((+l.decl)*(+l.qty),2),0),2).toFixed(2),
-    totalAmountCur:decRound(lines.reduce((a,l)=>a+decRound(decl2cur((+l.decl)*(+l.qty)),2),0),2).toFixed(2),
+    /* 金额合计（2026-10-14 修复 / 2026-10-21 v2.32 海关口径）：Σ各明细行(报告单价4位×数量舍2位)后再舍入一次 → TOTAL 与明细逐行显示值严格相等，且与单一窗口逐行一致 */
+    totalAmount:decRound(lines.reduce((a,l)=>a+decRound(decRound((+l.decl),4)*(+l.qty),2),0),2).toFixed(2),
+    totalAmountCur:decRound(lines.reduce((a,l)=>a+decRound(decRound(decl2cur((+l.decl)),4)*(+l.qty),2),0),2).toFixed(2),
     /* 权威总重/箱数（2026-10-14 修复）：解析层 packSummary 合计(d.sum)优先——合并重算曾致件数11/毛重181.42；
        无权威合计时回退旧的 boxDedupTotals/totalBoxCount 路径（历史草单兼容） */
     totalGW:(d.sum?+d.sum.totalGW:boxDedupTotals(d.rawLines||lines).gw).toFixed(2),
