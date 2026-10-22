@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.35 · 2026-10-22（无箱重票·权威合计比例分摊：箱矩阵格式缺箱重列时，按文件头总毛/净重比例分摊到行使 A17 恒等；有真实箱重的票 A17 防线不变）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.36 · 2026-10-22（箱矩阵真箱重精确分摊：解析「第N箱」矩阵底部 Weight of box/箱号 块，行毛重=Σ(箱重×件数份额)，取代混箱重复计重与比例估算；缺重箱/Σ箱重≠表头/中英标签边界齐备，解析失败自动落回 v2.35 比例分摊）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -647,7 +647,9 @@ function dedupeBoxWeight(lines){
   return lines.map(x=>{
     const r=Object.assign({},x);
     const bn=String(r.boxNo||'').trim();
-    if(bn && seenW[bn]){ r.gw=0; r.nw=0; }   // 同箱重复行：重量归零，仅首行计整箱重
+    /* v2.36：_gwFinal 行的 gw=箱重×件数份额（精确分摊值，非整箱重），同箱多行各持份额、Σ=箱重，
+       清零会丢重（TRPR5 实测 Σ 130≠139.65 事故）——仅整箱重行参与同箱去重 */
+    if(bn && seenW[bn] && !r._gwFinal){ r.gw=0; r.nw=0; }   // 同箱重复行：重量归零，仅首行计整箱重
     else { if(bn) seenW[bn]=1; }
     return r;
   });
@@ -735,7 +737,7 @@ function mergeLines(lines,mode,sup){
   /* 横向混箱(行带 boxSeq 物理箱序号)自 v2.12 起不再在此按箱合并 —— 该逻辑整体移至 boxView()，
      仅 PACKING LIST 渲染时使用；报关/发票/合同恢复 M0-M6 归并口径（兑现 plView 处已确认的
      「只改 PL，报关仍按 M0-M6」设计；此前本分支抢先 return 导致 M0 失效、报关单被按箱合并）。 */
-  if(mode==='M0'||!lines.length) return lines.map(function(x){var r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); var b=String(r.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+r.qty||0)/BQ:0; r.gw=Math.round((_bgw[b]||0)*sh*1000)/1000; r.nw=Math.round((_bnw[b]||0)*sh*1000)/1000; /* B11（2026-10-13 改不含税口径）：M0 行直接带自身不含税采购价与缺失归因 */ r.costMaxNoTax=+r.cost||0; r._costNoLib=(r.matched&&!(+r.cost>0))?1:0; r._taxNoMatch=r.matched?0:1; return r;});
+  if(mode==='M0'||!lines.length) return lines.map(function(x){var r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); var b=String(r.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+r.qty||0)/BQ:0; /* v2.36：_gwFinal 行（箱矩阵真箱重精确分摊）直接用行值，不再按箱重分摊（混箱下按 composite boxNo 分摊会重复计重） */ if(r._gwFinal){r.gw=Math.round((+x.gw||0)*1000)/1000;r.nw=Math.round((+x.nw||0)*1000)/1000;}else{r.gw=Math.round((_bgw[b]||0)*sh*1000)/1000;r.nw=Math.round((_bnw[b]||0)*sh*1000)/1000;} /* B11（2026-10-13 改不含税口径）：M0 行直接带自身不含税采购价与缺失归因 */ r.costMaxNoTax=+r.cost||0; r._costNoLib=(r.matched&&!(+r.cost>0))?1:0; r._taxNoMatch=r.matched?0:1; return r;});
   const m=MODES.find(x=>x.id===mode)||MODES[0];
   // 降级保护：M4/M5 的"款式"维度依赖真SPU；取不到(显式列无值且SKU无法推导)时退化为按SKU分行
   const hasStyle=lines.some(l=>getSpu(l));
@@ -762,9 +764,10 @@ function mergeLines(lines,mode,sup){
     rep.costMaxNoTax=Math.max(0,Math.max.apply(null,g.map(x=>+x.cost||0)));
     rep._costNoLib=g.filter(x=>x.matched&&!(+x.cost>0)).length;
     rep._taxNoMatch=g.filter(x=>!x.matched).length;
-    /* 重量：按整箱重 × 数量/箱件数 分摊到每行，再按归并行求和（等价 model 单件重×数量）；不受 dedupe 清零影响 */
+    /* 重量：按整箱重 × 数量/箱件数 分摊到每行，再按归并行求和（等价 model 单件重×数量）；不受 dedupe 清零影响。
+       v2.36：_gwFinal 行（箱矩阵真箱重精确分摊）直接累加行值（成员行已按箱份额精确分配，Σ=Σ箱重） */
     var _gw=0,_nw=0;
-    g.forEach(function(x){var b=String(x.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+x.qty||0)/BQ:0; _gw+=(_bgw[b]||0)*sh; _nw+=(_bnw[b]||0)*sh;});
+    g.forEach(function(x){ if(x._gwFinal){_gw+=+x.gw||0;_nw+=+x.nw||0;return;} var b=String(x.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+x.qty||0)/BQ:0; _gw+=(_bgw[b]||0)*sh; _nw+=(_bnw[b]||0)*sh;});
     rep.gw=Math.round(_gw*1000)/1000; rep.nw=Math.round(_nw*1000)/1000;
     /* 箱号：合并后保留组内全部不重复 boxNo（分号拼接），避免 M5 合并时丢第二行箱号导致 packSummary 漏算。 */
     rep.boxNo=[...new Set(g.map(x=>String(x.boxNo||'').trim()).filter(Boolean))].join(';');
@@ -1096,7 +1099,7 @@ function parseGrid(grid,forceSku,opts){
      尾部块行首标签 + 每箱一列(第2列=第1箱)，用于按箱提取纸箱规格。 */
   const boxCols=[];
   head.forEach(function(h,j){ if(/^第\d+箱$/.test(normHead(h))) boxCols.push(j); });
-  let lenRow=null,widRow=null,heiRow=null,boxWeights=null;
+  let lenRow=null,widRow=null,heiRow=null,boxWeights=null,boxNoRow=null;
   if(boxCols.length){
     for(let i=hr+1;i<grid.length;i++){
       const r=grid[i]||[];
@@ -1106,7 +1109,8 @@ function parseGrid(grid,forceSku,opts){
         if(lab.indexOf('boxlength')===0) lenRow=r;
         else if(lab.indexOf('boxwidth')===0) widRow=r;
         else if(lab.indexOf('boxheight')===0) heiRow=r;
-        else if(lab.indexOf('weightofbox')===0) boxWeights=r;   /* 尾部「Weight of box (KG)」块：boxWeights[s]=第 s 箱的毛重(s 为1-based箱序) */
+        else if(lab.indexOf('weightofbox')===0||lab.indexOf('boxweight')===0||lab.indexOf('grossweight')===0||lab.indexOf('箱重')===0||lab.indexOf('箱子毛重')===0) boxWeights=r;   /* 尾部「Weight of box (KG)」块：boxWeights[s]=第 s 箱的毛重(s 为1-based箱序) */
+        else if(lab.indexOf('箱号')===0||lab.indexOf('boxno')===0) boxNoRow=r;   /* v2.36：尾部真实箱号行 */
       }
     }
   }
@@ -1171,9 +1175,11 @@ function parseGrid(grid,forceSku,opts){
        仅当识别到混箱结构(boxCols>=2)且无单SKU箱号范围时采用，避免干扰普通箱号范围文件。 */
     let mixBoxCnt=bc, boxSeq=[];
     let boxSeqW=[];
+    let _seqQV=null;   /* v2.36：该行在各箱的件数分布(与 boxCols 同序)，供真箱重精确分摊 */
     if(boxCols.length>=1){   /* 横向混箱(每箱多款)：只要有「第N箱」列即识别为混箱(单箱多款 boxCols=1 也识别)；去掉 !g('boxNo') 以免「序号」列误阻断 */
       boxSeq=boxCols.filter(function(j){ return numv(c[j])>0; })
                     .map(function(j){ return boxCols.indexOf(j)+1; }); /* 第N箱序号(1-based) */
+      _seqQV=boxCols.filter(function(j){ return numv(c[j])>0; }).map(function(j){ return numv(c[j]); });
       mixBoxCnt=boxSeq.length;
       /* 重量回填④：尾部「Weight of box」块按箱序(boxSeq,1-based)给出每箱重。
          行级 gw = 该SKU所占比箱重之和(供 PACKING LIST 明细行)；boxSeqW 同步存每箱重，供报关总重去重求和(每箱只计一次) */
@@ -1199,7 +1205,7 @@ function parseGrid(grid,forceSku,opts){
     const _name=_name0||(_sm0?(_sm0.cn||_sm0.name||''):'')||sku;
     const _model=(_sm0?(_sm0.style||''):'')||sku;
     rows.push({sku:sku,qty:qty,gw:gw,nw:nw,bw:bw,
-      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:mixBoxCnt,boxSeq:boxSeq,boxSeqW:boxSeqW,
+      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:mixBoxCnt,boxSeq:boxSeq,boxSeqW:boxSeqW,_seqQ:_seqQV,
       asin:g('asin'),fnsku:g('fnsku'),name:_name,model:_model,shop:g('shop'),pallet:g('pallet')||g('palletSize')});
   }
   const missing=[];
@@ -1211,6 +1217,46 @@ function parseGrid(grid,forceSku,opts){
   /* 混箱标志：识别到「第N箱」列且行级无箱号范围 → 判定为 Amazon 混箱(每箱多款)。
      混箱总箱数 = boxCols.length(第N箱列数)，不能对 SKU 行箱数求和(一箱多SKU会虚高)。 */
   const mixedBox = boxCols.length>=1 && !rows.some(function(r){ return /\d+[~\-～]\d+/.test(String(r.boxNo||'')); });
+  /* ── v2.36 箱矩阵·真箱重精确分摊（TT2RHTJ 格式，2026-10-22 用户确认）──
+     footer「Weight of box/箱号」行按箱列给出每箱毛重与真实箱号；行级旧逻辑 gw=所触箱整箱重之和，混箱下重复计重（Σ行171.4≠140.4）。
+     精确分摊：行毛重=Σ(箱重×该行在该箱件数/该箱总件数)——合计件数由各行矩阵值累加；Σ行=Σ箱重恒等（=packSummary 去重合计=A17 比对基准）。
+     边界①缺重箱：按有重箱「单件均毛×该箱件数」兜底；②Σ箱重 vs 文件头总重量不一致：以箱重为准（A17 基准即 packSummary=Σ箱重），missing 提示差异；
+     ③标签中英文兼容、非箱列杂值按列对齐自动忽略；④解析失败/无 footer 自动落回 v2.35 比例分摊，行为只升不降。 */
+  if(boxCols.length&&boxWeights&&rows.some(function(r){return r._seqQ&&r._seqQ.length;})){
+    const _nB=boxCols.length,_qt=[];
+    /* 对齐修复（v2.36）：_seqQ 按占用箱压缩（与 boxSeq 同序），必须经 boxSeq[k]-1 定位箱下标累加，
+       直接按 _seqQ 下标累加会把单箱行误计到第 0 箱（TRPR5 实测 Σ行 14.6≠50.75 事故） */
+    rows.forEach(function(r){(r.boxSeq||[]).forEach(function(bs,k){const q=(r._seqQ||[])[k]||0;const bi=(+bs||1)-1;_qt[bi]=(_qt[bi]||0)+(+q||0);});});
+    const _bw2=[];
+    for(let k=0;k<_nB;k++)_bw2[k]=numv(boxWeights[boxCols[k]]);
+    let _sw=0,_sq2=0;
+    for(let k=0;k<_nB;k++){if(_bw2[k]>0){_sw+=_bw2[k];_sq2+=(_qt[k]||0);}}
+    const _unit=(_sq2>0&&_sw>0)?_sw/_sq2:0;
+    for(let k=0;k<_nB;k++){if(!(_bw2[k]>0)&&(_qt[k]||0)>0&&_unit>0)_bw2[k]=Math.round(_unit*(_qt[k]||0)*1000)/1000;}
+    const _sumW=_bw2.reduce(function(a,x){return a+(+x||0);},0);
+    if(_sumW>0){
+      /* 未舍入理论值（净重=毛−皮份额），作为 adjustResidual 目标——逐行 3 位舍入残差 ≤1分×行数，抹平后 Σ行=Σ箱重/Σ净严格恒等（A17 容差 0.005） */
+      let _rawG=0,_rawF=0;
+      rows.forEach(function(r){
+        if(!r._seqQ||!r._seqQ.length)return;
+        (r._seqQ||[]).forEach(function(q,k){const bi=(+r.boxSeq[k]||1)-1;const qt=_qt[bi]||0;if(!(qt>0))return;const w=_bw2[bi]||0;_rawG+=w*q/qt;_rawF+=(+r.bw||1.3)*q/qt;});
+      });
+      rows.forEach(function(r){
+        if(!r._seqQ||!r._seqQ.length)return;
+        let g2=0,f2=0;
+        (r._seqQ||[]).forEach(function(q,k){const bi=(+r.boxSeq[k]||1)-1;const qt=_qt[bi]||0;if(!(qt>0))return;const w=_bw2[bi]||0;g2+=w*q/qt;f2+=(+r.bw||1.3)*q/qt;});
+        r.gw=Math.round(g2*1000)/1000;
+        r.nw=Math.max(0,Math.round((g2-f2)*1000)/1000);
+        r._gwFinal=1;
+        if(boxNoRow){const bn=r.boxSeq.map(function(k){return String(boxNoRow[boxCols[k-1]]||'').trim();}).filter(Boolean);if(bn.length)r.boxNo=bn.join(';');}
+      });
+      adjustResidual(rows,_sumW,'gw');
+      adjustResidual(rows,Math.round((_rawG-_rawF)*1000)/1000,'nw');
+      /* edge#2：Σ箱重 vs 文件头「总重量」一致性提示（权威=Σ箱重=A17 比对基准） */
+      (function(){let hg=0;for(let i=0;i<hr;i++){const rw=grid[i]||[];for(let j=0;j<rw.length-1;j++){if(/总重量/.test(String(rw[j]||''))){hg=numv(rw[j+1]);break;}}if(hg>0)break;}
+        if(hg>0&&Math.abs(hg-_sumW)>0.05*_nB)missing.push('箱重合计'+_sumW+'≠文件头总重量'+hg+'（以箱重为准，请核对文件）');})();
+    }
+  }
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4),
           boxCols:boxCols,mixedBox:mixedBox};
 }
@@ -1539,7 +1585,7 @@ function buildRawLines(items,destCountry){
   return items.map(it=>{const s=getSku(it.sku)||{};
     return {sku:it.sku,name:s.cn||it.name,en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:resolveBrandType(s),enjoys:e0,
       decl:s.noTax?declPrice(s):0,cost:s.noTax||0,tax:+s.tax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',
-      boxCnt:it.boxCnt||0,qtyPerBox:it.qtyPerBox||0,boxSeq:it.boxSeq||[],boxSeqW:it.boxSeqW||[],
+      boxCnt:it.boxCnt||0,qtyPerBox:it.qtyPerBox||0,boxSeq:it.boxSeq||[],boxSeqW:it.boxSeqW||[],_gwFinal:!!it._gwFinal,   /* v2.36：箱矩阵真箱重精确分摊标记必须透传，否则 mergeLines 二次分摊重复计重 */
       supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||it.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn,
       unit:s.unit||it.unit||'个'};});
