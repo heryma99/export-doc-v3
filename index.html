@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.37 · 2026-10-22（供应商合规黑名单：预置贝蒙沃森（深圳）商贸有限公司——B12 闸 BLOCK 不可锁定、合并混票拦截、退税测算排除、设置中心可维护名单；红线：只隔离不提供灰色通道）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.38 · 2026-10-22（生单幂等：同记录已有订单复用不新建，防重复报关/重复退税；草单二次生成加确认摩擦；重复订单检测横幅+人工清理）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -1527,14 +1527,45 @@ function delRec(id){
 function ordItems(o){const rec=o&&DB.records.find(r=>r.id===o.recId);return (rec&&rec.items)||o.items||[];}
 function genOrder(recId){
   const rec=DB.records.find(r=>r.id===recId);if(!rec)return;
+  /* v2.38 生单幂等（2026-10-22 用户确认）：同一记录已有订单时复用不再新建——
+     防重复报关/重复退税（同货件多套报关单证是合规事故），已填红线直接选中跳转，未填完提示补齐 */
+  const _ex=DB.orders.find(o=>o.recId===recId);
+  if(_ex){
+    DB.sel.ord=_ex.id;save();renderOrders();
+    alert((_ex.destCountry&&_ex.currency)
+      ?('该记录已有订单 '+_ex.id+'（红线已填），已为你选中——请勿重复生单；如需多口径试算请在草单中心新建。')
+      :('该记录已有半成品订单 '+_ex.id+'（红线未填完），已为你选中，请继续补齐目的国与币种。'));
+    return;
+  }
   /* 订单不再快照明细（引用 recId），重量/明细唯一事实源=解析记录 */
   const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'中国香港',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',consignee:'',no:rec.items[0]?.no||''};
   DB.orders.push(ord);DB.sel.ord=ord.id;save();renderOrders();
 }
+/* v2.38 重复订单清理：同记录保留一张（优先红线已填者，否则最早一张），其余连同其名下草单一并删除（confirm 确认，不自动删） */
+function dedupOrders(recId){
+  const g=DB.orders.filter(o=>o.recId===recId);
+  if(g.length<2)return;
+  const keep=g.find(o=>o.destCountry&&o.currency)||g[0];
+  const drop=g.filter(o=>o!==keep);
+  if(!confirm('记录 '+recId+' 有 '+g.length+' 张订单。\n保留：'+keep.id+'（红线'+((keep.destCountry&&keep.currency)?'已填':'未填')+'）\n删除：'+drop.map(o=>o.id).join('、')+'\n其名下草单一并删除，继续？'))return;
+  const ids=drop.map(o=>o.id);
+  DB.drafts=DB.drafts.filter(d=>!(d.ordId&&d.ordId!=='__merged__'&&ids.indexOf(d.ordId)>=0));
+  DB.orders=DB.orders.filter(o=>ids.indexOf(o.id)<0);
+  if(ids.indexOf(DB.sel.ord)>=0)DB.sel.ord=keep.id;
+  save();renderOrders();
+}
 function renderOrders(){
   document.getElementById('ordCount').textContent=DB.orders.length+' 个订单';
   if(!DB.orders.length){document.getElementById('ordTable').innerHTML='<p class="muted">勾选上方记录并点「生单→」生成订单。</p>';return;}
-  let h='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>收货人*</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
+  let h='';
+  /* v2.38 重复订单检测：同 recId 多张订单 = 重复报关风险，提示并支持人工确认清理（不自动删） */
+  const _dg={};DB.orders.forEach(o=>{_dg[o.recId]=(_dg[o.recId]||0)+1;});
+  const _dups=Object.keys(_dg).filter(k=>_dg[k]>1);
+  if(_dups.length){
+    h+='<div class="note" style="border:1px solid var(--warn);color:var(--warn);margin-bottom:10px">⚠ 检测到 '+_dups.length+' 条记录存在重复订单（同货件多套订单=重复报关风险）：'
+      +_dups.map(k=>'<button class="small" style="margin-left:6px" onclick="dedupOrders(\''+k+'\')">清理 '+k+'</button>').join('')+'</div>';
+  }
+  h+='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>收货人*</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
   DB.orders.forEach(o=>{const ok=o.destCountry&&o.currency;
     h+=`<tr class="${DB.sel.ord===o.id?'sel':''}">
       <td><input type="checkbox" ${DB.sel.ord===o.id?'checked':''} onchange="pickOrd('${o.id}')"></td>
@@ -1595,6 +1626,12 @@ function bucketKey(o){return bucketDims().map(d=>String(o[d[0]]||'')).join('|');
 function describeDiff(a,b){return bucketDims().filter(d=>String(a[d[0]]||'')!==String(b[d[0]]||'')).map(d=>d[1]).join('、')||'未知';}
 function genDraft(ordId){
   const o=DB.orders.find(x=>x.id===ordId);if(!o)return;
+  /* v2.38 防手滑（2026-10-22 用户确认）：同订单已有未锁定草单时确认后再开新张（保留多口径试算能力）；
+     Node/回归环境无 confirm 自动跳过 */
+  if(typeof confirm==='function'){
+    const _ex=DB.drafts.find(x=>x.ordId===ordId&&!x.locked);
+    if(_ex&&!confirm('该订单已有未锁定草单 '+_ex.id+'（'+((_ex.lines&&_ex.lines.length)||0)+' 行）。重新生成将新开一张草单（多口径试算用），继续？'))return;
+  }
   const rec=DB.records.find(r=>r.id===o.recId);
   if(!rec){alert('订单 '+o.id+' 的来源记录不存在（可能已删除），请重新上传文件后重新生单');return;}
   const locked=!(o.destCountry&&o.currency);
