@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.34 · 2026-10-22（M7 倒挂感知智能归并：M6 违规组内按采购价降序贪心拆分，子组加权申报价≥组内最高采购价，B11 全过且行数最少；一键建议接入，16 组合试跑）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.35 · 2026-10-22（无箱重票·权威合计比例分摊：箱矩阵格式缺箱重列时，按文件头总毛/净重比例分摊到行使 A17 恒等；有真实箱重的票 A17 防线不变）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -1978,6 +1978,7 @@ function runMonitor(did){
      不传 always 的条目渲染行为与改造前完全一致（含 localStorage 里存量的旧 monitor 数据）。 */
   const add=(cat,id,desc,sev,ok,msg,always)=>{R.push({cat,id,desc,sev,ok,msg,always:!!always});if(!ok){sev==='BLOCK'?block++:warn++;}};
   const H=d.header, L=d.lines;
+  allocWeights(d);   /* v2.35：无箱重票按权威合计比例分摊，A17 才能对齐（有真实箱重不触发） */
   // A 报关单填制规范
   /* A1 必填（2026-10-14 用户拍板）：9项报关要素 + 发票号/销售交货日期/采购交货日期（BLOCK）；消息点名缺失项 */
   const _a1miss=[['发货人',H.shipper],['境外收货人',H.consignee],['贸易方式',H.tradeMode],['运输方式',H.transMode],['成交方式',H.tradeTerm],['征免性质',H.levy],['币制',H.currency],['出境关别',H.port],['运抵国',H.destCountry],['发票号',H.invNo],['销售交货日期',H.deliveryDate],['采购交货日期',H.pdeliveryDate]].filter(x=>!String(x[1]==null?'':x[1]).trim()).map(x=>x[0]);
@@ -2037,7 +2038,7 @@ function runMonitor(did){
     if(!d.sum){ add('A','A17','明细行合计=表头合计(毛/净)','OK',true,'无权威合计(旧草单)，跳过校验'); return; }
     const _sgw=L.reduce((a,l)=>a+(+l.gw||0),0),_snw=L.reduce((a,l)=>a+(+l.nw||0),0);
     const _bad=Math.abs(_sgw-+d.sum.totalGW)>0.005||Math.abs(_snw-+d.sum.totalNW)>0.005;
-    add('A','A17','明细行合计=表头合计(毛/净)',_bad?'BLOCK':'OK',!_bad,_bad?('明细Σ('+_sgw.toFixed(2)+'/'+_snw.toFixed(2)+'）≠表头('+d.sum.totalGW+'/'+d.sum.totalNW+')——请重新生单/重跑归并'):'Σ明细行=表头('+_sgw.toFixed(2)+'/'+_snw.toFixed(2)+'），三单一致');
+    add('A','A17','明细行合计=表头合计(毛/净)',_bad?'BLOCK':'OK',!_bad,_bad?('明细Σ('+_sgw.toFixed(2)+'/'+_snw.toFixed(2)+'）≠表头('+d.sum.totalGW+'/'+d.sum.totalNW+')——请重新生单/重跑归并'):'Σ明细行=表头('+_sgw.toFixed(2)+'/'+_snw.toFixed(2)+'），三单一致'+(d.sum._alloc?'（本票行级无箱重，已按文件头权威合计比例分摊毛/净，请抽查单件重合理性）':''));
   })();
   /* A18 表头毛/净重≥1（2026-10-21 v2.33）：单一窗口录入规则（用户手册明文）——毛重/净重(表头)必填且需≥1，小于1须填1；
      权威合计(d.sum)优先，旧草单无合计跳过。WARN 级：小于1多为样品票，提示人工确认 */
@@ -2203,8 +2204,32 @@ function applyOverrides(d,raw){
   });
   return raw;
 }
-function ensureFreshLines(d){
-  if(!d||!d.id)return;
+/* ── v2.35 无箱重票·权威合计比例分摊（2026-10-22，TT2RHTJ 箱矩阵格式触发）──
+   场景：文件只有「第N箱」件数矩阵、无任何箱重列（missing 含 gw/nw/bw），表头「总重量」是唯一权威毛重；
+   行级库兜底自算 Σ(171.40/153.20) ≠ 权威(140.4/124.8)，尾差远超 adjustResidual 每行1分容限 → A17 只能拦截，用户无法出单。
+   方案：当「全部来源记录都声明缺箱重」且偏差超容限时，按行兜底重×数量占比把表头毛/净分摊到行，再 adjustResidual 抹平尾差 → A17 恒等；
+   d.sum._alloc 打标供 A17 消息披露。有真实箱重的票一律不触发（A17 防线保留）；legacy 草单（无来源记录）不碰。 */
+function allocWeights(d){
+  if(!d||!d.sum||!(+d.sum.totalGW>0)||!(+d.sum.totalNW>0)||!d.lines||!d.lines.length)return false;
+  const _pairs=draftRecsOf(d);
+  if(!_pairs.length)return false;                       /* legacy：无来源记录不碰 */
+  const _noW=_pairs.every(x=>{const ms=x.rec.missing||[];return ms.indexOf('gw')>=0||ms.indexOf('nw')>=0;});
+  if(!_noW)return false;                                /* 有真实箱重 → A17 防线保留 */
+  const L=d.lines,tg=+d.sum.totalGW,tn=+d.sum.totalNW;
+  const sg=L.reduce((a,l)=>a+(+l.gw||0),0),sn=L.reduce((a,l)=>a+(+l.nw||0),0);
+  const tol=0.01*L.length;
+  if(Math.abs(sg-tg)<=tol&&Math.abs(sn-tn)<=tol)return false;   /* 容差内 → 交 adjustResidual */
+  const tw=L.reduce((a,l)=>a+(+l.gw||0)*(+l.qty||0),0),tq=L.reduce((a,l)=>a+(+l.qty||0),0),_r=tn/tg;
+  L.forEach(l=>{
+    const w=tw>0?((+l.gw||0)*(+l.qty||0))/tw:((+l.qty||0)/(tq||1));
+    const g=Math.round(tg*w*1000)/1000;
+    l.gw=g;l.nw=Math.round(g*_r*1000)/1000;l._wAlloc=1;
+  });
+  adjustResidual(L,tg,'gw');adjustResidual(L,tn,'nw');
+  d.sum._alloc=1;
+  return true;
+}
+function ensureFreshLines(d){  if(!d||!d.id)return;
   const pairs=draftRecsOf(d);
   if(!pairs.length)return;                      /* legacy/引用缺失：保持快照不重建 */
   let changed=false;const cur={};
@@ -2222,6 +2247,7 @@ function ensureFreshLines(d){
 function buildData(doc){
   const d=DB.drafts.find(x=>x.id===doc.dftId);
   ensureFreshLines(d);
+  allocWeights(d);   /* v2.35：无箱重票按权威合计比例分摊（有真实箱重不触发） */
   /* 币种跟随报关草单：外币(USD/EUR...)时把单价/金额从 CNY 换算成本币（除汇率 exch）；CNY 保持原值
      汇率优先级：单笔 H.exch 优先（可逐单填），为空才用全局默认 DB.price.exch；都无效则按 1（等同于不换算并预警） */
   const _ccur=(d.header&&d.header.currency)||'CNY 人民币';
