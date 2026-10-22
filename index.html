@@ -153,10 +153,10 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.38 · 2026-10-22（生单幂等：同记录已有订单复用不新建，防重复报关/重复退税；草单二次生成加确认摩擦；重复订单检测横幅+人工清理）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.24 · 2026-10-22 18:01</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
-  <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
+  <button class="ghost small" onclick="resetAll()">清空本地数据</button>
   <button class="ghost" onclick="openDrawer()">⚙ 设置中心</button>
 </header>
 
@@ -193,7 +193,7 @@
               <button class="ghost" onclick="loadDemo()">用示例数据（HT1860040 风格）</button></div>
               <div class="hint">列名自动识别（简繁体/带单位均可）：SKU列认 <code>款号/货号/商品编码/款式编码/SKU/style</code>；箱号认 <code>箱号/箱號/carton</code>；单号认 <code>订单号/单号/唛头号</code>。表头行自动探测，毛净重按箱号去重汇总。</div>
               <div class="hint" style="margin-top:6px">净重兜底：无「净重」列时自动按 <code>单箱毛重×箱数 − 纸箱皮重</code> 计算（纸箱皮重优先取源文件「包装箱重量」列，其次设置中心固定值，最后默认1.3kg/箱；「箱子毛重」类列识别为单箱值自动乘箱数。<code>box_specs.weight</code> 是单箱毛重、不当皮重用）。
-                箱重固定值(kg)：<input id="pkFixedBw" type="number" step="0.01" min="0" style="width:70px" placeholder="1.3" onchange="this.value>0?localStorage.setItem('v3.fixedBoxWeight',this.value):localStorage.removeItem('v3.fixedBoxWeight')" title="0/留空=按默认1.3kg/箱（仅无净重列时参与）">（0/留空=默认1.3）</div>
+                箱重固定值(kg)：<input id="pkFixedBw" type="number" step="0.01" min="0" style="width:70px" placeholder="选填" onchange="localStorage.setItem('v3.fixedBoxWeight',this.value)"></div>
             </div>
             <div id="parseDiag"></div>
             <div id="recTable" style="margin-top:14px"></div>
@@ -352,7 +352,7 @@ async function stampPurchaseSheet(ws,tpl,items,pctx){
   ws.getCell(tailStart+24,4).value='  乙方（盖章）：'+(pctx.bName||'');
   ws.getCell(tailStart+25,1).value='授权代表（签字）：________________________';
   ws.getCell(tailStart+25,4).value='授权代表（签字）：________________________';
-  /* 2026-10-13 用户拍板A：采购合同日期口径=交货日期，删除尾部「签订日期」行（原与销售合同共用 signDate 字段，口径错误） */
+  if(pctx.signDate) ws.getCell(tailStart+26,1).value=pctx.signDate+'                 '; /* src R49 */
   autoHeightsExcelJS(ws,widths);   /* 行高自适应(2026-09-11): 模板个别行高不足(如 R24/R35/R40/R41)按内容加高, 只增不减 */
 }
 async function purchaseTplDownload(d,suffix){
@@ -370,14 +370,14 @@ async function purchaseTplDownload(d,suffix){
     var PB=c.purchaseB||{},PA=c.purchaseAcct||{};
     var items=(c.items||[]).map(function(l){ var up=decRound((+l.cost||0)*1.13,4); return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:up.toFixed(4),sub:decRound(up*(+l.qty||0),2).toFixed(2)}; });
     var pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
-      deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.pdeliveryDate)||'':(H.pdeliveryDate||''),
-      deliveryPlace:H.deliveryPlace||cleanDeliveryPlace(partyProfile(H.shipper||'').addr),acctBank:PA.bank||'',acctNo:PA.no||'',
+      deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.deliveryDate)||'':(H.deliveryDate||''),
+      deliveryPlace:H.deliveryPlace||'',acctBank:PA.bank||'',acctNo:PA.no||'',
       signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
     await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
   }
   outWb.worksheets.forEach(function(w){ applyA4PageSetup(w,'国内采购合同'); });
   var b=await outWb.xlsx.writeBuffer();
-  _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),(suffix||'国内采购合同')+'.xlsx');
+  _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),suffix?('国内采购合同_'+suffix+'.xlsx'):'国内采购合同.xlsx');
 }
 </script>
 <script>
@@ -468,32 +468,8 @@ const MODES=[
  {id:'M3',lb:'HS+品名+编码',keys:['hs','nm','sku']},
  {id:'M4',lb:'HS+品名+款式',keys:['hs','nm','spu']},
  {id:'M5',lb:'HS+品名+款式+材质',keys:['hs','nm','spu','mat']},
- {id:'M6',lb:'HS+品名+材质',keys:['hs','nm','mat']},
- {id:'M7',lb:'HS+品名+材质·智能拆倒挂',keys:['hs','nm','mat']}
+ {id:'M6',lb:'HS+品名+材质',keys:['hs','nm','mat']}
 ];
-/* ── B11 倒挂感知智能拆分（v2.34 方案A，2026-10-22 用户确认）──
-   场景：M6 组内低价款稀释加权申报价 < 组内最高不含税采购价 → B11 阻断；整体退到 M0 又超 50 项上限。
-   算法：对违规组按采购价降序贪心装箱——逐个装入，候选子组「加权申报价(2位) ≥ 组内最高不含税采购价(2位)」即收；
-   装不下则开新子组。子组内 HS/品名/材质/供应商/货源地完全相同 → 归并要素不变，拆分完全合规（报关单允许多行同HS不同价）。
-   保证终止：最坏每款一行，单行 decl=库价×(1-毛利率)^-1 > 采购价（B9 通过前提下）；若单行仍倒挂属真实价格问题，照常 BLOCK 上报。
-   口径与 B11 监控严格同源：decRound 2 位比较。 */
-function _b11ok(g){
-  var q=0,d=0,mx=0;g.forEach(function(x){q+=(+x.qty||0);d+=(+x.decl||0)*(+x.qty||0);var c=+x.cost||0;if(c>mx)mx=c;});
-  if(q<=0)return true;
-  return decRound(d/q,2)>=decRound(mx,2);
-}
-function _b11split(g){
-  if(g.length<=1||_b11ok(g))return [g];
-  var s=g.slice().sort(function(a,b){return (+b.cost||0)-(+a.cost||0);});
-  var bins=[],cur=null;
-  s.forEach(function(x){
-    if(!cur){cur=[x];return;}
-    var cand=cur.concat([x]);
-    if(_b11ok(cand))cur=cand;else{bins.push(cur);cur=[x];}
-  });
-  if(cur)bins.push(cur);
-  return bins;
-}
 function mergedHsLib(){return Object.assign({},HS_LIB,DB.hsLibOverride||{});}
 
 /* ===== 申报要素查表：精确 10 位 → 8 位 → 6 位前缀回退（与退税率表同口径） =====
@@ -647,9 +623,7 @@ function dedupeBoxWeight(lines){
   return lines.map(x=>{
     const r=Object.assign({},x);
     const bn=String(r.boxNo||'').trim();
-    /* v2.36：_gwFinal 行的 gw=箱重×件数份额（精确分摊值，非整箱重），同箱多行各持份额、Σ=箱重，
-       清零会丢重（TRPR5 实测 Σ 130≠139.65 事故）——仅整箱重行参与同箱去重 */
-    if(bn && seenW[bn] && !r._gwFinal){ r.gw=0; r.nw=0; }   // 同箱重复行：重量归零，仅首行计整箱重
+    if(bn && seenW[bn]){ r.gw=0; r.nw=0; }   // 同箱重复行：重量归零，仅首行计整箱重
     else { if(bn) seenW[bn]=1; }
     return r;
   });
@@ -737,7 +711,7 @@ function mergeLines(lines,mode,sup){
   /* 横向混箱(行带 boxSeq 物理箱序号)自 v2.12 起不再在此按箱合并 —— 该逻辑整体移至 boxView()，
      仅 PACKING LIST 渲染时使用；报关/发票/合同恢复 M0-M6 归并口径（兑现 plView 处已确认的
      「只改 PL，报关仍按 M0-M6」设计；此前本分支抢先 return 导致 M0 失效、报关单被按箱合并）。 */
-  if(mode==='M0'||!lines.length) return lines.map(function(x){var r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); var b=String(r.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+r.qty||0)/BQ:0; /* v2.36：_gwFinal 行（箱矩阵真箱重精确分摊）直接用行值，不再按箱重分摊（混箱下按 composite boxNo 分摊会重复计重） */ if(r._gwFinal){r.gw=Math.round((+x.gw||0)*1000)/1000;r.nw=Math.round((+x.nw||0)*1000)/1000;}else{r.gw=Math.round((_bgw[b]||0)*sh*1000)/1000;r.nw=Math.round((_bnw[b]||0)*sh*1000)/1000;} /* B11（2026-10-13 改不含税口径）：M0 行直接带自身不含税采购价与缺失归因 */ r.costMaxNoTax=+r.cost||0; r._costNoLib=(r.matched&&!(+r.cost>0))?1:0; r._taxNoMatch=r.matched?0:1; return r;});
+  if(mode==='M0'||!lines.length) return lines.map(function(x){var r=Object.assign({},x); if(!(+r.boxCnt>0)) r.boxCnt=parseBoxNoCount(String(r.boxNo||'').trim()); var b=String(r.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+r.qty||0)/BQ:0; r.gw=Math.round((_bgw[b]||0)*sh*1000)/1000; r.nw=Math.round((_bnw[b]||0)*sh*1000)/1000; return r;});
   const m=MODES.find(x=>x.id===mode)||MODES[0];
   // 降级保护：M4/M5 的"款式"维度依赖真SPU；取不到(显式列无值且SKU无法推导)时退化为按SKU分行
   const hasStyle=lines.some(l=>getSpu(l));
@@ -747,27 +721,20 @@ function mergeLines(lines,mode,sup){
   lines.forEach(l=>{const _o=originCodeOf(l.supplier||''); l._origin=_o; const key=keys.map(kk=>get(l,kk)).join('§')+(sup?('§SUP:'+consolidatedSupplier(l.supplier||'')):'')+('§ORIGIN:'+_o);(groups[key]=groups[key]||[]).push(l);});
   /* v2.20：款优先 255 字节分段 —— 合并组款号串超限时按「款」(款号去色号段) 整款装箱切段（同款色号不跨段），
      每段复用下方同一套归并聚合：数量/加权单价/重量分摊/箱数求和天然分段自洽，合计不变；未超限的组原样单段。 */
-  let segs=[];
+  const segs=[];
   Object.keys(groups).forEach(function(k){const g=groups[k];
     const pre=byteLen('4|'+(g[0].enjoys||'0')+'|'+(g[0].name||'')+'|'+(g[0].mat||'')+'|'+(g[0].brand||'')+'|');
     splitKuan255(g,255-pre).forEach(function(p){segs.push(p);});
   });
-  /* M7（v2.34 方案A）：255 分段后、组聚合前，对 B11 违规段做倒挂感知拆分（_b11split），子段复用下方同一套聚合 */
-  if(mode==='M7')segs=segs.reduce(function(a,s){return a.concat(_b11split(s));},[]);
   return segs.map(g=>{const rep=Object.assign({},g[0]);
     rep.sku=[...new Set(g.map(x=>x.sku))].join(',');
     rep.style=[...new Set(g.map(x=>getSpu(x)))].filter(Boolean).join(',');
     rep.qty=g.reduce((a,x)=>a+(+x.qty||0),0);
     /* 加权平均单价（按数量加权）：Σ(各款申报价×数量)/Σ数量；归并不同单价 SKU 时避免取首行价导致申报金额失真，单证一致 */
     (function(){var _q=g.reduce((a,x)=>a+(+x.qty||0),0);if(_q>0){var _d=g.reduce((a,x)=>a+(+x.decl||0)*(+x.qty||0),0);var _c=g.reduce((a,x)=>a+(+x.cost||+x.noTax||0)*(+x.qty||0),0);rep.decl=Math.round(_d/_q*1e6)/1e6;rep.cost=Math.round(_c/_q*1e6)/1e6;rep.noTax=rep.cost;}})();
-    /* B11 追加（2026-10-13 改不含税口径，原含税口径弃用）：组内最高不含税采购价（不加权，max 即 max）+ 采购价缺失归因计数（监控 B11 消费用） */
-    rep.costMaxNoTax=Math.max(0,Math.max.apply(null,g.map(x=>+x.cost||0)));
-    rep._costNoLib=g.filter(x=>x.matched&&!(+x.cost>0)).length;
-    rep._taxNoMatch=g.filter(x=>!x.matched).length;
-    /* 重量：按整箱重 × 数量/箱件数 分摊到每行，再按归并行求和（等价 model 单件重×数量）；不受 dedupe 清零影响。
-       v2.36：_gwFinal 行（箱矩阵真箱重精确分摊）直接累加行值（成员行已按箱份额精确分配，Σ=Σ箱重） */
+    /* 重量：按整箱重 × 数量/箱件数 分摊到每行，再按归并行求和（等价 model 单件重×数量）；不受 dedupe 清零影响 */
     var _gw=0,_nw=0;
-    g.forEach(function(x){ if(x._gwFinal){_gw+=+x.gw||0;_nw+=+x.nw||0;return;} var b=String(x.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+x.qty||0)/BQ:0; _gw+=(_bgw[b]||0)*sh; _nw+=(_bnw[b]||0)*sh;});
+    g.forEach(function(x){var b=String(x.boxNo||'').trim(); var BQ=_bq[b]||1; var sh=BQ>0?(+x.qty||0)/BQ:0; _gw+=(_bgw[b]||0)*sh; _nw+=(_bnw[b]||0)*sh;});
     rep.gw=Math.round(_gw*1000)/1000; rep.nw=Math.round(_nw*1000)/1000;
     /* 箱号：合并后保留组内全部不重复 boxNo（分号拼接），避免 M5 合并时丢第二行箱号导致 packSummary 漏算。 */
     rep.boxNo=[...new Set(g.map(x=>String(x.boxNo||'').trim()).filter(Boolean))].join(';');
@@ -808,7 +775,7 @@ function defaultDB(){
       {sku:'BAG-002',style:'2T03-1',cn:'牛皮手拿包',en:'Leather Clutch Bag',noTax:160.0,tax:180.80,factory:'璞景工厂',hs:'4202220000',mat:'牛皮',brandType:'境内自主品牌',enjoys:'0'}
     ],
     price:{rate:0.20, exch:7.1},
-    templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null,客户发票:null,送货单:null,入库单:null,供应商报价单:null,销售报价单:null,询价单:null},
+    templates:{报关草单:null,Invoice发票:null,'Packing List装箱单':null,销售合同:null,国内采购合同:null,客户发票:null},
     /* 客户发票收款账户信息(给客户汇款用；客户发票模板底部展示) */
     bankInfo:{pay:'',account:'',bank:'',name:'',no:''},
     /* 主体档案：名称 → {addr,contact,email,tel}(发货人/收货人/采购主体共用，单据自动引用) */
@@ -825,7 +792,7 @@ function defaultDB(){
   };
 }
 let DB;
-function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.parties.profiles)d.parties.profiles={};if(!d.tier1Profiles)d.tier1Profiles={};if(!d.docCenter)d.docCenter=[];if(!d.docSnaps)d.docSnaps={};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.templates['送货单'])d.templates['送货单']=null;if(!d.templates['入库单'])d.templates['入库单']=null;if(!d.templates['供应商报价单'])d.templates['供应商报价单']=null;if(!d.templates['询价单'])d.templates['询价单']=null;if(!d.templates['销售报价单'])d.templates['销售报价单']=null;if(!d.parties.codes)d.parties.codes={};if(!d.rebateOverride)d.rebateOverride={};if(!d.hsLibOverride)d.hsLibOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
+function load(){try{const d=JSON.parse(localStorage.getItem(LS_KEY));if(d&&d.parties){if(!d.skuOverride)d.skuOverride={};if(!d.brandTypeMap)d.brandTypeMap={"JW PEI":"4"};if(!d.buyerParties)d.buyerParties=defaultDB().buyerParties;if(!d.supplierMap)d.supplierMap={};if(!d.tier1Suppliers)d.tier1Suppliers=defaultDB().tier1Suppliers;if(!d.extraSup2)d.extraSup2=[];if(!d.hiddenParties)d.hiddenParties=[];if(!d.hiddenSup2)d.hiddenSup2=[];if(!d.prefOverride)d.prefOverride={};if(!d.prefHidden)d.prefHidden=[];if(!d.bankInfo)d.bankInfo={pay:'',account:'',bank:'',name:'',no:''};if(!d.bankAccounts)d.bankAccounts=[];if(!d.parties.profiles)d.parties.profiles={};if(!d.tier1Profiles)d.tier1Profiles={};if(!d.docCenter)d.docCenter=[];if(!d.docSnaps)d.docSnaps={};if(!d.templates['客户发票'])d.templates['客户发票']=null;if(!d.parties.codes)d.parties.codes={};if(!d.rebateOverride)d.rebateOverride={};if(!d.hsLibOverride)d.hsLibOverride={};if(!d.sel)d.sel={};if(d.sel.doc==null)d.sel.doc=null;if(!Array.isArray(d.sel.docsSet))d.sel.docsSet=[];if(!Array.isArray(d.sel.draftsSet))d.sel.draftsSet=[];return d;}}catch(e){}return null;}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB));}catch(e){alert('本地存储失败（可能超配额）：'+e.message+'，本次仅内存生效，刷新后会恢复。');}}
 /* 级联完整性：records → orders(recId) → drafts(ordId) → docs(dftId)
    任一层被删后，下游若失去父级即为孤儿，必须一并清除，否则界面出现"删了还在"的残留。*/
@@ -874,18 +841,15 @@ function getSku(s){
 
 /* ============== 工具 ============== */
 const PRICE_RATE=()=>DB.price.rate;
-/* 金额舍入(2026-10-21 v2.31 用户确认对齐海关单一窗口「四舍六入五成双」): 非边界走普通进位(与五成双等价),
-   恰为 .5 边界时按前一位奇偶——奇进偶舍; 保留 toFixed(dp+2) 高精度字符串判定真实方向(1855.975 浮点事故防御),
-   使 182.145→182.14 / 182.155→182.16, 与单一窗口逐行报文一致, 草单金额可对上 */
+/* 金额半进位舍入(标准四舍五入, 2026-09-08 用户确认): Math.round/toFixed 在 x.xx5 边界因浮点存储(如 1855.975→1855.97499…)会舍错 1 分;
+   decRound 在 |小数-0.5|<1e-6 的边界用 toFixed(dp+2) 高精度字符串判定真实方向, 非边界走普通 Math.round, 无双重舍入陷阱 */
 function decRound(x,dp){
   if(!isFinite(x)) return x;
   var neg=x<0, a=neg?-x:x;
   var m=Math.pow(10,dp), scaled=a*m, fl=Math.floor(scaled), frac=scaled-fl, r;
   if(Math.abs(frac-0.5)<1e-6){
     var s=a.toFixed(dp+2), dec=(s.split('.')[1]||'');
-    if(+(dec[dp]||'0')>5) r=fl+1;                 /* 尾数>5 → 进位 */
-    else if(+(dec[dp]||'0')<5) r=fl;              /* 尾数<5 → 舍去(浮点略低于.5的假边界) */
-    else r=(fl%2===0)? fl : fl+1;                 /* 恰为5 → 五成双: 奇进偶舍 */
+    r=(+(dec[dp]||'0')>=5)? fl+1 : fl;
   } else r=Math.round(scaled);
   return neg? -(r/m) : r/m;
 }
@@ -1099,7 +1063,7 @@ function parseGrid(grid,forceSku,opts){
      尾部块行首标签 + 每箱一列(第2列=第1箱)，用于按箱提取纸箱规格。 */
   const boxCols=[];
   head.forEach(function(h,j){ if(/^第\d+箱$/.test(normHead(h))) boxCols.push(j); });
-  let lenRow=null,widRow=null,heiRow=null,boxWeights=null,boxNoRow=null;
+  let lenRow=null,widRow=null,heiRow=null,boxWeights=null;
   if(boxCols.length){
     for(let i=hr+1;i<grid.length;i++){
       const r=grid[i]||[];
@@ -1109,8 +1073,7 @@ function parseGrid(grid,forceSku,opts){
         if(lab.indexOf('boxlength')===0) lenRow=r;
         else if(lab.indexOf('boxwidth')===0) widRow=r;
         else if(lab.indexOf('boxheight')===0) heiRow=r;
-        else if(lab.indexOf('weightofbox')===0||lab.indexOf('boxweight')===0||lab.indexOf('grossweight')===0||lab.indexOf('箱重')===0||lab.indexOf('箱子毛重')===0) boxWeights=r;   /* 尾部「Weight of box (KG)」块：boxWeights[s]=第 s 箱的毛重(s 为1-based箱序) */
-        else if(lab.indexOf('箱号')===0||lab.indexOf('boxno')===0) boxNoRow=r;   /* v2.36：尾部真实箱号行 */
+        else if(lab.indexOf('weightofbox')===0) boxWeights=r;   /* 尾部「Weight of box (KG)」块：boxWeights[s]=第 s 箱的毛重(s 为1-based箱序) */
       }
     }
   }
@@ -1130,7 +1093,6 @@ function parseGrid(grid,forceSku,opts){
     if(headKey&&normHead(sku)===headKey) continue;   /* 跳过重复表头行 */
     let gw=numv(g('gw'));
     let nw=numv(g('nw'));
-    const nwUp=!!numv(g('nw'));   /* 2026-10-15：标记净重是否来自上传列（兜底/推导值可被箱重重算覆盖） */
     const srcBw=numv(g('bw'));
     let bw=srcBw;
     /* 纸箱重量兜底链：源文件「包装箱重量」列 → 固定值 → 默认1.3kg/箱
@@ -1175,11 +1137,9 @@ function parseGrid(grid,forceSku,opts){
        仅当识别到混箱结构(boxCols>=2)且无单SKU箱号范围时采用，避免干扰普通箱号范围文件。 */
     let mixBoxCnt=bc, boxSeq=[];
     let boxSeqW=[];
-    let _seqQV=null;   /* v2.36：该行在各箱的件数分布(与 boxCols 同序)，供真箱重精确分摊 */
     if(boxCols.length>=1){   /* 横向混箱(每箱多款)：只要有「第N箱」列即识别为混箱(单箱多款 boxCols=1 也识别)；去掉 !g('boxNo') 以免「序号」列误阻断 */
       boxSeq=boxCols.filter(function(j){ return numv(c[j])>0; })
                     .map(function(j){ return boxCols.indexOf(j)+1; }); /* 第N箱序号(1-based) */
-      _seqQV=boxCols.filter(function(j){ return numv(c[j])>0; }).map(function(j){ return numv(c[j]); });
       mixBoxCnt=boxSeq.length;
       /* 重量回填④：尾部「Weight of box」块按箱序(boxSeq,1-based)给出每箱重。
          行级 gw = 该SKU所占比箱重之和(供 PACKING LIST 明细行)；boxSeqW 同步存每箱重，供报关总重去重求和(每箱只计一次) */
@@ -1189,13 +1149,7 @@ function parseGrid(grid,forceSku,opts){
            不能用箱序当下标(否则右移一列且漏末箱，重量少算) */
         boxSeqW=boxCols.filter(function(j){ return numv(c[j])>0; }).map(function(j){ return numv(boxWeights[j]); });
         const wsum=boxSeqW.reduce(function(a,x){return a+x;},0);
-        /* 2026-10-15 修复优先级反转：文件箱重(实际称重)必须优先于商品库单件推导——
-           此前 if(!gw) 使库兜底值(净重×qty / +1.3×件数)抢占 gw，有箱重数据的票反而用库值(31.04事故)。
-           现在：有箱重数据一律取箱重之和为行毛重；净重若非上传值则按 毛−皮×占用箱数 重算自洽 */
-        if(wsum>0){
-          gw=Math.round(wsum*1000)/1000;
-          if(!nwUp) nw=Math.max(0,Math.round((gw-bw*boxSeq.length)*1000)/1000);
-        }
+        if(!gw && wsum>0) gw=Math.round(wsum*1000)/1000;
       }
     }
     /* 修复装箱清单 PL 两列空白：name(Description) 空时回退 商品库cn/en → SKU代码；
@@ -1205,7 +1159,7 @@ function parseGrid(grid,forceSku,opts){
     const _name=_name0||(_sm0?(_sm0.cn||_sm0.name||''):'')||sku;
     const _model=(_sm0?(_sm0.style||''):'')||sku;
     rows.push({sku:sku,qty:qty,gw:gw,nw:nw,bw:bw,
-      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:mixBoxCnt,boxSeq:boxSeq,boxSeqW:boxSeqW,_seqQ:_seqQV,
+      box:box,boxNo:g('boxNo'),no:g('no')||opts.sourceName||'',boxCnt:mixBoxCnt,boxSeq:boxSeq,boxSeqW:boxSeqW,
       asin:g('asin'),fnsku:g('fnsku'),name:_name,model:_model,shop:g('shop'),pallet:g('pallet')||g('palletSize')});
   }
   const missing=[];
@@ -1217,46 +1171,6 @@ function parseGrid(grid,forceSku,opts){
   /* 混箱标志：识别到「第N箱」列且行级无箱号范围 → 判定为 Amazon 混箱(每箱多款)。
      混箱总箱数 = boxCols.length(第N箱列数)，不能对 SKU 行箱数求和(一箱多SKU会虚高)。 */
   const mixedBox = boxCols.length>=1 && !rows.some(function(r){ return /\d+[~\-～]\d+/.test(String(r.boxNo||'')); });
-  /* ── v2.36 箱矩阵·真箱重精确分摊（TT2RHTJ 格式，2026-10-22 用户确认）──
-     footer「Weight of box/箱号」行按箱列给出每箱毛重与真实箱号；行级旧逻辑 gw=所触箱整箱重之和，混箱下重复计重（Σ行171.4≠140.4）。
-     精确分摊：行毛重=Σ(箱重×该行在该箱件数/该箱总件数)——合计件数由各行矩阵值累加；Σ行=Σ箱重恒等（=packSummary 去重合计=A17 比对基准）。
-     边界①缺重箱：按有重箱「单件均毛×该箱件数」兜底；②Σ箱重 vs 文件头总重量不一致：以箱重为准（A17 基准即 packSummary=Σ箱重），missing 提示差异；
-     ③标签中英文兼容、非箱列杂值按列对齐自动忽略；④解析失败/无 footer 自动落回 v2.35 比例分摊，行为只升不降。 */
-  if(boxCols.length&&boxWeights&&rows.some(function(r){return r._seqQ&&r._seqQ.length;})){
-    const _nB=boxCols.length,_qt=[];
-    /* 对齐修复（v2.36）：_seqQ 按占用箱压缩（与 boxSeq 同序），必须经 boxSeq[k]-1 定位箱下标累加，
-       直接按 _seqQ 下标累加会把单箱行误计到第 0 箱（TRPR5 实测 Σ行 14.6≠50.75 事故） */
-    rows.forEach(function(r){(r.boxSeq||[]).forEach(function(bs,k){const q=(r._seqQ||[])[k]||0;const bi=(+bs||1)-1;_qt[bi]=(_qt[bi]||0)+(+q||0);});});
-    const _bw2=[];
-    for(let k=0;k<_nB;k++)_bw2[k]=numv(boxWeights[boxCols[k]]);
-    let _sw=0,_sq2=0;
-    for(let k=0;k<_nB;k++){if(_bw2[k]>0){_sw+=_bw2[k];_sq2+=(_qt[k]||0);}}
-    const _unit=(_sq2>0&&_sw>0)?_sw/_sq2:0;
-    for(let k=0;k<_nB;k++){if(!(_bw2[k]>0)&&(_qt[k]||0)>0&&_unit>0)_bw2[k]=Math.round(_unit*(_qt[k]||0)*1000)/1000;}
-    const _sumW=_bw2.reduce(function(a,x){return a+(+x||0);},0);
-    if(_sumW>0){
-      /* 未舍入理论值（净重=毛−皮份额），作为 adjustResidual 目标——逐行 3 位舍入残差 ≤1分×行数，抹平后 Σ行=Σ箱重/Σ净严格恒等（A17 容差 0.005） */
-      let _rawG=0,_rawF=0;
-      rows.forEach(function(r){
-        if(!r._seqQ||!r._seqQ.length)return;
-        (r._seqQ||[]).forEach(function(q,k){const bi=(+r.boxSeq[k]||1)-1;const qt=_qt[bi]||0;if(!(qt>0))return;const w=_bw2[bi]||0;_rawG+=w*q/qt;_rawF+=(+r.bw||1.3)*q/qt;});
-      });
-      rows.forEach(function(r){
-        if(!r._seqQ||!r._seqQ.length)return;
-        let g2=0,f2=0;
-        (r._seqQ||[]).forEach(function(q,k){const bi=(+r.boxSeq[k]||1)-1;const qt=_qt[bi]||0;if(!(qt>0))return;const w=_bw2[bi]||0;g2+=w*q/qt;f2+=(+r.bw||1.3)*q/qt;});
-        r.gw=Math.round(g2*1000)/1000;
-        r.nw=Math.max(0,Math.round((g2-f2)*1000)/1000);
-        r._gwFinal=1;
-        if(boxNoRow){const bn=r.boxSeq.map(function(k){return String(boxNoRow[boxCols[k-1]]||'').trim();}).filter(Boolean);if(bn.length)r.boxNo=bn.join(';');}
-      });
-      adjustResidual(rows,_sumW,'gw');
-      adjustResidual(rows,Math.round((_rawG-_rawF)*1000)/1000,'nw');
-      /* edge#2：Σ箱重 vs 文件头「总重量」一致性提示（权威=Σ箱重=A17 比对基准） */
-      (function(){let hg=0;for(let i=0;i<hr;i++){const rw=grid[i]||[];for(let j=0;j<rw.length-1;j++){if(/总重量/.test(String(rw[j]||''))){hg=numv(rw[j+1]);break;}}if(hg>0)break;}
-        if(hg>0&&Math.abs(hg-_sumW)>0.05*_nB)missing.push('箱重合计'+_sumW+'≠文件头总重量'+hg+'（以箱重为准，请核对文件）');})();
-    }
-  }
   return {rows:rows,head:head,map:m,headRow:hr,missing:missing,preview:grid.slice(hr,hr+4),
           boxCols:boxCols,mixedBox:mixedBox};
 }
@@ -1422,32 +1336,19 @@ function readFile(f){
   }
 }
 function loadDemo(){ingestGrid('示例HT1860040',csvToGrid(DEMO_CSV));}
-(function(){const el=document.getElementById('pkFixedBw');if(el)el.value=localStorage.getItem('v3.fixedBoxWeight')||'1.3';/* 2026-10-12：默认显示1.3，显示值=生效值（计算链 fixedBw||1.3 未动） */})();
+(function(){const el=document.getElementById('pkFixedBw');if(el)el.value=localStorage.getItem('v3.fixedBoxWeight')||'';})();
 let PEND=null;
 function ingestGrid(src,grid,forceSku){
   const fixed=+(localStorage.getItem('v3.fixedBoxWeight')||0);
   const r=parseGrid(grid,forceSku,{fixedBoxWeight:fixed, sourceName:src.replace(/\.[^.]+$/,'')});
   if(!r.rows.length){ PEND={src:src,grid:grid}; showDiag(r); return; }
   const ps=packSummary(r.rows, (r.missing||[]).indexOf('nw')>=0 ? {perBoxBw:(fixed||1.3)} : null);
-  /* 单写多读（2026-10-15 v2.30 第一批）：同货件单号原地替换记录（recId 不变），下游订单/草单引用自动指向新数据 */
-  const res=upsertRecord(src,r,ps);
-  DB.sel.rec=res.rec.id;save();renderRecords();
-  showOk(r,ps);
-  if(res.replaced&&res.downOrders)alert('记录已按新文件原地更新（货件单号 '+res.key+'）：下游 '+res.downOrders+' 个订单引用自动生效（解析版本 recVer='+res.rec.recVer+'）。');
-}
-/* 记录按货件单号 upsert：存在则原地替换（保 recId/recVer递增），否则新建。返回 {rec,replaced,key,downOrders} */
-function upsertRecord(src,r,ps){
-  const key=(r.rows[0]&&r.rows[0].no)||src.replace(/\.[^.]+$/,'');
-  const fresh={fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
+  const rec={id:uid('R'),fileName:src,at:new Date().toLocaleString(),items:r.rows,raw:r.rows,
     sum:ps,head:r.head,missing:r.missing,
     boxCols:r.boxCols||[],mixedBox:!!r.mixedBox,
-    boxCountMixed:(r.mixedBox&&r.boxCols)?r.boxCols.length:null,_skey:key,recVer:1};
-  const idx=DB.records.findIndex(x=>((x.items&&x.items[0]&&x.items[0].no)||x._skey||x.fileName)===key);
-  if(idx<0){const rec=Object.assign({id:uid('R')},fresh);DB.records.push(rec);return {rec:rec,replaced:false,key:key,downOrders:0};}
-  const old=DB.records[idx];
-  const rec=Object.assign({},fresh,{id:old.id,recVer:(+old.recVer||1)+1}); /* 覆盖顺序：fresh 在前，id/recVer 强制在后（fresh 自带 recVer:1 不可覆盖递增） */
-  DB.records[idx]=rec;
-  return {rec:rec,replaced:true,key:key,downOrders:DB.orders.filter(o=>o.recId===old.id).length};
+    boxCountMixed:(r.mixedBox&&r.boxCols)?r.boxCols.length:null};
+  DB.records.push(rec);DB.sel.rec=rec.id;save();renderRecords();
+  showOk(r,ps);
 }
 function diagEl(){return document.getElementById('parseDiag');}
 function clearDiag(){const el=diagEl();if(el)el.innerHTML='';}
@@ -1523,49 +1424,15 @@ function delRec(id){
 }
 
 /* ============== 阶段2 订单 ============== */
-/* 单写多读（2026-10-15 v2.30 第一批）：订单明细实时读记录——重新上传原地替换后，下游自动用新数据；legacy 快照仅作记录缺失时兜底 */
-function ordItems(o){const rec=o&&DB.records.find(r=>r.id===o.recId);return (rec&&rec.items)||o.items||[];}
 function genOrder(recId){
   const rec=DB.records.find(r=>r.id===recId);if(!rec)return;
-  /* v2.38 生单幂等（2026-10-22 用户确认）：同一记录已有订单时复用不再新建——
-     防重复报关/重复退税（同货件多套报关单证是合规事故），已填红线直接选中跳转，未填完提示补齐 */
-  const _ex=DB.orders.find(o=>o.recId===recId);
-  if(_ex){
-    DB.sel.ord=_ex.id;save();renderOrders();
-    alert((_ex.destCountry&&_ex.currency)
-      ?('该记录已有订单 '+_ex.id+'（红线已填），已为你选中——请勿重复生单；如需多口径试算请在草单中心新建。')
-      :('该记录已有半成品订单 '+_ex.id+'（红线未填完），已为你选中，请继续补齐目的国与币种。'));
-    return;
-  }
-  /* 订单不再快照明细（引用 recId），重量/明细唯一事实源=解析记录 */
-  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'中国香港',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',consignee:'',no:rec.items[0]?.no||''};
+  const ord={id:uid('O'),recId,destCountry:'',currency:'',tradeCountry:'中国香港',arrivalCountry:'',originCountry:'中国',transMode:'2 水路运输',tradeMode:'0110 一般贸易',tradeTerm:'FOB',consignee:'',no:rec.items[0]?.no||'',items:rec.items.map(i=>({...i}))};
   DB.orders.push(ord);DB.sel.ord=ord.id;save();renderOrders();
-}
-/* v2.38 重复订单清理：同记录保留一张（优先红线已填者，否则最早一张），其余连同其名下草单一并删除（confirm 确认，不自动删） */
-function dedupOrders(recId){
-  const g=DB.orders.filter(o=>o.recId===recId);
-  if(g.length<2)return;
-  const keep=g.find(o=>o.destCountry&&o.currency)||g[0];
-  const drop=g.filter(o=>o!==keep);
-  if(!confirm('记录 '+recId+' 有 '+g.length+' 张订单。\n保留：'+keep.id+'（红线'+((keep.destCountry&&keep.currency)?'已填':'未填')+'）\n删除：'+drop.map(o=>o.id).join('、')+'\n其名下草单一并删除，继续？'))return;
-  const ids=drop.map(o=>o.id);
-  DB.drafts=DB.drafts.filter(d=>!(d.ordId&&d.ordId!=='__merged__'&&ids.indexOf(d.ordId)>=0));
-  DB.orders=DB.orders.filter(o=>ids.indexOf(o.id)<0);
-  if(ids.indexOf(DB.sel.ord)>=0)DB.sel.ord=keep.id;
-  save();renderOrders();
 }
 function renderOrders(){
   document.getElementById('ordCount').textContent=DB.orders.length+' 个订单';
   if(!DB.orders.length){document.getElementById('ordTable').innerHTML='<p class="muted">勾选上方记录并点「生单→」生成订单。</p>';return;}
-  let h='';
-  /* v2.38 重复订单检测：同 recId 多张订单 = 重复报关风险，提示并支持人工确认清理（不自动删） */
-  const _dg={};DB.orders.forEach(o=>{_dg[o.recId]=(_dg[o.recId]||0)+1;});
-  const _dups=Object.keys(_dg).filter(k=>_dg[k]>1);
-  if(_dups.length){
-    h+='<div class="note" style="border:1px solid var(--warn);color:var(--warn);margin-bottom:10px">⚠ 检测到 '+_dups.length+' 条记录存在重复订单（同货件多套订单=重复报关风险）：'
-      +_dups.map(k=>'<button class="small" style="margin-left:6px" onclick="dedupOrders(\''+k+'\')">清理 '+k+'</button>').join('')+'</div>';
-  }
-  h+='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>收货人*</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>收货人*</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
   DB.orders.forEach(o=>{const ok=o.destCountry&&o.currency;
     h+=`<tr class="${DB.sel.ord===o.id?'sel':''}">
       <td><input type="checkbox" ${DB.sel.ord===o.id?'checked':''} onchange="pickOrd('${o.id}')"></td>
@@ -1579,7 +1446,7 @@ function renderOrders(){
       <td><select style="width:120px" onchange="setOrd('${o.id}','tradeMode',this.value)"><option value="">监管</option>${opt(CODE.tradeMode,o.tradeMode.split(' ')[0])}</select></td>
       <td><select style="width:90px" onchange="setOrd('${o.id}','tradeTerm',this.value)"><option value="">成交</option>${opt(CODE.tradeTerm,o.tradeTerm)}</select></td>
       <td><select class="req" style="width:160px" onchange="setOrd('${o.id}','consignee',this.value)"><option value="">选收货人</option>${optStr(DB.parties.consignees,o.consignee)}</select></td>
-      <td>${ordItems(o).length}</td>
+      <td>${o.items.length}</td>
       <td><button class="primary" ${ok?'':'disabled'} onclick="genDraft('${o.id}')">生成草单→</button> <button class="ghost small" onclick="delOrd('${o.id}')">删</button></td></tr>`;});
   h+='</tbody></table><p class="seq">* 红框=必填红线；贸易国=买方所在地(如HK→110)、运抵国=货物实际到达国、产终国=中国、最终目的国=订单红线。四者独立录入。</p>';
   document.getElementById('ordTable').innerHTML=h;
@@ -1615,8 +1482,8 @@ function buildRawLines(items,destCountry){
   const e0=enjoysOf(destCountry||'');
   return items.map(it=>{const s=getSku(it.sku)||{};
     return {sku:it.sku,name:s.cn||it.name,en:s.en||'',hs:s.hs||'',mat:s.mat||'',brandType:resolveBrandType(s),enjoys:e0,
-      decl:s.noTax?declPrice(s):0,cost:s.noTax||0,tax:+s.tax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',
-      boxCnt:it.boxCnt||0,qtyPerBox:it.qtyPerBox||0,boxSeq:it.boxSeq||[],boxSeqW:it.boxSeqW||[],_gwFinal:!!it._gwFinal,   /* v2.36：箱矩阵真箱重精确分摊标记必须透传，否则 mergeLines 二次分摊重复计重 */
+      decl:s.noTax?declPrice(s):0,cost:s.noTax||0,qty:it.qty,gw:it.gw,nw:it.nw,box:it.box,boxNo:it.boxNo||'',
+      boxCnt:it.boxCnt||0,qtyPerBox:it.qtyPerBox||0,boxSeq:it.boxSeq||[],boxSeqW:it.boxSeqW||[],
       supplier:s.supplier||s.factory||'⚠未匹配',style:s.style||it.style||'',weave:s.weave||'',gender:s.gender||'',kind:s.kind||'',
       upmat:s.upmat||'',solemat:s.soleMat||s.solemat||'',use:s.use||'',brand:s.brand||'',matched:!!s.cn,
       unit:s.unit||it.unit||'个'};});
@@ -1626,21 +1493,12 @@ function bucketKey(o){return bucketDims().map(d=>String(o[d[0]]||'')).join('|');
 function describeDiff(a,b){return bucketDims().filter(d=>String(a[d[0]]||'')!==String(b[d[0]]||'')).map(d=>d[1]).join('、')||'未知';}
 function genDraft(ordId){
   const o=DB.orders.find(x=>x.id===ordId);if(!o)return;
-  /* v2.38 防手滑（2026-10-22 用户确认）：同订单已有未锁定草单时确认后再开新张（保留多口径试算能力）；
-     Node/回归环境无 confirm 自动跳过 */
-  if(typeof confirm==='function'){
-    const _ex=DB.drafts.find(x=>x.ordId===ordId&&!x.locked);
-    if(_ex&&!confirm('该订单已有未锁定草单 '+_ex.id+'（'+((_ex.lines&&_ex.lines.length)||0)+' 行）。重新生成将新开一张草单（多口径试算用），继续？'))return;
-  }
-  const rec=DB.records.find(r=>r.id===o.recId);
-  if(!rec){alert('订单 '+o.id+' 的来源记录不存在（可能已删除），请重新上传文件后重新生单');return;}
   const locked=!(o.destCountry&&o.currency);
   const e0=enjoysOf(o.destCountry);
-  const rawLines=buildRawLines(ordItems(o),o.destCountry);
+  const rawLines=buildRawLines(o.items,o.destCountry);
   const dft={id:uid('D'),ordId,locked,
     header:defaultHeader(o),
-    rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false,sum:(rec&&rec.sum)||null}; /* 单写多读(2026-10-15)：权威合计实时读记录 */
-  dft.refVers={};dft.refVers[rec.id]=+rec.recVer||1;dft.overrides=[];
+    rawLines:rawLines,mergeMode:'M0',mergeSup:true,lines:mergeLines(rawLines,'M0',true),monitor:null,confirmed:false};
   /* 自动补全报关草单编码：从主体信息维护(发货人档案)取 信用代码/海关注册编码，改发货人时 setHeader 也会联动 */
   const _cd=(DB.parties.codes&&DB.parties.codes[dft.header.shipper])||{};
   dft.header.shipperUSCI=_cd.usci||''; dft.header.shipperReg=_cd.reg||'';
@@ -1659,27 +1517,11 @@ function genMergedDraft(ids){
   const base=ords[0];
   const bad=ords.find(o=>bucketKey(o)!==bucketKey(base));
   if(bad){alert('合并拦截：订单 '+bad.id+' 的「'+describeDiff(base,bad)+'」与其它单不一致，禁止同桶合并。请只选同红线维度的订单。');return;}
-  /* v2.37 合规闸：黑名单供应商与非黑名单来源禁止同票合并（防污染整票退税）。全部为黑名单来源的合并不拦（B12 仍 BLOCK 锁定） */
-  let _hasNC=false,_hasOK=false;
-  ords.forEach(o=>{ordItems(o).forEach(it=>{if(ncOfLine(it))_hasNC=true;else _hasOK=true;});});
-  if(_hasNC&&_hasOK){alert('合规拦截：所选订单混有「不合规供应商（见设置中心黑名单）」与合规供应商的货物——禁止同票合并，否则整票退税被污染。请分单：不合规部分单独成一票，处理通道与税务顾问确认。');return;}
   const destCountry=base.destCountry;
-  /* 合并箱序全局错位（2026-10-14 修复）：各票 boxSeq 均从 1 起数，直接合并会跨票碰撞——按累计箱数偏移 */
-  let _shift=0;const items=[];const _sums=[];const _refVers={};
-  for(const o of ords){
-    const rc=DB.records.find(r=>r.id===o.recId);
-    if(!rc){alert('订单 '+o.id+' 的来源记录不存在（可能已删除），请重新上传文件后重新生单');return;}
-    ordItems(o).forEach(i=>{const cp=Object.assign({},i);if(Array.isArray(cp.boxSeq))cp.boxSeq=cp.boxSeq.map(function(b){return +b+_shift;});items.push(cp);});
-    _shift+=(+(rc.sum&&rc.sum.boxCount)||0);
-    if(rc.sum)_sums.push(rc.sum);
-    _refVers[rc.id]=+rc.recVer||1;
-  }
+  const items=[]; ords.forEach(o=>o.items.forEach(i=>items.push(Object.assign({},i))));
   const rawLines=buildRawLines(items,destCountry);
-  /* 权威合计（2026-10-15 改实时读记录）：各票解析层 packSummary 合计相加；任一缺失则 null 回退旧重算路径 */
-
-  const sum=(_sums.length===ords.length)?{boxCount:_sums.reduce((a,x)=>a+(+x.boxCount||0),0),totalGW:+_sums.reduce((a,x)=>a+(+x.totalGW||0),0).toFixed(3),totalNW:+_sums.reduce((a,x)=>a+(+x.totalNW||0),0).toFixed(3)}:null;
   const dft={id:uid('D'),ordId:'__merged__',isMerged:true,sourceOrderIds:ords.map(o=>o.id),bucketKey:bucketKey(base),locked:false,
-    header:defaultHeader(base),rawLines:rawLines,mergeMode:'M0',mergeSup:false,lines:mergeLines(rawLines,'M0',false),monitor:null,confirmed:false,sum:sum,refVers:_refVers,overrides:[]};
+    header:defaultHeader(base),rawLines:rawLines,mergeMode:'M0',mergeSup:true,lines:mergeLines(rawLines,'M0',true),monitor:null,confirmed:false};
   dft.header.no=ords.map(o=>o.no||o.id).join(',');
   const _cd=(DB.parties.codes&&DB.parties.codes[dft.header.shipper])||{};
   dft.header.shipperUSCI=_cd.usci||''; dft.header.shipperReg=_cd.reg||'';
@@ -1703,7 +1545,7 @@ function renderMergePanel(){
     h+='<div class="bucket" style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:12px;margin-bottom:12px">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="th" style="font-size:14px">'+esc(label)+'</span><span class="ts">'+gs.length+' 单</span></div>';
     gs.forEach(o=>{const on=DB.mergeSel.indexOf(o.id)>=0?'checked':'';
-      h+='<label class="oc" style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" '+on+' onchange="toggleMergeSel(\''+o.id+'\',this.checked)"> <span>'+o.id+' · '+esc(o.no||'(无单号)')+' · '+ordItems(o).length+'项</span></span></label>';});
+      h+='<label class="oc" style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" '+on+' onchange="toggleMergeSel(\''+o.id+'\',this.checked)"> <span>'+o.id+' · '+esc(o.no||'(无单号)')+' · '+o.items.length+'项</span></span></label>';});
     h+='<button class="btn merge" style="background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)" onclick="mergeBucket(\''+escQ(k)+'\')">合并本桶选中单 →</button></div>';
   });
   h+='</div>';
@@ -1758,10 +1600,8 @@ function renderDrafts(){
     <div class="field"><label>汇率(CNY→本币,留空用全局默认 ${DB.price.exch})</label><input type="number" step="0.0001" min="0" value="${H.exch||''}" onchange="setHeader('${d.id}','exch',this.value?+this.value:0)" placeholder="${DB.price.exch}"></div>
     <div class="field"><label>合同簽訂地點</label><input value="${H.signPlace||'【東莞】'}" onchange="setHeader('${d.id}','signPlace',this.value)"></div>
     <div class="field"><label>合同簽訂日期</label><input type="date" value="${H.signDate||''}" onchange="setHeader('${d.id}','signDate',this.value)"></div>
-    <div class="field"><label><span style="color:#d33;font-weight:bold">*</span>销售交货日期(销售合同)</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
-    <div class="field"><label><span style="color:#d33;font-weight:bold">*</span>采购交货日期(采购合同)</label><input type="date" value="${H.pdeliveryDate||''}" onchange="setHeader('${d.id}','pdeliveryDate',this.value)"></div>
-    <div class="field"><label>送货/入库日期(送货单/入库单,可空导出后补)</label><input type="date" value="${H.shipDate||''}" onchange="setHeader('${d.id}','shipDate',this.value)"></div>
-    <div class="field"><label>交货地点(采购/销售合同,默认=发货人档案地址)</label><input value="${H.deliveryPlace||((v=>{const m=String(v||'').replace(/[,，]?\s*\d+室/g,'').trim();return m;})((DB.parties.profiles&&DB.parties.profiles[H.shipper]||{}).addr||''))}" onchange="setHeader('${d.id}','deliveryPlace',this.value)" placeholder="如 广东省东莞市厚街镇恒通路6号3栋"></div>
+    <div class="field"><label>交货日期</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
+    <div class="field"><label>交货地点(采购/销售合同)</label><input value="${H.deliveryPlace||''}" onchange="setHeader('${d.id}','deliveryPlace',this.value)" placeholder="如 广东省东莞市厚街镇恒通路6号3栋"></div>
     <div class="field" style="flex:1 1 100%"><label>销售合同 甲乙方 / 采购合同 甲乙方(自动引用)</label>
       <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--mut);padding:4px 8px;background:var(--panel2);border:1px dashed var(--line);border-radius:6px">
         <span>销售合同<b>甲方</b>=境外收货人 <b>${esc(H.consignee||'')}</b></span>
@@ -1778,9 +1618,8 @@ function renderDrafts(){
     <div class="field"><label>运抵国</label><input value="${H.arrivalCountry}"></div>
     <div class="field"><label>产终国</label><input value="${H.originCountry}"></div>
     <div class="field"><label>申报日期</label><input type="date" value="${H.declDate}" onchange="setHeader('${d.id}','declDate',this.value)"></div>
-    <div class="field"><label>出口日期(海关回执后填,可空)</label><input type="date" value="${H.exportDate||''}" onchange="setHeader('${d.id}','exportDate',this.value)"></div>
     <div class="field"><label>合同协议号(=外部单号)</label><input value="${H.no||''}" onchange="setHeader('${d.id}','no',this.value)"></div>
-    <div class="field"><label><span style="color:#d33;font-weight:bold">*</span>发票号(INV+年月日6位+序号)</label><input value="${H.invNo||''}" onchange="setHeader('${d.id}','invNo',this.value)" placeholder="INV26100101" title="INV+年月日6位(YYMMDD)+序号≥2位；日期须晚于合同簽訂日期；客户发票/装箱单/Invoice 的日期自动取此日期"></div>
+    <div class="field"><label>发票号</label><input value="${H.invNo||''}" onchange="setHeader('${d.id}','invNo',this.value)"></div>
     <div class="field"><label>委托协议号</label><input value="${H.entrustNo||''}" onchange="setHeader('${d.id}','entrustNo',this.value)"></div>
     <div class="field"><label>备案号</label><input value="${H.recordNo||''}" onchange="setHeader('${d.id}','recordNo',this.value)"></div>
     <div class="field"><label>境内货源地/产地</label><input value="${H.domSrc||''}" onchange="setHeader('${d.id}','domSrc',this.value)" placeholder="如 广州其他(44019)"></div>
@@ -1816,10 +1655,10 @@ function renderDrafts(){
       <td>${l.box}</td><td>${l.supplier}</td>
       <td><button class="ghost" onclick="openCls('${d.id}',${i})">选HS</button></td></tr>`;});
   t+='</tbody></table>';
-  const mh=d.monitor?renderMonitor(d.monitor,d.id):(d.confirmed?'':'<div class="monitor"><div class="mh" style="color:var(--mut)">⚠ 监控已过期或未运行（上次运行后价格有改动）——点「重跑监控」，锁定时也会自动重跑</div></div>');
+  const mh=d.monitor?renderMonitor(d.monitor):'';
   const rawCount=d.rawLines?d.rawLines.length:d.lines.length;
   let maxLen0=0,total0=0;
-  d.lines.forEach(l=>{const bl=byteLen(String(specDetail(l).xl||''));if(bl>maxLen0)maxLen0=bl;total0+=decRound(decRound((+l.decl),4)*(+l.qty),2);});   /* v2.23：maxLen0 同改申报串实时口径；v2.32：合计同海关口径(4位单价×数量) */
+  d.lines.forEach(l=>{const bl=byteLen(String(specDetail(l).xl||''));if(bl>maxLen0)maxLen0=bl;total0+=(+l.decl)*(+l.qty);});   /* v2.23：maxLen0 同改申报串实时口径 */
   const hasSpu=(d.rawLines||[]).some(x=>getSpu(x));
   /* v2.21：旧版归并检测 —— 当前行有超255字节，而用 rawLines 按当前模式重新归并后无超长（新版分段可解决）
      → 提示一键重新归并（草单 lines 是生成/切模式时的快照，旧版生成的不会自动更新） */
@@ -1862,11 +1701,6 @@ function renderDrafts(){
 }
 function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;const dot=f.indexOf('.');if(dot>0){const k=f.slice(0,dot),sk=f.slice(dot+1);if(!d.header[k]||typeof d.header[k]!=='object')d.header[k]={};d.header[k][sk]=v;}else{d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}/* 主体变更 → 销售合同甲乙方自动跟随(档案引用) */if(f==='shipper'||f==='consignee'){const pa=partyProfile(d.header.consignee),pb=partyProfile(d.header.shipper);d.header.partyA={name:d.header.consignee||'',addr:pa.addr||'',contact:pa.contact||'',email:pa.email||''};d.header.partyB={name:d.header.shipper||'',addr:pb.addr||'',contact:pb.contact||'',email:pb.email||''};}}save();renderDrafts();}
 function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
-  /* 单写多读第二批（2026-10-15）：手工修改记入覆盖层——记录刷新重建行后可重新应用 */
-  d.overrides=d.overrides||[];
-  d.overrides.push({keys:(d.lines[i]._keys||[d.lines[i].sku]).slice(),k:k,v:v});
-  /* B11 配套（2026-10-09）：改关键字段后旧监控结果作废——防止「跑完监控→改价→直接锁定」绕过 B9/B11 阻断 */
-  if(k==='decl'||k==='cost'||k==='qty'||k==='gw'||k==='nw'||k==='boxCnt')d.monitor=null;
   if(d.rawLines&&d.lines[i]._keys){d.rawLines.forEach(r=>{if(d.lines[i]._keys.indexOf(r.sku)>=0)r[k]=v;});}
   save();renderDrafts();}
 function delDraft(id){
@@ -2052,41 +1886,15 @@ function exportRebate(){
 
 
 /* ============== 监控体系 A/B ============== */
-/* MON_CATALOG：监控规则单一事实源（2026-10-12 方案B单源化）。
-   设置中心「监控规则」Tab 渲染本常量；runMonitor 每次执行后比对实际 add 的 id 集合，
-   不一致则写 DB.monSync 报警（设置中心目录顶部标红）——加/删规则时只改这里+runMonitor，忘了同步会自报警。 */
-/* ── v2.37 供应商合规黑名单（2026-10-22 用户确认）──
-   业务：不合规供应商（如贝蒙沃森（深圳）商贸有限公司）的货物禁止做合规出口/退税申报。
-   四层防线：B12 监控 BLOCK（不可锁定）+ 合并混票拦截 + 退税测算排除 + 设置中心维护。
-   匹配：行供应商（二级原厂 / 归集一级 / 商品库供应商字段）模糊命中关键词（全半角括号/空格/大小写归一）。
-   红线：系统只做隔离与标记，不提供任何灰色通道；货物去向由业务与税务顾问确认。 */
-const _BL_DEF=[{key:'贝蒙沃森',name:'贝蒙沃森（深圳）商贸有限公司',reason:'不合规供应商，禁止合规出口',date:'2026-10-22'}];
-function _ncNorm(s){return String(s||'').toLowerCase().replace(/\s+/g,'').replace(/（/g,'(').replace(/）/g,')');}
-function blList(){return ((DB.complianceBL&&DB.complianceBL.length)?DB.complianceBL:_BL_DEF).filter(x=>x&&x.key);}
-function ncHitSupplier(sup){const t=_ncNorm(sup);if(!t)return null;const L=blList();for(let i=0;i<L.length;i++){if(t.indexOf(_ncNorm(L[i].key))>=0)return L[i];}return null;}
-function ncOfLine(l){
-  if(!l)return null;
-  let h=ncHitSupplier(l.supplier)||ncHitSupplier(consolidatedSupplier(l.supplier));
-  if(h)return h;
-  const s=(typeof getSku==='function')?getSku(l.sku):null;
-  return s?ncHitSupplier(s.supplier||s.factory):null;
-}
-const MON_CATALOG={
- A:[{id:'A1',t:'表头必填项齐全(9项报关要素+发票号/销售交货日期/采购交货日期)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售/采购合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'},{id:'A16',t:'发票号规范(格式/日期晚于签订日期,WARN)'},{id:'A17',t:'明细行合计=表头合计(毛/净)'},{id:'A18',t:'表头毛/净重≥1(单一窗口录入规则)'},{id:'A19',t:'件数≠0(报关单填制规范:件数不得为0)'}],
- B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购价(防倒挂·不含税口径)'},{id:'B12',t:'供应商合规闸(黑名单供应商禁止合规出口)'}]
-};
 function runMonitor(did){
   const d=DB.drafts.find(x=>x.id===did);const R=[];let block=0,warn=0;
   /* add(...,msg,always)：第 7 参数 always=true 时，即使检查通过也显示 msg（用于把算出来的金额亮出来）。
      不传 always 的条目渲染行为与改造前完全一致（含 localStorage 里存量的旧 monitor 数据）。 */
   const add=(cat,id,desc,sev,ok,msg,always)=>{R.push({cat,id,desc,sev,ok,msg,always:!!always});if(!ok){sev==='BLOCK'?block++:warn++;}};
   const H=d.header, L=d.lines;
-  allocWeights(d);   /* v2.35：无箱重票按权威合计比例分摊，A17 才能对齐（有真实箱重不触发） */
   // A 报关单填制规范
-  /* A1 必填（2026-10-14 用户拍板）：9项报关要素 + 发票号/销售交货日期/采购交货日期（BLOCK）；消息点名缺失项 */
-  const _a1miss=[['发货人',H.shipper],['境外收货人',H.consignee],['贸易方式',H.tradeMode],['运输方式',H.transMode],['成交方式',H.tradeTerm],['征免性质',H.levy],['币制',H.currency],['出境关别',H.port],['运抵国',H.destCountry],['发票号',H.invNo],['销售交货日期',H.deliveryDate],['采购交货日期',H.pdeliveryDate]].filter(x=>!String(x[1]==null?'':x[1]).trim()).map(x=>x[0]);
-  const a1=_a1miss.length===0;
-  add('A','A1','表头必填项齐全(9项报关要素+发票号/销售交货日期/采购交货日期)',a1?'OK':'BLOCK',!!a1,a1?'必填12项全部齐全':('缺必填：'+_a1miss.join('、')));
+  const a1=H.shipper&&H.consignee&&H.tradeMode&&H.transMode&&H.tradeTerm&&H.levy&&H.currency&&H.port&&H.destCountry;
+  add('A','A1','表头必填项齐全(收发货人/贸易方式/运输方式/成交方式/征免/币种/关别/最终目的国)',a1?'OK':'BLOCK',!!a1,'缺表头必填项');
   add('A','A2','贸易国≠运抵国(转售场景应区分)',(H.tradeCountry&&H.arrivalCountry&&H.tradeCountry===H.arrivalCountry)?'WARN':'OK',!(H.tradeCountry&&H.arrivalCountry&&H.tradeCountry===H.arrivalCountry),'贸易国与运抵国相同，请确认是否转售');
   add('A','A3','成交方式与运费/保费一致(非FOB需核对)',H.tradeTerm==='FOB'?'OK':'WARN',H.tradeTerm==='FOB','非FOB，请确认运费/保费栏');
   const a4=L.every(l=>l.hs&&l.brandType);
@@ -2098,68 +1906,9 @@ function runMonitor(did){
   /* A13 商品项数上限：报关单填制规范(海关总署公告2019年第18号) 上限50项/单 */
   const a13=L.length<=50;
   add('A','A13','商品项数≤50项/单(报关单填制规范,海关总署公告2019-18号)',a13?'OK':'WARN',a13,'归并后 '+L.length+' 项，超 50 项上限，须分单申报');
-  /* A14 合同日期逻辑（2026-10-13 拆双交货日期）：销售交货 ≥ 簽訂 且 采购交货 ≥ 簽訂（各自填了才查，WARN级） */
-  const _a14s=H.deliveryDate&&H.signDate&&String(H.deliveryDate)<String(H.signDate);
-  const _a14p=H.pdeliveryDate&&H.signDate&&String(H.pdeliveryDate)<String(H.signDate);
-  const a14=!_a14s&&!_a14p;
-  const _a14m=(_a14s?('销售交货日期 '+H.deliveryDate+' 早于签订日期 '+H.signDate+'；'):'')+(_a14p?('采购交货日期 '+H.pdeliveryDate+' 早于签订日期 '+H.signDate):'');
-  add('A','A14','交货日期≥签订日期(销售/采购合同防倒签)',a14?'OK':'WARN',a14,_a14m||'销售/采购交货日期均≥签订日期');
-  /* A15 净重自洽（2026-10-12，WARN级）：上传净重被原样采用，这里做行内三角自洽——零外部依赖，不碰商品库。
-     ①净重≈毛重(差<1%)→疑似漏扣皮重；②反推隐含皮重=(毛-净)/箱数，≤0或>2.0kg/箱→疑似单位/数量录错；
-     ③同票毛净比离群(≥3行，偏离中位数>30%)→个别行可疑。阈值 2.0 如需调整改此处常量。 */
-  (function(){
-    const _BW_MAX=2.0;
-    const _rows=L.filter(l=>+l.gw>0&&+l.nw>0&&+l.boxCnt>0);
-    const _bad=[];let _n=0;
-    _rows.forEach(l=>{
-      const gw=+l.gw,nw=+l.nw,bc=+l.boxCnt;
-      if(Math.abs(nw-gw)/gw<0.01){_n++;if(_bad.length<3)_bad.push(String(l.sku||'')+' 净重=毛重(疑似漏扣皮重)');return;}
-      const tp=(gw-nw)/bc;
-      if(tp<=0||tp>_BW_MAX){_n++;if(_bad.length<3)_bad.push(String(l.sku||'')+' 隐含皮重 '+decRound(tp,2)+'kg/箱(超界)');}
-    });
-    if(_rows.length>=3){
-      const _rs=_rows.map(l=>+l.nw/+l.gw).sort((a,b)=>a-b);
-      const _med=_rs[Math.floor(_rs.length/2)];
-      if(_med>0&&_med<1)_rows.forEach(l=>{const r=+l.nw/+l.gw;
-        if(Math.abs(r-_med)/_med>0.3&&Math.abs(+l.nw-+l.gw)/+l.gw>=0.01){const tp=(+l.gw-+l.nw)/+l.boxCnt;
-          if(tp>0&&tp<=_BW_MAX){_n++;if(_bad.length<3)_bad.push(String(l.sku||'')+' 毛净比离群('+decRound(r*100,0)+'% vs 中位'+decRound(_med*100,0)+'%)');}}});
-    }
-    add('A','A15','净重自洽(净≈毛/隐含皮重超界/同票离群)',_n?'WARN':'OK',!_n,
-      _n?('可疑 '+_n+' 行：'+_bad.join('；')+(_n>3?(' 等 '+_n+' 行'):'')+' —— WARN 仅提示，请人工核对'):'上传净重与本票毛重/皮重三角自洽');
-  })();
-  /* A16 发票号（2026-10-13 用户定稿，WARN级）：格式 INV+年月日6位+序号≥2位；日期须晚于合同簽訂日期；客户发票/PL/Invoice 的 DATE 取发票号日期（补全年），发票号未填则留空 */
-  (function(){
-    const _iv=String(H.invNo||'').trim();
-    if(!_iv){ add('A','A16','发票号规范(格式/日期晚于签订日期)','BLOCK',false,'发票号为必填项，未填（缺失由 A1 点名阻断）；补填后本条自动复检'); return; }
-    const _p=parseInvNo(_iv);
-    if(!_p){ add('A','A16','发票号规范(格式/日期晚于签订日期)','WARN',false,'发票号 '+_iv+' 不符合 INV+年月日6位+序号≥2位（如 INV26100101=2026-10-01 第01号）'); return; }
-    if(H.signDate&&_p.date<=H.signDate){ add('A','A16','发票号规范(格式/日期晚于签订日期)','WARN',false,'发票号日期 '+_p.date+' 应晚于合同簽訂日期 '+H.signDate); return; }
-    add('A','A16','发票号规范(格式/日期晚于签订日期)','OK',true,'发票号 '+_iv+'，日期 '+_p.date);
-  })();
-  /* A17 明细合计一致（2026-10-15 v2.30 第二批）：Σ明细行(毛/净)=表头——三单一致铁律的机器执行；无权威合计(旧草单)跳过 */
-  (function(){
-    if(!d.sum){ add('A','A17','明细行合计=表头合计(毛/净)','OK',true,'无权威合计(旧草单)，跳过校验'); return; }
-    const _sgw=L.reduce((a,l)=>a+(+l.gw||0),0),_snw=L.reduce((a,l)=>a+(+l.nw||0),0);
-    const _bad=Math.abs(_sgw-+d.sum.totalGW)>0.005||Math.abs(_snw-+d.sum.totalNW)>0.005;
-    add('A','A17','明细行合计=表头合计(毛/净)',_bad?'BLOCK':'OK',!_bad,_bad?('明细Σ('+_sgw.toFixed(2)+'/'+_snw.toFixed(2)+'）≠表头('+d.sum.totalGW+'/'+d.sum.totalNW+')——请重新生单/重跑归并'):'Σ明细行=表头('+_sgw.toFixed(2)+'/'+_snw.toFixed(2)+'），三单一致'+(d.sum._alloc?'（本票行级无箱重，已按文件头权威合计比例分摊毛/净，请抽查单件重合理性）':''));
-  })();
-  /* A18 表头毛/净重≥1（2026-10-21 v2.33）：单一窗口录入规则（用户手册明文）——毛重/净重(表头)必填且需≥1，小于1须填1；
-     权威合计(d.sum)优先，旧草单无合计跳过。WARN 级：小于1多为样品票，提示人工确认 */
-  (function(){
-    if(!d.sum){ add('A','A18','表头毛/净重≥1(单一窗口录入规则)','OK',true,'无权威合计(旧草单)，跳过校验'); return; }
-    const _tg=+d.sum.totalGW||0,_tn=+d.sum.totalNW||0;
-    const _bad=(_tg>0&&_tg<1)||(_tn>0&&_tn<1);
-    add('A','A18','表头毛/净重≥1(单一窗口录入规则)',_bad?'WARN':'OK',!_bad,
-      _bad?('表头毛/净重 '+_tg+'/'+_tn+' 小于 1——单一窗口强制≥1，小于 1 须填 1（请核对该票是否正常货件）'):'表头毛/净重('+_tg+'/'+_tn+')≥1，符合单一窗口录入规则');
-  })();
-  /* A19 件数≠0（2026-10-21 v2.33）：报关单填制规范——件数不得填报 0（散装建议填 1）；
-     件数口径=总箱数：权威合计(d.sum.boxCount)优先，回退 ΣboxCnt 铁律（与报关件数口径一致）。BLOCK 级：0 件数单一窗口直接拒收 */
-  (function(){
-    const _pk=d.sum?(+d.sum.boxCount||0):L.reduce((a,l)=>a+(+l.boxCnt||0),0);
-    const _bad=_pk<=0;
-    add('A','A19','件数≠0(报关单填制规范:件数不得为0)',_bad?'BLOCK':'OK',!_bad,
-      _bad?('件数=0——单一窗口禁止填报 0；请核对解析结果是否含有效箱号/箱数'):'件数='+_pk+'（总箱数口径）');
-  })();
+  /* A14 合同日期逻辑：交貨日期 ≥ 簽訂日期(防倒签)；三单一致(发票/装箱单/销售合同同数据源) */
+  const a14=!H.deliveryDate||!H.signDate||String(H.deliveryDate)>=String(H.signDate);
+  add('A','A14','交货日期≥签订日期(销售合同防倒签)',a14?'OK':'WARN',a14,'交货日期 '+H.deliveryDate+' 早于签订日期 '+H.signDate);
   const a5=L.every(l=>/^\d{10}$/.test(l.hs));
   add('A','A5','HS为10位商品编号',a5?'OK':'BLOCK',a5,'HS非10位');
   add('A','A6','法定计量单位与申报单位匹配','OK','OK','默认计量单位「个」，如需其他单位请人工确认');
@@ -2173,53 +1922,17 @@ function runMonitor(did){
   // B 出口退税政策
   /* 退税测算（v2.5 起）：用「真实退税率表 × 供应商主体性质」取代原硬编码 0.13。
      只改 B2/B5/B7 的「取值来源」，编号/其余检查项/阻断逻辑一律不动。 */
-  const _rb=rebateCalc({lines:L.filter(l=>!ncOfLine(l))});   /* v2.37：黑名单供应商行排除出退税测算（B12 点名），防止污染应退税额 */
-  const _ncCnt=L.filter(l=>ncOfLine(l)).length;
+  const _rb=rebateCalc({lines:L});
   const _unHs=[...new Set(_rb.unlisted.map(r=>r.hs||'(空编码)'))];
   const _rateTxt=_rb.rateSet.length?_rb.rateSet.map(r=>r+'%').join(' / '):'—';
   add('B','B1','采购进项发票与报关单品名/数量一致(票流一致)','WARN',false,'待上传进项发票核对票流（外部凭证）');
   add('B','B2','应退税额=Σ不含税采购价×实际退税率 计算正确',_unHs.length?'WARN':(_rb.total>0?'OK':'WARN'),_unHs.length?false:_rb.total>0,
-    '应退 ¥'+_rb.total.toFixed(2)+(_unHs.length?('（'+_unHs.length+' 个编码未收录退税率，该部分未计入）'):'（逐行算：不含税采购价×实际退税率）')+(_ncCnt?('；已排除不合规供应商 '+_ncCnt+' 行（见 B12）'):''),true);
+    '应退 ¥'+_rb.total.toFixed(2)+(_unHs.length?('（'+_unHs.length+' 个编码未收录退税率，该部分未计入）'):'（逐行算：不含税采购价×实际退税率）'),true);
   const badsup=L.some(l=>l.supplier.includes('不退税'));
   add('B','B3','供货企业具退税资格',badsup?'WARN':'OK',!badsup,badsup?'存在标记「不退税」的供应商':'全部具退税资格');
   /* B10 货源地一致性：每项号货源地须从供应商档案带出(退税归属=进项发票地区)；未维护则 WARN */
   const missOrig=[...new Set(L.map(function(l){return consolidatedSupplier(l.supplier);}).filter(Boolean))].filter(function(s){const p=(DB.tier1Profiles&&DB.tier1Profiles[s])||{};return !p.originCode;});
   add('B','B10','货源地与供应商档案一致(退税归属)',missOrig.length?'WARN':'OK',!missOrig.length,missOrig.length?('以下供应商未维护境内货源地：'+missOrig.join('、')):'全部已配置货源地');
-  /* B11 价格倒挂·含税口径（2026-10-09 新增）：归集加权申报价 ≥ 组内最高采购含税价。
-     容错不误杀：旧草单无字段→WARN 提示重算；商品库未维护/SKU未匹配→缺失计数跳过；
-     非FOB（申报价含运保费）→ 降级 WARN 人工复核。口径恒为 CNY（行 decl/costMaxNoTax 均人民币，外币仅在输出层换算）。
-     2026-10-13 用户拍板改不含税口径：与 B9（申报价>不含税成本）口径统一；含税口径（=cost×1.13）弃用，防线相应变松已告知。 */
-  let _b11Sug=null;
-  /* 一键拆行建议（2026-10-12）：B11 违例时静默试跑 M0~M7×供应商开关 共16种组合，
-     取「能通过且行数最少」者为建议存入 monitor.suggest（renderMonitor 渲染按钮）；全部违例则消息给调价修复值。
-     纯内存试跑，不改当前归并；基于 rawLines 与监控同源。v2.34 起 M7=智能拆倒挂，通常行数最少胜出。 */
-  (function(){
-    const _isFob=H.tradeTerm==='FOB';
-    const _old11=L.filter(l=>l.costMaxNoTax===undefined).length;
-    const _noLib=L.reduce((a,l)=>a+(+l._costNoLib||0),0);
-    const _noMatch=L.reduce((a,l)=>a+(+l._taxNoMatch||0),0);
-    const _chk=L.filter(l=>+l.costMaxNoTax>0);
-    const _inv=_chk.filter(l=>decRound(+l.decl,2)<decRound(+l.costMaxNoTax,2));
-    if(_inv.length){
-      const _src=(d.rawLines&&d.rawLines.length)?d.rawLines:L;
-      MODES.forEach(m=>{[false,true].forEach(sp=>{
-        const t=mergeLines(_src,m.id,sp);
-        const bad=t.some(l=>+l.costMaxNoTax>0&&decRound(+l.decl,2)<decRound(+l.costMaxNoTax,2));
-        if(!bad&&(!_b11Sug||t.length<_b11Sug.n))_b11Sug={mode:m.id,sup:sp,n:t.length};
-      });});
-      if(_b11Sug&&_b11Sug.mode===(d.mergeMode||'M0')&&!!_b11Sug.sup===!!d.mergeSup)_b11Sug=null; /* 当前即最优：防御 */
-    }
-    let _sev='OK',_ok=true,_m='';
-    if(_old11){_sev='WARN';_ok=false;_m=_old11+' 行无含税价字段(旧草单未重算)；重新生成草单/重跑归并后自动核';}
-    else if(_inv.length){_sev=_isFob?'BLOCK':'WARN';_ok=false;
-      _m=_inv.length+' 行倒挂：'+_inv.slice(0,3).map(l=>String(l.sku||'')+' 加权申报价 '+decRound(+l.decl,2)+' < 组内最高采购价(不含税) '+decRound(+l.costMaxNoTax,2)).join('；')+(_inv.length>3?('…共 '+_inv.length+' 行'):'');
-      if(!_b11Sug){const _need=Math.max.apply(null,_chk.map(l=>+l.costMaxNoTax||0).concat([0]));
-        _m+=' 💡各归并组合均倒挂（拆行救不了），需调价：将违例行申报价上调至各自组内最高不含税采购价（本票最高需 '+decRound(_need,2)+'）';}}
-    else if(_noLib||_noMatch){_sev='WARN';_ok=false;_m='已核 '+_chk.length+' 行通过；采购价缺失：商品库未维护 '+_noLib+' 行、SKU未匹配 '+_noMatch+' 行(已跳过不阻断)';}
-    else{_m='全部通过（CNY口径，本票 '+L.length+' 行）';}
-    if(!_isFob){_m+=(_m?';':'')+'非FOB申报价含运保费，倒挂需人工复核';if(_sev==='OK'){_sev='WARN';_ok=false;}}
-    add('B','B11','归集加权申报价≥组内最高采购价(防倒挂·不含税口径)',_sev,_ok,_m);
-  })();
   add('B','B4','换汇成本合理',(H.currency.includes('USD')&&DB.price.exch)?'OK':'WARN',(H.currency.includes('USD')&&DB.price.exch)>0,'未设汇率无法核换汇成本');
   add('B','B5','商品退税率与HS匹配',_unHs.length?'WARN':'OK',!_unHs.length,
     _unHs.length?('未收录退税率，已标黄：'+_unHs.slice(0,6).join('、')+(_unHs.length>6?(' 等 '+_unHs.length+' 个'):'')+'（可在「退税测算→退税率配置」补录）'):('全部命中退税率表，在册税率 '+_rateTxt));
@@ -2230,53 +1943,20 @@ function runMonitor(did){
   add('B','B8','申报日期在退税申报期内','OK','OK','申报日 '+H.declDate);
   const b9=L.every(l=>(+l.decl)>(+l.cost));
   add('B','B9','申报价>成本(防倒挂)',b9?'OK':'BLOCK',b9,'存在申报价≤成本，倒挂影响退税基数');
-  /* B12 供应商合规闸（2026-10-22 v2.37 用户确认）：黑名单供应商（预置：贝蒙沃森（深圳）商贸有限公司）的货物
-     禁止做合规出口/退税申报——涉及行 BLOCK 不可锁定；退税测算（B2）已排除该部分；提示分单隔离。
-     通道去向（不退税一般贸易/暂缓出货/换主体采购）由业务与税务顾问确认，系统只做隔离与标记。 */
-  (function(){
-    const _bl=blList();
-    const _nc=L.filter(l=>{const b=ncOfLine(l);if(b)l._blName=b.name||b.key;return !!b;});
-    if(!_bl.length){add('B','B12','供应商合规闸(黑名单供应商禁止合规出口)','OK',true,'黑名单为空');return;}
-    if(_nc.length){
-      const _cost=_nc.reduce((a,l)=>a+(+l.cost||0)*(+l.qty||0),0);
-      add('B','B12','供应商合规闸(黑名单供应商禁止合规出口)','BLOCK',false,
-        '涉不合规供应商「'+_nc[0]._blName+'」'+_nc.length+' 行（SKU：'+[...new Set(_nc.map(l=>l.sku))].slice(0,5).join(',')+(_nc.length>5?'…':'')+'）——不可做合规出口、本票不可锁定；不含税货值 ¥'+decRound(_cost,2)+' 已排除出退税测算（见 B2）。请分单隔离，处理通道与税务顾问确认');
-    } else {
-      add('B','B12','供应商合规闸(黑名单供应商禁止合规出口)','OK',true,'本票不涉及黑名单供应商（在册 '+_bl.length+' 家）');
-    }
-  })();
-  /* 单源自检（2026-10-12 方案B）：实际执行的规则 id 集合 vs MON_CATALOG，不一致写 DB.monSync，设置中心标红报警。
-     注意 id 本身已含 A/B 前缀（cat 是分组、id 是唯一键），直接用 r.id 比对，勿拼 cat+id（会变 AA1 双前缀）。 */
-  (function(){
-    const _exec=R.map(r=>r.id);
-    const _cat=Object.keys(MON_CATALOG).reduce((a,c)=>a.concat(MON_CATALOG[c].map(x=>x.id)),[]);
-    DB.monSync={missing:_cat.filter(id=>_exec.indexOf(id)<0),extra:_exec.filter(id=>_cat.indexOf(id)<0),at:new Date().toLocaleString()};
-  })();
-  d.monitor={list:R,block,warn,suggest:_b11Sug};save();renderDrafts();
+  d.monitor={list:R,block,warn};save();renderDrafts();
 }
-function renderMonitor(m,did){
+function renderMonitor(m){
   let h=`<div class="monitor"><div class="mh">监控结果：`;
   h+=m.block?`<span class="badge bad">${m.block} 阻断</span>`:`<span class="badge ok">无阻断</span>`;
   h+=` <span class="badge warn">${m.warn} 提示</span> <span class="muted">（阻断=BLOCK不可锁定；提示=WARN标红可继续）</span></div>`;
   m.list.forEach(r=>{const cls=r.ok?'ok':(r.sev==='BLOCK'?'bad':'warn');const ic=r.ok?'✓':(r.sev==='BLOCK'?'✕':'!');
     h+=`<div class="mline"><span class="ic badge ${cls}">${ic}</span><span><b>[${r.cat}${r.id}]</b> ${r.desc}${(r.ok&&!r.always)?'':' — '+r.msg}</span></div>`;});
-  if(m.suggest&&did)h+=`<div class="mline"><span class="ic badge ok">💡</span><span>已试跑 16 种归并组合：建议切换 <b>${m.suggest.mode}${m.suggest.sup?'+供应商分行':''}</b>（拆为 ${m.suggest.n} 行，预计全部通过） <button class="primary" style="padding:2px 10px;font-size:11px" onclick="applySuggest('${did}')">一键切换</button></span></div>`;
   h+='</div>';return h;
-}
-/* B11 一键拆行（2026-10-12）：按 monitor.suggest 切换归并组合并重跑监控；复用 mergeLines，不新增归并逻辑 */
-function applySuggest(did){
-  const d=DB.drafts.find(x=>x.id===did);if(!d||!d.monitor||!d.monitor.suggest)return;
-  const s=d.monitor.suggest;
-  d.mergeMode=s.mode;d.mergeSup=!!s.sup;
-  d.lines=mergeLines(d.rawLines&&d.rawLines.length?d.rawLines:d.lines,d.mergeMode,d.mergeSup);
-  d.monitor=null;save();
-  runMonitor(did); /* 重跑后 B11 应转通过，界面即时反映 */
 }
 
 /* ============== 阶段4 输出 ============== */
 function confirmDraft(did){
   const d=DB.drafts.find(x=>x.id===did);if(!d)return;
-  if(!d.monitor)runMonitor(did); /* B11 配套：监控已过期/未跑时锁定前强制重跑（runMonitor 内部会写回 d.monitor） */
   if(d.monitor&&d.monitor.block){alert('存在阻断项，先修复再锁定');return;}
   d.confirmed=true;
   /* 采购合同按一级供应商(归集后签约主体)出；明细保留二级原工厂 */
@@ -2287,86 +1967,15 @@ function confirmDraft(did){
     {type:'Packing List装箱单',n:1},
     {type:'客户发票',n:1},
     {type:'销售合同',n:1},
-    {type:'国内采购合同',n:suppliers.length,suppliers},
-    /* 2026-10-12 v2.25：货流凭证链——送货单(供应商→井太兰,每家一份,同采购合同编号) + 入库单(井太兰收货,编号=采货单号-RK)。明细与全部单证同源 d.lines */
-    {type:'送货单',n:suppliers.length,suppliers},
-    {type:'入库单',n:suppliers.length,suppliers},
-    /* 2026-10-12 v2.25 报价层：供应商产品报价单(每家一份,含税采购价=cost×1.13) + 井太兰销售报价单(整票一份,售价公式价 decl) */
-    /* 2026-10-14 v2.27 询价单：凭证链最早一环（井太兰→供应商要价），逐SKU、单价留空由供应商填 */
-    {type:'询价单',n:suppliers.length,suppliers},
-    {type:'供应商报价单',n:suppliers.length,suppliers},
-    {type:'销售报价单',n:1}
+    {type:'国内采购合同',n:suppliers.length,suppliers}
   ];
   DB.docs.push({id:uid('DOC'),dftId:did,out,suppliers,at:new Date().toLocaleString()});
   DB.sel.doc=DB.docs.length-1;
   DB.sel.docsSet=DB.docs.map((_,i)=>i);
   save();renderOut();
 }
-/* 单写多读第二批（2026-10-15）：草单明细派生化——记录(recVer)更新时草单自动按最新解析数据重建行，用户手工修改(setLine)以覆盖层保留 */
-function draftRecsOf(d){
-  const ids=(d.ordId==='__merged__')?(d.sourceOrderIds||[]):[d.ordId];
-  return ids.map(id=>DB.orders.find(x=>x.id===id)).filter(Boolean)
-    .map(o=>({o:o,rec:DB.records.find(r=>r.id===o.recId)})).filter(x=>x.rec);
-}
-function deriveRawLines(d){
-  const pairs=draftRecsOf(d);
-  let shift=0;const items=[];
-  pairs.forEach(x=>{
-    ordItems(x.o).forEach(i=>{const cp=Object.assign({},i);if(Array.isArray(cp.boxSeq))cp.boxSeq=cp.boxSeq.map(function(b){return +b+shift;});items.push(cp);});
-    shift+=(+(x.rec.sum&&x.rec.sum.boxCount)||0);
-  });
-  return buildRawLines(items,(pairs[0]&&pairs[0].o&&pairs[0].o.destCountry)||(d.header&&d.header.destCountry)||'');
-}
-function applyOverrides(d,raw){
-  (d.overrides||[]).forEach(ov=>{
-    raw.forEach(r=>{ if(ov.keys?(ov.keys.indexOf(r.sku)>=0):(r.sku===ov.sku)) r[ov.k]=ov.v; });
-  });
-  return raw;
-}
-/* ── v2.35 无箱重票·权威合计比例分摊（2026-10-22，TT2RHTJ 箱矩阵格式触发）──
-   场景：文件只有「第N箱」件数矩阵、无任何箱重列（missing 含 gw/nw/bw），表头「总重量」是唯一权威毛重；
-   行级库兜底自算 Σ(171.40/153.20) ≠ 权威(140.4/124.8)，尾差远超 adjustResidual 每行1分容限 → A17 只能拦截，用户无法出单。
-   方案：当「全部来源记录都声明缺箱重」且偏差超容限时，按行兜底重×数量占比把表头毛/净分摊到行，再 adjustResidual 抹平尾差 → A17 恒等；
-   d.sum._alloc 打标供 A17 消息披露。有真实箱重的票一律不触发（A17 防线保留）；legacy 草单（无来源记录）不碰。 */
-function allocWeights(d){
-  if(!d||!d.sum||!(+d.sum.totalGW>0)||!(+d.sum.totalNW>0)||!d.lines||!d.lines.length)return false;
-  const _pairs=draftRecsOf(d);
-  if(!_pairs.length)return false;                       /* legacy：无来源记录不碰 */
-  const _noW=_pairs.every(x=>{const ms=x.rec.missing||[];return ms.indexOf('gw')>=0||ms.indexOf('nw')>=0;});
-  if(!_noW)return false;                                /* 有真实箱重 → A17 防线保留 */
-  const L=d.lines,tg=+d.sum.totalGW,tn=+d.sum.totalNW;
-  const sg=L.reduce((a,l)=>a+(+l.gw||0),0),sn=L.reduce((a,l)=>a+(+l.nw||0),0);
-  const tol=0.01*L.length;
-  if(Math.abs(sg-tg)<=tol&&Math.abs(sn-tn)<=tol)return false;   /* 容差内 → 交 adjustResidual */
-  const tw=L.reduce((a,l)=>a+(+l.gw||0)*(+l.qty||0),0),tq=L.reduce((a,l)=>a+(+l.qty||0),0),_r=tn/tg;
-  L.forEach(l=>{
-    const w=tw>0?((+l.gw||0)*(+l.qty||0))/tw:((+l.qty||0)/(tq||1));
-    const g=Math.round(tg*w*1000)/1000;
-    l.gw=g;l.nw=Math.round(g*_r*1000)/1000;l._wAlloc=1;
-  });
-  adjustResidual(L,tg,'gw');adjustResidual(L,tn,'nw');
-  d.sum._alloc=1;
-  return true;
-}
-function ensureFreshLines(d){  if(!d||!d.id)return;
-  const pairs=draftRecsOf(d);
-  if(!pairs.length)return;                      /* legacy/引用缺失：保持快照不重建 */
-  let changed=false;const cur={};
-  pairs.forEach(x=>{const v=+x.rec.recVer||1;cur[x.rec.id]=v;if(d.refVers&&(+d.refVers[x.rec.id]||0)!==v)changed=true;});
-  if(!d.refVers){d.refVers=cur;return;}         /* legacy 采纳当前版本：不重建（存量行为不变） */
-  if(!changed)return;
-  d.rawLines=applyOverrides(d,deriveRawLines(d));
-  d.lines=mergeLines(d.rawLines,d.mergeMode||'M0',!!d.mergeSup);
-  d.refVers=cur;d.monitor=null;
-  const _ok=pairs.every(x=>x.rec.sum)&&pairs.length>0;
-  d.sum=_ok?{boxCount:pairs.reduce((a,x)=>a+(+(x.rec.sum.boxCount)||0),0),totalGW:+pairs.reduce((a,x)=>a+(+(x.rec.sum.totalGW)||0),0).toFixed(3),totalNW:+pairs.reduce((a,x)=>a+(+(x.rec.sum.totalNW)||0),0).toFixed(3)}:null;
-  if((d.overrides||[]).length)alert('记录已更新，草单「'+((d.header&&d.header.no)||d.id)+'」已按最新解析数据重建，'+d.overrides.length+' 处手工修改已重新应用，请复核重量与价格。');
-  save();renderDrafts();
-}
 function buildData(doc){
   const d=DB.drafts.find(x=>x.id===doc.dftId);
-  ensureFreshLines(d);
-  allocWeights(d);   /* v2.35：无箱重票按权威合计比例分摊（有真实箱重不触发） */
   /* 币种跟随报关草单：外币(USD/EUR...)时把单价/金额从 CNY 换算成本币（除汇率 exch）；CNY 保持原值
      汇率优先级：单笔 H.exch 优先（可逐单填），为空才用全局默认 DB.price.exch；都无效则按 1（等同于不换算并预警） */
   const _ccur=(d.header&&d.header.currency)||'CNY 人民币';
@@ -2395,10 +2004,7 @@ function buildData(doc){
       while(parts.length&&(parts[parts.length-1]==null||String(parts[parts.length-1]).trim()===''))parts.pop();
       spec=parts.join('|');
     }
-    /* v2.32 海关口径对齐（2026-10-21 用户确认）：总价=报告单价(4位舍入)×数量 再舍2位——与单一窗口"录入4位单价→算总价"算式一致；
-       此前用全精度 decl 乘（72.18971×17→1227.23），海关按 4 位单价算（72.1897×17→1227.22），差 1 分 */
-    const _upC=decRound(+l.decl,4),_up4=decRound(decl2cur(l.decl),4);
-    const _amt=decRound(_upC*(+l.qty),2);
+    const _amt=((+l.decl)*(+l.qty));
     return {...l,spec,en:l.en||'',unit:l.unit||'',
       /* 境内货源地/产地：导出层此前只在 safeRender 预览克隆里计算, buildData 返回行从未带 _origin → Excel N 列恒空(旧草单尤甚);
          此处补齐: 存储有值(非空)优先, 空/缺失则按供应商实时重算(归集到一级→读 tier1Profiles.originCode), 保证 Excel 与预览一致 */
@@ -2406,55 +2012,34 @@ function buildData(doc){
       decl:l.decl,
       decl4:(+l.decl).toFixed(4),            /* 销售合同單價 4 位显示(单价统一4位/汇总2位) */
       nameF:fan(l.name||''),matF:fan(l.mat||''),unitF:fan(l.unit||''),   /* 繁体显示字段(销售合同用: 单位等必须繁体) */
-      amount:_amt.toFixed(2),
-      declCur:_up4.toFixed(4),
-      amountCur:decRound(_up4*(+l.qty),2).toFixed(2),
+      amount:decRound(_amt,2).toFixed(2),
+      declCur:decRound(decl2cur(l.decl),4).toFixed(4),
+      amountCur:decRound(decl2cur(_amt),2).toFixed(2),
       boxCnt:(+l.boxCnt||0),
       /* Model 列：归并行显示该款全部 SKU(_keys)；M0 一行一款取 sku（含尺码；style 为 SPU 级无尺码，用户 09-23 确认须显示全）；显式 model 最优先 */
       model:l.model||(l._keys&&l._keys.length?l._keys.join(','):((d.mergeMode==='M0')?(l.sku||l.style):(l.style||l.sku)))};});
   const base=d.header.declDate||today();
-  /* 报价单行（2026-10-12 v2.25）：逐 SKU 一行（样本口径=M0，与送货单合并口径不同）。
-     purTax=不含税采购价×1.13（含税采购报价，与采购合同 taxPrice 同式）；sales=decl（售价公式价 noTax/(1-毛利)，即申报价）。
-     nameF/matF/unitF=繁体显示字段（井太兰销售报价单样本为繁体列，走 FAN_MAP）。 */
-  const qrows=(d.rawLines&&d.rawLines.length?d.rawLines:[]).map(l=>{const _sup=consolidatedSupplier(l.supplier||'');
-    return {name:l.name||'',model:l.sku||l.style||'',mat:l.mat||'',unit:l.unit||'个',qty:+l.qty||0,
-      purTax:decRound((+l.cost||0)*1.13,4).toFixed(4),sales:(+l.decl||0),sup:_sup,
-      nameF:fan(l.name||''),matF:fan(l.mat||''),unitF:fan(l.unit||'个')};});
   /* 采购合同按一级供应商(归集后签约主体)分组；items 保留二级原工厂供对账 */
   const contracts=[...new Set(lines.map(l=>consolidatedSupplier(l.supplier)))].map((s,ci)=>{const items=lines.filter(l=>consolidatedSupplier(l.supplier)===s).map(l=>{const tp=decRound((+l.cost||0)*1.13,4);return {...l,taxPrice:tp.toFixed(4),taxAmount:decRound(tp*(+l.qty||0),2).toFixed(2)};});
     /* 乙方信息/账户按规则自动引用：乙方=一级供应商档案, 账户=该供应商绑定的账户(owner 匹配) */
     const _pb=tier1Profile(s),_pa=acctFor((d.header&&d.header.currency)||'',s);
-    return {supplier:s,items,qitems:qrows.filter(q=>q.sup===s),_no:((d.header&&d.header.no)||'')+'-'+(ci+1),rkNo:((d.header&&d.header.no)||'')+'-'+(ci+1)+'-RK',qtyTotal:decRound(items.reduce((a,l)=>a+(+l.qty||0),0),0),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
-      purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||'',phone:_pb.phone||'',shr:_pb.shr||'',shrF:_pb.shr||'____________',phoneF:_pb.phone||'____________'},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
-  /* 合计对齐（2026-10-15 定稿）：mergeLines 自带按箱分摊已保证 Σ明细行=权威合计（真实三票复现验证），
-     此处仅做分级尾差对齐（adjustResidual 自带保护：差额超过每行1分即拒绝涂改，不会掩盖真实错误）。
-     此前在此处按残缺 boxSeq 重分摊的做法已撤销——它会覆盖 mergeLines 的正确行值并产生 NaN。 */
-  if(d.sum&&+d.sum.totalNW>0)adjustResidual(lines,+d.sum.totalNW,'nw');
-  if(d.sum&&+d.sum.totalGW>0)adjustResidual(lines,+d.sum.totalGW,'gw');
-  return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,qrows,shipperFan:fan(d.header.shipper||''),
-    /* 交货地点兜底（2026-10-13 用户拍板）：表头未填时默认取发货人档案地址（井太兰=东莞厚街仓），表头可覆盖 */
-    deliveryPlace:(d.header&&d.header.deliveryPlace)||cleanDeliveryPlace(partyProfile((d.header&&d.header.shipper)||'').addr),
-    /* 发票号（2026-10-13 用户定稿）：只认手填 invNo，不填=空值，系统不造值；日期取发票号中年月日补全年 */
-    invNoF:String((d.header&&d.header.invNo)||'').trim(),
-    invDateF:(parseInvNo((d.header&&d.header.invNo)||'')||{}).date||'',
+    return {supplier:s,items,_no:((d.header&&d.header.no)||'')+'-'+(ci+1),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
+      purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
+  return {header:d.header,order:DB.orders.find(o=>o.id===d.ordId)||{},lines,contracts,
     cur:_curSym,curCode:_curCode,currencyRaw:_ccur,exch:_exch,
-    /* dates 收缩（2026-10-13 用户拍板）：−30/−25/−20/−2 推算全部废除（送货/入库=手填shipDate、发票/PL=发票号日期、出口日期=空待海关回执），仅保留申报日期 */
-    dates:{customs:fmt(base)},
+    dates:{purchase:fmt(sub(base,30)),sales:fmt(sub(base,25)),invoice:fmt(sub(base,20)),customs:fmt(base),exportDate:fmt(sub(base,2))},
     totalQty:lines.reduce((a,l)=>a+(+l.qty),0),
-    /* 金额合计（2026-10-14 修复 / 2026-10-21 v2.32 海关口径）：Σ各明细行(报告单价4位×数量舍2位)后再舍入一次 → TOTAL 与明细逐行显示值严格相等，且与单一窗口逐行一致 */
-    totalAmount:decRound(lines.reduce((a,l)=>a+decRound(decRound((+l.decl),4)*(+l.qty),2),0),2).toFixed(2),
-    totalAmountCur:decRound(lines.reduce((a,l)=>a+decRound(decRound(decl2cur((+l.decl)),4)*(+l.qty),2),0),2).toFixed(2),
-    /* 权威总重/箱数（2026-10-14 修复）：解析层 packSummary 合计(d.sum)优先——合并重算曾致件数11/毛重181.42；
-       无权威合计时回退旧的 boxDedupTotals/totalBoxCount 路径（历史草单兼容） */
-    totalGW:(d.sum?+d.sum.totalGW:boxDedupTotals(d.rawLines||lines).gw).toFixed(2),
-    totalNW:(d.sum?+d.sum.totalNW:boxDedupTotals(d.rawLines||lines).nw).toFixed(2),
-    boxCount:d.sum?+d.sum.boxCount:totalBoxCount(lines),
+    totalAmount:decRound(lines.reduce((a,l)=>a+(+l.decl)*(+l.qty),0),2).toFixed(2),
+    totalAmountCur:decRound(lines.reduce((a,l)=>a+decl2cur((+l.decl)*(+l.qty)),0),2).toFixed(2),
+    /* 权威总重：按物理箱去重求和（与报关总重一致），不再对分摊后逐行重量求和（避免浮点漂移/全0）。箱数另由 physicalBoxCount 取物理箱。 */
+    totalGW:boxDedupTotals(d.rawLines||lines).gw.toFixed(2),
+    totalNW:boxDedupTotals(d.rawLines||lines).nw.toFixed(2),
+    boxCount:totalBoxCount(lines),
     contractCount:contracts.length,
     bankInfo:acctFor(d.header.currency)||{},
     bankAccounts:DB.bankAccounts||[],
     signDateCN:fmtDateCN(d.header.signDate),
     deliveryDateCN:fmtDateCN(d.header.deliveryDate),
-    pdeliveryDateCN:fmtDateCN(d.header.pdeliveryDate),
     destCn:cnCountry((d.header&&d.header.destCountry)||''),
     arrivalCn:cnCountry((d.header&&d.header.arrivalCountry)||(d.header&&d.header.destCountry)||'')};
 }
@@ -2493,7 +2078,7 @@ function builtin(name,data){
 <tr style="border:none">
 <td colspan="2" style="border:none">预录入编号：<br><b>{{header.preNo}}</b></td>
 <td colspan="2" style="border:none">海关编号：<br><b>{{header.customsNo}}</b></td>
-<td colspan="3" style="border:none">发票号：<br><b>{{invNoF}}</b></td>
+<td colspan="3" style="border:none">发票号：<br><b>{{header.invNo}}</b></td>
 <td colspan="3" style="border:none">委托协议号：<br><b>{{header.entrustNo}}</b></td>
 <td colspan="5" style="border:none;text-align:right">页码/页数：<br><b>1/1</b></td>
 </tr>
@@ -2507,7 +2092,7 @@ function builtin(name,data){
 <tr>
 <td colspan="6"><b>{{header.shipper}}</b><br><span style="font-size:9px">信用代码 {{header.shipperUSCI}}　海关注册 {{header.shipperReg}}</span></td>
 <td colspan="2"><b>{{header.port}}</b></td>
-<td colspan="2"><b>{{header.exportDate}}</b></td>
+<td colspan="2"><b>{{dates.exportDate}}</b></td>
 <td colspan="2"><b>{{dates.customs}}</b></td>
 <td colspan="2"><b>{{header.recordNo}}</b></td>
 </tr>
@@ -2621,14 +2206,14 @@ function builtin(name,data){
 </tr>
 </table></div>`;
   }
-  if(name==='Invoice发票')return head+`<p>Invoice No: {{invNoF}} &nbsp; DATE: {{invDateF}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
+  if(name==='Invoice发票')return head+`<p>Invoice No: {{header.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
     <tr><td colspan="5">总计{{cur}}:</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="5">TOTAL:{{cur}}</td><td>{{totalAmountCur}}</td></tr>
     <tr><td colspan="2">Marks</td><td colspan="2">Country Of Origin:</td><td colspan="2">China</td></tr></table>`;
-  if(name==='客户发票')return head+`<p>Invoice No: {{invNoF}} &nbsp; DATE: {{invDateF}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
+  if(name==='客户发票')return head+`<p>Invoice No: {{header.no}} &nbsp; DATE: {{dates.invoice}} &nbsp; Terms of Pay: {{header.tradeTerm}} &nbsp; To Messrs: {{header.consignee}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Mark &amp; No</th><th>Description</th><th>Model</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr>
     {{#each lines}}<tr><td>N/M</td><td>{{name}}</td><td>{{model}}</td><td>{{qty}}</td><td>{{declCur}}</td><td>{{amountCur}}</td></tr>{{/each}}
@@ -2639,7 +2224,7 @@ function builtin(name,data){
     <tr><td colspan="6">Bank: {{bankInfo.bank}}</td></tr>
     <tr><td colspan="6">Account Name: {{bankInfo.name}}</td></tr>
     <tr><td colspan="6">Account Number: {{bankInfo.no}}</td></tr></table>`;
-  if(name==='Packing List装箱单')return head+`<p>Date: {{invDateF}} &nbsp; Invoice No: {{invNoF}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
+  if(name==='Packing List装箱单')return head+`<p>Date: {{dates.invoice}} &nbsp; Invoice No: {{header.no}} &nbsp; To Messrs: {{header.consignee}} &nbsp; Contract No: {{header.no}}</p>
     <p>Shipped: From 东莞 to {{destCn}} &nbsp; Terms of Pay: {{header.tradeTerm}}</p>
     <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px">
     <tr><th>Ctn.No.</th><th>Description</th><th>Model</th><th>Ge.Crate(CTN)</th><th>Ge.Quantity</th><th>G.W. (KG)</th><th>N.W. (KG)</th></tr>
@@ -2720,7 +2305,7 @@ function builtin(name,data){
     <p>2.付款时间：甲方收到合规发票后15个工作日内付全款。</p>
     <p>3.乙方账户信息：开户行：{{purchaseAcct.bank}} &nbsp; 账号：{{purchaseAcct.no}} &nbsp; 户名：{{purchaseAcct.name}}</p>
     <p><b>三、交货时间、地点</b></p>
-    <p>1.交货时间：{{pdeliveryDateCN}}前 &nbsp;&nbsp; 2.交货地点：{{deliveryPlace}}</p>
+    <p>1.交货时间：{{deliveryDateCN}}前 &nbsp;&nbsp; 2.交货地点：{{header.deliveryPlace}}</p>
     <p>运输及费用：由乙方承担。乙方负责陆运送货至指定地点，承担运输风险，包装需符合国家标准。</p>
     <p><b>四、验收及质保</b></p>
     <p>1.验收方式：甲方收到货物3日内，完成验收；不合格甲方有权拒收，乙方须3日内更换至合格。</p>
@@ -2731,65 +2316,6 @@ function builtin(name,data){
     <p>授权代表（签字）：________________________ &nbsp;&nbsp; 授权代表（签字）：________________________</p>
     <p>签署日期：______年____月____日 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 签署日期：______年____月____日</p>
     </div>{{/each}}`;
-  /* ── 送货单/入库单（2026-10-12 v2.25）：货流凭证，与采购合同同源 contracts，每家一级供应商一份 ── */
-  if(name==='送货单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
-    {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
-    <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}}</h2>
-    <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">送货单</h3>
-    <p style="margin:2px 0">录单日期：{{header.shipDate}} &nbsp;&nbsp;&nbsp; <span style="display:inline-block;vertical-align:top;line-height:1.35">送货单号<br>采购单号</span>：<b>{{_no}}</b></p>
-    <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：{{purchaseB.shrF}}</p>
-    <p style="margin:2px 0">送货地址：{{deliveryPlace}} &nbsp;&nbsp; 联 系 人：{{purchaseB.contact}}</p>
-    <p style="margin:2px 0">手　机：{{purchaseB.tel}} &nbsp;&nbsp; 电　话：{{purchaseB.phoneF}}</p>
-    <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
-    <tr><th>序号</th><th>产品名称</th><th>具体型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>备注</th></tr>
-    {{#each items}}<tr><td style="text-align:center">{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td style="text-align:center">{{unit}}</td><td style="text-align:right">{{qty}}</td><td></td></tr>{{/each}}
-    <tr><td colspan="5" style="text-align:right"><b>合　计</b></td><td style="text-align:right"><b>{{qtyTotal}}</b></td><td></td></tr>
-    </table>
-    <p style="margin:8px 0 2px;font-size:11px">注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。</p>
-    <p style="margin:2px 0">开单人：____________ &nbsp;&nbsp;&nbsp; 收货人：____________</p>
-    <p style="margin:2px 0">日　期：____________ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 日　期：____________</p>
-    </div>{{/each}}</div>`;
-  if(name==='入库单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
-    {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
-    <h2 style="text-align:center;margin:4px 0;font-size:16px">{{header.partyB.name}}</h2>
-    <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">入 库 单</h3>
-    <p style="margin:2px 0">采货单号：<b>{{_no}}</b> &nbsp;&nbsp;&nbsp; 入库单号：<b>{{rkNo}}</b></p>
-    <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
-    <tr><th>序号</th><th>产品名称</th><th>具体型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>备注</th></tr>
-    {{#each items}}<tr><td style="text-align:center">{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td style="text-align:center">{{unit}}</td><td style="text-align:right">{{qty}}</td><td></td></tr>{{/each}}
-    <tr><td colspan="5" style="text-align:right"><b>合　计</b></td><td style="text-align:right"><b>{{qtyTotal}}</b></td><td></td></tr>
-    </table>
-    <p style="margin:8px 0 2px">入库时间：{{header.shipDate}} &nbsp;&nbsp;&nbsp; 录入人员：____________</p>
-    </div>{{/each}}</div>`;
-  /* ── 报价单两张（2026-10-12 v2.25）：报价层凭证，逐 SKU 一行（样本口径）；供应商版简体/销售版繁体 ── */
-  if(name==='供应商报价单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
-    {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
-    <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}} 产品报价单</h2>
-    <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
-    <tr><th>序号</th><th>产品名称</th><th>型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>单价</th></tr>
-    {{#each qitems}}<tr><td style="text-align:center">{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td style="text-align:center">{{unit}}</td><td style="text-align:right">{{qty}}</td><td style="text-align:right">{{purTax}}</td></tr>{{/each}}
-    </table>
-    <p style="margin:8px 0 2px;font-size:11px">报价单位：人民币元（含 13% 增值税） &nbsp;&nbsp;&nbsp; 报价方：{{supplier}} &nbsp;&nbsp;&nbsp; 日　期：____________</p>
-    </div>{{/each}}</div>`;
-  if(name==='询价单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
-    {{#each contracts}}<div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
-    <h2 style="text-align:center;margin:4px 0;font-size:16px;letter-spacing:6px">詢　價　單</h2>
-    <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
-    <tr><th>序號</th><th>產品名稱</th><th>型號</th><th>材質標準</th><th>單位</th><th>數量</th><th>單價</th></tr>
-    {{#each qitems}}<tr><td style="text-align:center">{{_i}}</td><td>{{nameF}}</td><td>{{model}}</td><td>{{matF}}</td><td style="text-align:center">{{unitF}}</td><td style="text-align:right">{{qty}}</td><td></td></tr>{{/each}}
-    <tr><td colspan="5" style="text-align:right"><b>合計</b></td><td style="text-align:right"><b>{{qtyTotal}}</b></td><td></td></tr>
-    </table>
-    <p style="margin:8px 0 2px;font-size:11px">詢價方：{{shipperFan}} &nbsp;&nbsp;&nbsp; 報價方：{{supplier}} &nbsp;&nbsp;&nbsp; 單價由報價方填寫（人民幣元）</p>
-    </div>{{/each}}</div>`;
-  if(name==='销售报价单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
-    <div style="border:1px solid #999;padding:12px 16px;margin:10px 0">
-    <h2 style="text-align:center;margin:4px 0;font-size:16px">{{shipperFan}}銷售報價單</h2>
-    <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
-    <tr><th>序號</th><th>產品名稱</th><th>型號</th><th>材質標準</th><th>單位</th><th>數量</th><th>單價</th></tr>
-    {{#each qrows}}<tr><td style="text-align:center">{{_i}}</td><td>{{nameF}}</td><td>{{model}}</td><td>{{matF}}</td><td style="text-align:center">{{unitF}}</td><td style="text-align:right">{{qty}}</td><td style="text-align:right">{{sales}}</td></tr>{{/each}}
-    </table>
-    <p style="margin:8px 0 2px;font-size:11px">報價單位：人民幣元 &nbsp;&nbsp;&nbsp; 報價方：{{shipperFan}} &nbsp;&nbsp;&nbsp; 日　期：____________</p>
-    </div></div>`;
   return '<p>未知模板</p>';
 }
 function renderOut(){
@@ -2819,18 +2345,17 @@ function renderOut(){
       if(isBroken(p)&&tplOf(o.type)) p=renderTpl(builtin(o.type,dt),extra||dt);
       return p;
     };
-    if(o.type==='国内采购合同'||o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'||o.type==='询价单'){
+    if(o.type==='国内采购合同'){
       h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
-        <h4 style="margin:0 8px 0 0">${o.type} ×${dt.contracts.length}</h4>
+        <h4 style="margin:0 8px 0 0">国内采购合同 ×${dt.contracts.length}</h4>
         <button class="small" onclick="previewDoc(${docI},${idx})">预览全部</button>
         <button class="small" onclick="downloadDoc(${docI},${idx})">下载全部</button>
-        ${o.type==='国内采购合同'?'<button class="small" onclick="downloadDocWord('+docI+','+idx+')">下载Word</button>':''}
+        <button class="small" onclick="downloadDocWord(${docI},${idx})">下载Word</button>
         <button class="small xbtn" onclick="downloadDocXlsx(${docI},${idx})">下载EXCEL(工作簿)</button></div>`;
       dt.contracts.forEach((c,ci)=>{
         const one=renderOne(Object.assign({},dt,{contracts:[c]}));
-        const _sub=o.type==='国内采购合同'?('采购金额 '+c.amount):('合计数量 '+c.qtyTotal);
         h+=`<div style="border:1px dashed var(--line);border-radius:6px;padding:8px;margin:6px 0">
-          <div class="toolbar" style="margin:0 0 4px"><b>第${ci+1}份 · ${c.supplier}</b><span style="color:var(--mut);font-size:11px">${c.count}项 · ${_sub}${o.type==='入库单'?' · 入库单号 '+c.rkNo:''}</span></div>
+          <div class="toolbar" style="margin:0 0 4px"><b>第${ci+1}份 · ${c.supplier}</b><span style="color:var(--mut);font-size:11px">${c.count}项 · 采购金额 ${c.amount}</span></div>
           <div style="max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:4px;padding:6px;background:#fff;color:#111;font-size:11px">${one}</div></div>`;
       });
       h+='</div>';
@@ -2849,7 +2374,7 @@ function renderOut(){
   });
 
   /* ── 4. 当前整套快捷操作（单套，非批量）── */
-  h+=`<p class="seq">日期时序：合同簽訂(手填) → 送货/入库(手填,可空) → 发票/装箱单(取发票号日期,补全年) → 报关申报(手填申报日期)；出口日期留空待海关回执。</p>`;
+  h+=`<p class="seq">日期前后逻辑：国内采购合同(${dt.dates.purchase}) &lt; 销售合同(${dt.dates.sales}) ≤ 发票/装箱单(${dt.dates.invoice}) &lt; 报关单申报(${dt.dates.customs})。</p>`;
   h+=`<div class="row" style="margin-top:10px"><button class="primary" onclick="downloadAll()">下载当前整套(单据)</button>
       <button class="primary xbtn" onclick="downloadAllXlsx()">下载当前整套EXCEL(工作簿)</button>
       <button class="ghost" onclick="printAll()">打印当前整套</button>
@@ -3042,11 +2567,8 @@ function previewDoc(docI,idx){_cur={doc:docI,idx};const doc=DB.docs[docI];const 
   dcLog('gen',doc.dftId,o.type,'预览',_h);}
 function closePrev(){document.getElementById('prevModal').classList.remove('open');}
 function downloadDoc(docI,idx){const doc=DB.docs[docI];const o=doc.out[idx];const data=buildData(doc);
-  if(o.type==='国内采购合同'){var _first='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_first)_first=one;dl((c._no||exportNo(d))+'_采购合同_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'Word×'+data.contracts.length,_first);return;}
-  /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份，文件名带供应商 */
-  if(o.type==='供应商报价单'||o.type==='询价单'){var _fq='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fq)_fq=one;dl(o.type+'_'+supShort(c.supplier)+'_'+dtStamp(),one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fq);return;}
-  if(o.type==='送货单'||o.type==='入库单'){var _fv='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_fv)_fv=one;dl((c._no||exportNo(data))+'_'+o.type+'_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'HTML×'+data.contracts.length,_fv);return;}
-  const _h=safeRender(o.type,data);dcLog('dl',doc.dftId,o.type,'Word',_h);dl((o.type==='报关草单'?exportFname(data)+'_报关草单':(o.type==='销售报价单'?o.type+'_'+dtStamp():exportNo(data)+'_'+o.type)),_h);}
+  if(o.type==='国内采购合同'){var _first='';data.contracts.forEach(c=>{const one=safeRender(o.type,data,{contracts:[c]});if(!_first)_first=one;dl('采购合同_'+c.supplier,one);});dcLog('dl',doc.dftId,o.type,'Word×'+data.contracts.length,_first);return;}
+  const _h=safeRender(o.type,data);dcLog('dl',doc.dftId,o.type,'Word',_h);dl(o.type,_h);}
 function downloadCurrent(){const {doc,idx}=_cur;downloadDoc(doc,idx);}
 /* 通用下载：Chrome 127+ 对 URL.createObjectURL 的 Blob 同步下载会弹"需下载权限"。
    统一走 DataURL(FileReader)绕过。注：DataURL 不受 URL 长度限制影响（实际可到 50MB+）。 */
@@ -3152,7 +2674,7 @@ function xlsCur(d){
   /* 顶栏信息（页码/页数 置右上角，与预览一致） */
   set(1,0,'预录入编号：'+(H.preNo||''),1);
   set(1,2,'海关编号：'+(H.customsNo||''),3);
-  set(1,4,'发票号：'+(H.invNo||'').trim(),6); /* 2026-10-13 用户定稿：发票号只认手填，不填=空，不再用合同号顶替 */
+  set(1,4,'发票号：'+(H.no||H.invNo||''),6); /* 发票号=合同协议号(H.no)，与全系统一致；H.invNo 仅作兜底 */
   set(1,7,'委托协议号：'+(H.entrustNo||''),9);
   set(1,10,'页码/页数：1/1',13);
   /* 境内发货人 / 出境关别 / 出口日期 / 申报日期 / 备案号 */
@@ -3313,11 +2835,11 @@ function xlsTable(type,d){
     /* R4 发票编号:(16号粗体右对齐)+编号(不合并F:G,便于手动填充) */
     R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
     R[r][5]={t:'s',v:'发票编号：',s:{alignment:{horizontal:'right',vertical:'center'}}};
-    putCell(R,r,6,(d.invNoF||'')); noB.push(r); r++;
+    putCell(R,r,6,no||''); noB.push(r); r++;
     /* R5 致 / 日期(16号粗体右对齐,G列不合并便于填充) */
     addRow(['致：',H.consignee,'','','','','']); noB.push(r); addMerge(MG,r,1,4);
     R[r][5]={t:'s',v:'日期：',s:{alignment:{horizontal:'right',vertical:'center'}}};
-    putCell(R,r,6,d.invDateF||''); r++;
+    putCell(R,r,6,H.invoiceDate||''); r++;
     /* R6 付款方式:(16号粗体右对齐,G列不合并便于填充) */
     R[r]=R[r]||[]; for(let c=0;c<5;c++) R[r][c]='';
     R[r][5]={t:'s',v:'付款方式：',s:{alignment:{horizontal:'right',vertical:'center'}}};
@@ -3374,7 +2896,7 @@ function xlsTable(type,d){
     R[r][0]={t:'s',v:'PACKING LIST',s:{alignment:{horizontal:'center',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}};
     addMerge(MG,r,0,NC2-1); noB.push(r); r++;
     /* R2 Date: */
-    addRow2(['','','','','','','Date：',d.invDateF||'']); noB.push(r); r++;
+    addRow2(['','','','','','','Date：',H.invoiceDate||'']); noB.push(r); r++;
     /* 补列宽：实际 NC2=8 但需 8 列; 但模板 H 用了 N.W.。改为 7 列 G:H 合并的方式更贴近模板 */
     /* 改回 7 列 A-G + 8 列 H 但保持 H 列参与 G:H 合并表达"GW 和 NW 一对" */
     /* 模板 R6: A6:F6列头(G6:G.W.(KG): H6 隐含) R7: A7:N/M  B7:Desc ... G7:9.6  H7:8.4 */
@@ -3382,7 +2904,7 @@ function xlsTable(type,d){
     /* 上面 addRow2 已写到 H 列; 但我们的 noB 集合只对 xwsStyle 有效,边框按列渲染 */
 
     /* R3 Invoice No: */
-    addRow2(['','','','','','','Invoice No:',(d.invNoF||'')]); noB.push(r); r++;
+    addRow2(['','','','','','','Invoice No:',no]); noB.push(r); r++;
     /* R4 To Messrs + Contract No */
     addRow2(['To  Messrs: ',H.consignee,'','','','','Contract No:',H.no||no]); noB.push(r); addMerge(MG,r,1,5); r++;
     /* R5 Shipped(从东莞 至 最终目的国) + Terms of Payment */
@@ -3430,8 +2952,8 @@ function xlsTable(type,d){
     /* R1 空 */ noB.push(r); r++;
     /* R2 标题 */ R[r]=R[r]||[]; for(let c=1;c<NC;c++) R[r][c]=''; R[r][0]={t:'s',v:'INVOICE',s:{alignment:{horizontal:'center',vertical:'center'},font:{sz:16,name:'宋体',bold:true}}}; addMerge(MG,r,0,6); noB.push(r); r++;
     /* R3 空 */ noB.push(r); r++;
-    /* R4 Invoice No(标签F列/值G列,不合并) */ addRow(['','','','','','Invoice No: ',(d.invNoF||'')]); noB.push(r); r++;
-    /* R5 To Messrs / DATE(标签F/值G不合并) */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',d.invDateF||'']); noB.push(r); addMerge(MG,r,1,4); r++;
+    /* R4 Invoice No(标签F列/值G列,不合并) */ addRow(['','','','','','Invoice No: ',no]); noB.push(r); r++;
+    /* R5 To Messrs / DATE(标签F/值G不合并) */ addRow(['To  Messrs: ',H.consignee,'','','','DATE: ',H.invoiceDate||'']); noB.push(r); addMerge(MG,r,1,4); r++;
     /* R6 Terms(标签F/值G不合并) */ addRow(['','','','','','Terms of Payment: ',H.tradeTerm||'']); noB.push(r); r++;
     /* R7 列头 */ addRow(['Mark & No','Description','Model','Quantity','','Unit price('+d.cur+')','Amount('+d.cur+')']); r++;
     /* R8-R12 数据 (繁体 fan) */
@@ -3466,8 +2988,15 @@ function xlsTable(type,d){
     return wsCI;
   }
 
-  /* 2026-10-13 删除死代码：旧版简体销售合同分支（dates.sales 自动日期）——xlsSheetFor 已将「销售合同」路由到繁体主版式 xlsSalesContract(手填签订日期)，此分支永不执行；同时废弃其旧注释「发票号=合同协议号」口径 */
-  return null;
+  /* 销售合同 - 保持原样 */
+  title='销售合同'; const headArr=[['卖方(供货)：'+H.shipper,'买方：'+H.consignee],['合同号：'+(H.no||no)+'  日期：'+d.dates.sales+'  成交方式：'+H.tradeTerm+'  目的国：'+cnCountry(H.destCountry)]];
+  putCell(R,r,0,title); addMerge(MG,r,0,5); noB.push(r); r++;
+  headArr.forEach(line=>{ putCell(R,r,0,line.join('    ')); addMerge(MG,r,0,5); noB.push(r); r++; });
+  const cols=[['SKU',18],['品名',28],['HS',14],['数量',10],['单价('+H.currency+')',14],['金额',14]];
+  cols.forEach((c,i)=>putCell(R,r,i,c[0])); r++;
+  d.lines.forEach(l=>{ [l.sku,l.name,l.hs,l.qty,l.decl,l.amount].forEach((v,i)=>putCell(R,r,i,v)); r++; });
+  putCell(R,r,0,'合同总额'); addMerge(MG,r,0,4); putCell(R,r,5,d.totalAmount); r++;
+  return xwsFrom(R,MG,CN(cols),{noBorderRows:noB,lrRows:lrR});
 }
 /* 销售合同(繁体，仿用户模板 合約編號：HT1781940.docx)：
    甲方/乙方随报关草单可编辑(非写死)；成交價格/合約貨幣/運輸方式/交貨日期随草单；
@@ -3632,7 +3161,7 @@ function xlsContract(c,d,idx){
   rrow('乙方账户信息应与合同及所开发票信息相一致。若因乙方原因导致合同、发票等信息有误，付款时间做相应顺延，甲方不承担任何责任。');
   row('');
   row('三、交货时间、地点');
-  two('1.交货时间：'+(fmtDateCN(H.deliveryDate)||'____')+'前','2.交货地点：'+(H.deliveryPlace||cleanDeliveryPlace(partyProfile(H.shipper||'').addr)));
+  two('1.交货时间：'+(fmtDateCN(H.deliveryDate)||'____')+'前','2.交货地点：'+(H.deliveryPlace||''));
   lrow('运输及费用：由乙方承担。乙方负责陆运送货至指定地点，承担运输风险，包装需符合国家标准。');
   row('');
   row('四、验收及质保');
@@ -3656,69 +3185,7 @@ function xlsContract(c,d,idx){
   autoHeightsSheetJS(_wsC);   /* 行高自适应(2026-09-11): 兜底采购合同长条款行加高 */
   return _wsC;
 }
-/* 送货单/入库单 xlsx 构建（2026-10-12 v2.25）：每家一级供应商一份，与采购合同同源 c.items；7列 A-G */
-function xlsVoucher(type,c,d){
-  const H=d.header; const R=[]; const MG=[]; let r=0;
-  const isIn=type==='入库单';
-  const coTitle=isIn?(H.partyB&&H.partyB.name||H.shipper||''):c.supplier;
-  const C=7;
-  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
-  const two=(lt,rt)=>{putCell(R,r,0,lt);addMerge(MG,r,0,3);putCell(R,r,4,rt);addMerge(MG,r,4,6);r++;};
-  /* 表头两行(公司名/单据标题)统一 16 号宋体加粗(2026-10-12)：与 HTML 版式 16px 对齐，机制同 INVOICE/PACKING LIST 标题 */
-  const trow=(t)=>{R[r]=R[r]||[];R[r][0]={t:'s',v:t,s:{font:{name:'宋体',sz:16,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true}}};addMerge(MG,r,0,C-1);r++;};
-  trow(coTitle);
-  trow(type==='送货单'?'送货单':type);
-  const PB=(type==='送货单')?(tier1Profile(c.supplier||'')||{}):{};
-  if(isIn){ two('采货单号：'+(c._no||''),'入库单号：'+(c.rkNo||'')); }
-  else{ /* 对齐供应商原版(2026-10-13)：标签格两行堆叠+数值独立相邻格（原版 E3/F3:G3 结构） */
-    putCell(R,r,0,'录单日期：'+((d.header&&d.header.shipDate)||'')); addMerge(MG,r,0,3);
-    putCell(R,r,4,'送货单号\n采购单号'); putCell(R,r,5,(c._no||'')); addMerge(MG,r,5,6); r++;
-    two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：'+(PB.shr||'____________'));
-    two('送货地址：'+cleanDeliveryPlace((H.partyB&&H.partyB.addr)||''),'联 系 人：'+(PB.contact||'____________'));
-    two('手　机：'+(PB.tel||'____________'),'电　话：'+(PB.phone||'____________')); }
-  ['序号','产品名称','具体型号','材质标准','单位','数量','备注'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  c.items.forEach((l,i)=>{ [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,''].forEach((v,j)=>putCell(R,r,j,v)); r++; });
-  putCell(R,r,0,'合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
-  if(isIn){ two('入库时间：'+((d.header&&d.header.shipDate)||''),'录入人员：____________'); }
-  else{ row('注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。'); two('开单人：____________','收货人：____________'); two('日　期：____________','日　期：____________'); }
-  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:26},{wch:14},{wch:8},{wch:10},{wch:12}]);
-  autoHeightsSheetJS(_ws);
-  return _ws;
-}
-/* 报价单 xlsx 构建（2026-10-12 v2.25）：供应商版简体/销售版繁体，逐 SKU 一行 */
-function xlsQuoteSupplier(c,d){
-  const R=[]; const MG=[]; let r=0; const C=7;
-  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
-  R[r]=R[r]||[];R[r][0]={t:'s',v:(c.supplier||'')+' 产品报价单',s:{font:{name:'宋体',sz:16,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true}}};addMerge(MG,r,0,C-1);r++;
-  ['序号','产品名称','型号','材质标准','单位','数量','单价'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  (c.qitems||[]).forEach((q,i)=>{ [i+1,q.name,q.model,q.mat,q.unit,q.qty,q.purTax].forEach((v,j)=>putCell(R,r,j,v)); r++; });
-  row('报价单位：人民币元（含 13% 增值税）　　报价方：'+(c.supplier||''));
-  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:22},{wch:14},{wch:8},{wch:10},{wch:12}]);
-  autoHeightsSheetJS(_ws); return _ws;
-}
-/* 询价单（2026-10-14 v2.27）：逐SKU繁体，單價留空由報價方填寫，樣本1:1 */
-function xlsInquiry(c,d){
-  const R=[]; const MG=[]; let r=0; const C=7;
-  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
-  R[r]=R[r]||[];R[r][0]={t:'s',v:'詢　價　單',s:{font:{name:'宋体',sz:16,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true}}};addMerge(MG,r,0,C-1);r++;
-  ['序號','產品名稱','型號','材質標準','單位','數量','單價'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  (c.qitems||[]).forEach((q,i)=>{ [i+1,q.nameF,q.model,q.matF,q.unitF,q.qty,''].forEach((v,j)=>putCell(R,r,j,v)); r++; });
-  putCell(R,r,0,'合計'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
-  row('詢價方：'+(d.shipperFan||'')+'　　報價方：'+(c.supplier||'')+'　　單價由報價方填寫（人民幣元）');
-  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:22},{wch:14},{wch:8},{wch:10},{wch:12}]);
-  autoHeightsSheetJS(_ws); return _ws;
-}
-function xlsQuoteSales(d){
-  const R=[]; const MG=[]; let r=0; const C=7;
-  const row=t=>{putCell(R,r,0,t);addMerge(MG,r,0,C-1);r++;};
-  R[r]=R[r]||[];R[r][0]={t:'s',v:(d.shipperFan||'')+'銷售報價單',s:{font:{name:'宋体',sz:16,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true}}};addMerge(MG,r,0,C-1);r++;
-  ['序號','產品名稱','型號','材質標準','單位','數量','單價'].forEach((h,i)=>putCell(R,r,i,h)); r++;
-  (d.qrows||[]).forEach((q,i)=>{ [i+1,q.nameF,q.model,q.matF,q.unitF,q.qty,q.sales].forEach((v,j)=>putCell(R,r,j,v)); r++; });
-  row('報價單位：人民幣元　　報價方：'+(d.shipperFan||''));
-  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:22},{wch:14},{wch:8},{wch:10},{wch:12}]);
-  autoHeightsSheetJS(_ws); return _ws;
-}
-function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='送货单'||type==='入库单') return null; if(type==='供应商报价单') return null; if(type==='询价单') return null; if(type==='销售报价单') return xlsQuoteSales(d); if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
+function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(type==='国内采购合同') return null; if(type==='销售合同') return xlsSalesContract(d); return xlsTable(type,d); }
 /* ========== A4 打印设置（2026-09-07）==========
    只注入打印层参数(paperSize/orientation/fitToPage/边距/居中/打印区域)，
    不触碰单元格内容/样式/合并 —— 屏幕显示 100% 不变，仅 Ctrl+P 打印时生效。
@@ -3754,8 +3221,6 @@ async function composeSetWorkbook(doc,prefix){
   const sj=XLSX.utils.book_new(); let addedSj=false;
   (doc.out||[]).forEach(function(o){
     if(o.type==='国内采购合同') return;
-    /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份 sheet（与采购合同同源 contracts） */
-    if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'||o.type==='询价单'){ (d.contracts||[]).forEach(function(c){ const wsV=(o.type==='供应商报价单')?xlsQuoteSupplier(c,d):((o.type==='询价单')?xlsInquiry(c,d):xlsVoucher(o.type,c,d)); XLSX.utils.book_append_sheet(sj,wsV,sheetName((prefix||'')+o.type+'_'+c.supplier)); addedSj=true; }); return; }
     const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(sj,ws,sheetName((prefix||'')+o.type)); addedSj=true; }
   });
   /* 采购页走 exceljs 模板盖章 → 与 SheetJS 页合成单工作簿 */
@@ -3774,8 +3239,8 @@ async function composeSetWorkbook(doc,prefix){
       const PB=c.purchaseB||{},PA=c.purchaseAcct||{};
       const items=(c.items||[]).map(function(l){ var up=(l.taxPrice!==undefined&&l.taxPrice!=='')?(+l.taxPrice):decRound((+l.cost||0)*1.13,4); return {name:l.name,model:l.model,mat:l.mat||'',unit:l.unit||'个',qty:(+l.qty||0),up:(+up).toFixed(4),sub:(l.taxAmount!==undefined&&l.taxAmount!=='')?(+l.taxAmount).toFixed(2):decRound((+up)*(+l.qty||0),2).toFixed(2)}; });
       const pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
-        deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.pdeliveryDate)||'':(H.pdeliveryDate||''),
-        deliveryPlace:H.deliveryPlace||cleanDeliveryPlace(partyProfile(H.shipper||'').addr),acctBank:PA.bank||'',acctNo:PA.no||'',
+        deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.deliveryDate)||'':(H.deliveryDate||''),
+        deliveryPlace:H.deliveryPlace||'',acctBank:PA.bank||'',acctNo:PA.no||'',
         signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
       await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
     }
@@ -3786,26 +3251,6 @@ async function composeSetWorkbook(doc,prefix){
   /* 采购页无模板：xlsContract 并入 SheetJS */
   if(hasPur){ (d.contracts||[]).forEach(function(c,idx){ XLSX.utils.book_append_sheet(sj,xlsContract(c,d,idx),sheetName((prefix||'')+'采购合同_'+c.supplier)); addedSj=true; }); }
   return addedSj?{type:'sheetjs', wb:sj}:null;
-}
-/* 导出文件名（2026-10-13 v2.25 用户拍板最终版）：
-   exportNo(d)={合同号}——通用段（消毒）；exportFname(d)={合同号}_{国家}_{空运|海运}——仅报关草单用（富名）。
-   单据类型段/供应商段由调用方拼接；采购侧单据合同号段用采购合同编号(-1/-2=c._no)。 */
-/* 供应商简称（2026-10-14 用户定稿）：档案 tier1Profiles.short，未维护回退全名（不造值） */
-function supShort(sv){const _p=tier1Profile(sv||'');const _s=_p&&String(_p.short||'').trim();return _s||sv||'';}
-/* 导出时间戳：YYYYMMDD_HHmm（报价单类文件名用，同天多版不撞名） */
-function dtStamp(){const n=new Date(),z=x=>String(x).padStart(2,'0');return ''+n.getFullYear()+z(n.getMonth()+1)+z(n.getDate())+'_'+z(n.getHours())+z(n.getMinutes());}
-function exportNo(d){
-  const H=(d&&d.header)||{};
-  return String(H.no||'').replace(/[,，]/g,'-').replace(/[\\/:*?"<>|]/g,'').trim()||'未编合同号';
-}
-function exportFname(d,suffix){
-  const H=(d&&d.header)||{};
-  const cn=String(H.destCountry||'').split(' ').slice(1).join('').trim();
-  const tm=String(H.transMode||'');
-  let tr=''; if(tm.indexOf('航空')>=0)tr='空运'; else if(tm.indexOf('水路')>=0)tr='海运'; else tr=tm.replace(/^\d+\s*/,'').replace(/运输/g,'').trim();
-  /* 境外收货人=表头 consignee（2026-10-13 补段：此前实现遗漏） */
-  const cns=String(H.consignee||'').replace(/[\\/:*?"<>|]/g,'').trim();
-  return exportNo(d)+(cn?'_'+cn:'')+(tr?'_'+tr:'')+(cns?'_'+cns:'')+(suffix||'');
 }
 async function downloadSetExcel(doc,fname,prefix){
   const r=await composeSetWorkbook(doc,prefix);
@@ -3828,19 +3273,11 @@ function downloadDocXlsx(docI,idx){
   ensureXLSX(function(){
     try{
       const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
-      const _PUR=['国内采购合同','送货单','入库单'];
-      const _QT=['供应商报价单','询价单'];
-      const _fx=(o.type==='报关草单')?(exportFname(d)+'_报关草单'):((o.type==='销售报价单')?(o.type+'_'+dtStamp()):((_QT.indexOf(o.type)>=0)?(o.type+((d.contracts&&d.contracts.length===1)?('_'+supShort(d.contracts[0].supplier)):'')+'_'+dtStamp()):(((_PUR.indexOf(o.type)>=0)&&d.contracts&&d.contracts.length===1)?((d.contracts[0]._no||exportNo(d))+'_'+o.type):(exportNo(d)+'_'+o.type))));
       dcLog('dl',doc.dftId,o.type,'Excel',safeRender(o.type,d));
       if(o.type==='国内采购合同'){
-        if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d,_fx).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
-        else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); xlsDownload(_fx,wb0); }
+        if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
+        else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); xlsDownload('国内采购合同',wb0); }
         return;
-      }
-      /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份 sheet */
-      if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'||o.type==='询价单'){
-        const wbv=XLSX.utils.book_new(); d.contracts.forEach(c=>{ const wsV=(o.type==='供应商报价单')?xlsQuoteSupplier(c,d):((o.type==='询价单')?xlsInquiry(c,d):xlsVoucher(o.type,c,d)); XLSX.utils.book_append_sheet(wbv,wsV,sheetName(o.type+'_'+c.supplier)); });
-        xlsDownload(_fx,wbv); return;
       }
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(o.type));
@@ -3852,8 +3289,8 @@ function downloadDocXlsx(docI,idx){
             const ej=new ExcelJS.Workbook(); await ej.xlsx.load(sjBuf);
             ej.worksheets.forEach(function(w){ applyA4PageSetup(w,o.type); });
             const b=await ej.xlsx.writeBuffer();
-            _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),_fx+'.xlsx');
-          }catch(e2){ console.warn('A4 注入失败回退 SheetJS',e2); xlsDownload(_fx,wb); }
+            _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),o.type+'.xlsx');
+          }catch(e2){ console.warn('A4 注入失败回退 SheetJS',e2); xlsDownload(o.type,wb); }
         })();
       });
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
@@ -3883,7 +3320,7 @@ function downloadDocWord(docI,idx){
       html=renderTpl(builtin(o.type,d),d);
     }
     dcLog('dl',doc.dftId,o.type,'Word(doc)',html);
-    docFromHtml(html,exportNo(d)+'_'+name);
+    docFromHtml(html,name);
   }catch(e){ alert('Word 导出出错：'+e.message); console.error(e); }
 }
 function downloadAllXlsx(){
@@ -3894,7 +3331,7 @@ function downloadAllXlsx(){
       const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
       /* 含采购页 → exceljs 合成单工作簿(采购页并入)；否则 SheetJS 多sheet */
       if(hasPur && window.__PURCHASE_TPL_B64__){
-        ensureExcelJS(function(){ downloadSetExcel(doc,exportNo(buildData(doc)),'').catch(function(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }); });
+        ensureExcelJS(function(){ downloadSetExcel(doc,'整套出口单证_多Sheet工作簿','').catch(function(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }); });
         return;
       }
       const wb=XLSX.utils.book_new(); let added=false;
@@ -3902,7 +3339,7 @@ function downloadAllXlsx(){
         if(o.type==='国内采购合同'){ (buildData(doc).contracts||[]).forEach(function(c,ix){ XLSX.utils.book_append_sheet(wb,xlsContract(c,buildData(doc),ix),sheetName('采购合同_'+c.supplier)); added=true; }); return; }
         const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
       });
-      if(added){ xlsDownload(exportNo(buildData(doc)), wb); }
+      if(added){ xlsDownload('整套出口单证_多Sheet工作簿', wb); }
       else { alert('暂无可导出的单据'); return; }
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
   });
@@ -3962,10 +3399,10 @@ function batchDownloadHTML(){
           if(o.type==='国内采购合同'){
             d.contracts.forEach(function(c){
               const one=safeRender(o.type,d,{contracts:[c]});
-              dl((c._no||exportNo(d))+'_采购合同_'+c.supplier,one);
+              dl('采购合同_'+c.supplier,one);
             });
           } else {
-            dl((o.type==='报关草单'?exportFname(d)+'_报关草单':((o.type==='销售报价单'||o.type==='供应商报价单'||o.type==='询价单')?o.type+'_'+dtStamp():exportNo(d)+'_'+o.type)),safeRender(o.type,d));
+            dl(o.type,safeRender(o.type,d));
           }
         });
       }catch(e){ alert('批量 HTML 下载出错：'+e.message); }
@@ -3983,7 +3420,7 @@ function batchDownloadXlsx(){
             const doc=DB.docs[docI]; if(!doc) return;
             dcLog('dl',doc.dftId,'整套单据(批量)','Excel',safeRender('报关草单',buildData(doc)));
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
-            const fname=exportNo(buildData(doc));
+            const fname='整套_'+(doc.dftId||('set'+(i+1)));
             if(hasPur && window.__PURCHASE_TPL_B64__){
               ensureExcelJS(function(){ downloadSetExcel(doc,fname,'').catch(function(e){ alert('批量 EXCEL 导出出错：'+e.message); console.error(e); }); });
             } else {
@@ -4016,7 +3453,7 @@ function batchDownloadMergedXlsx(){
             const doc=DB.docs[docI]; if(!doc) return;
             dcLog('dl',doc.dftId,'整套单据(合并)','Excel',safeRender('报关草单',buildData(doc)));
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
-            const fname=exportNo(buildData(doc));
+            const fname='合并set'+(idx+1);
             if(hasPur){ ensureExcelJS(function(){ downloadSetExcel(doc,fname,'set'+(idx+1)+'_').catch(function(e){ alert('合并 EXCEL 导出出错：'+e.message); console.error(e); }); }); }
             else {
               const wb=XLSX.utils.book_new(); let added=false;
@@ -4041,7 +3478,7 @@ function batchDownloadMergedXlsx(){
         });
       });
       if(!added){ alert('所选无内容'); return; }
-      xlsDownload(exportNo(buildData(DB.docs[sels[0]]))+'_等'+sels.length+'套', wb);
+      xlsDownload('合并整套单证', wb);
     }catch(e){ alert('合并 EXCEL 出错：'+e.message); console.error(e); }
   });
 }
@@ -4256,16 +3693,6 @@ function acctFor(cur,owner){
 }
 /* 主体档案：发货人/收货人/采购主体 → {addr,contact,email,tel}(单据自动引用) */
 function partyProfile(name){return (DB.parties.profiles&&DB.parties.profiles[name])||{};}
-/* 交货地点清洗（2026-10-13 用户要求）：档案地址兜底时去掉「N室」段（如 601室）；仅作用于兜底值，表头手填值保持原样 */
-function cleanDeliveryPlace(s){return String(s||'').replace(/[,，]?\s*\d+室/g,'').trim();}
-/* 发票号解析（2026-10-13 用户定稿）：INV+年月日6位(YYMMDD)+序号≥2位，如 INV26100101=2026-10-01 第01号 */
-function parseInvNo(v){
-  const m=/^INV(\d{6})\d{2,}$/i.exec(String(v||'').trim());
-  if(!m) return null;
-  const y=m[1].slice(0,2),mo=m[1].slice(2,4),dd=m[1].slice(4,6);
-  if(+mo<1||+mo>12||+dd<1||+dd>31) return null;
-  return {date:'20'+y+'-'+mo+'-'+dd};
-}
 function setPartyProfile(name,f,v){if(!DB.parties.profiles)DB.parties.profiles={};if(!DB.parties.profiles[name])DB.parties.profiles[name]={};DB.parties.profiles[name][f]=v;save();savedTip();}
 /* v2.18：行内自动保存的右下角反馈（"✓ 已保存"闪现 1.4s）—— 主体维护无保存按钮，靠它确认修改已生效 */
 function savedTip(){let t=document.getElementById('savedTipEl');if(!t){t=document.createElement('div');t.id='savedTipEl';t.style.cssText='position:fixed;right:18px;bottom:18px;z-index:99999;background:#123c26;color:#7fe0a7;border:1px solid #2a6b45;padding:6px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none';document.body.appendChild(t);}t.textContent='✓ 已保存';t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},1400);}
@@ -4359,15 +3786,6 @@ function impParty(ev){
   };rd.readAsText(f);
   ev.target.value='';
 }
-/* v2.37 合规黑名单维护（设置中心→供应商归集 Tab） */
-function blAdd(){
-  const n=prompt('供应商全名：');if(!n||!n.trim())return;
-  const k=prompt('匹配关键词（行供应商名包含即命中，如「贝蒙沃森」）：',n.trim().replace(/（深圳）.*$/,'').slice(0,6));if(!k||!k.trim())return;
-  const rs=prompt('原因/备注：','不合规供应商，禁止合规出口');
-  (DB.complianceBL=DB.complianceBL||[]).push({name:n.trim(),key:k.trim(),reason:(rs||'').trim(),date:today()});
-  save();if(typeof renderSetBody==='function')renderSetBody();
-}
-function blDel(i){if(!confirm('删除该黑名单项？删除后相关供应商恢复可合规出口。'))return;(DB.complianceBL=DB.complianceBL||[]).splice(i,1);save();if(typeof renderSetBody==='function')renderSetBody();}
 function renderSetBody(){
   const b=document.getElementById('setBody');let h='';
   if(curTab==='party'){
@@ -4463,11 +3881,6 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
     h+='<div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
     renderSkuTable();
   } else if(curTab==='supmap'){
-    /* v2.37 供应商合规黑名单维护（预置：贝蒙沃森（深圳）商贸有限公司） */
-    const _blUI=blList();
-    let _blHtml='<div class="cd" style="margin-bottom:12px"><div class="hd"><div class="bar" style="background:#d9534f"></div><p class="ttl">供应商合规黑名单（禁止合规出口/退税）</p><span class="cnt">'+_blUI.length+' 家</span><span style="flex:1"></span><button class="small" onclick="blAdd()">+ 新增</button></div>';
-    _blHtml+=_blUI.map((b,i)=>'<div class="mline" style="display:flex;gap:8px;align-items:center"><span class="ic badge bad">✕</span><span style="flex:1"><b>'+esc(b.name||b.key)+'</b> <span class="muted">关键词「'+esc(b.key)+'」 · '+esc(b.reason||'')+' · '+esc(b.date||'')+'</span></span><button class="small" onclick="blDel('+i+')">删除</button></div>').join('');
-    _blHtml+='<div class="note">命中规则：行供应商（二级原厂/归集一级/商品库供应商字段）包含关键词即命中 → B12 阻断该票锁定 + 合并混票拦截 + 退税测算排除。名单随共享配置发布，全公司统一。</div></div>';
     /* 二级工厂 = 商品库已出现的(可隐藏) ∪ 手工维护 extraSup2(可改/删)；排除已隐藏 */
     const hp=new Set(DB.hiddenParties||[]);
     const hs=new Set(DB.hiddenSup2||[]);
@@ -4477,11 +3890,11 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
     const secs=[...secSet].filter(v=>!hs.has(v)).sort();
     const sm=DB.supplierMap||{};
     const t1=(DB.tier1Suppliers||[]).filter(s=>s&&s.trim()&&!hp.has(s.trim()));
-    h=_blHtml+`<div class="erp">
+    h=`<div class="erp">
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">一级供应商(签约主体)</p><span class="cnt">${t1.length} 个</span></div>
-        <table><tr><th style="width:11%">名称(采购合同抬头)</th><th style="width:8%">简称(文件名用)</th><th style="width:12%">地址(乙方)</th><th style="width:7%">联系人</th><th style="width:8%">手机</th><th style="width:6%">电话</th><th style="width:7%">审核人</th><th style="width:8%">邮箱</th><th style="width:7%">货源地代码</th><th style="width:8%">货源地名称</th><th style="width:8%">纳税人性质</th><th style="width:6%">征收率</th><th style="width:8%">操作</th></tr><tbody>
-          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.short||'')}" placeholder="如 广州自衍" onchange="setTier1Profile('${escQ(s)}','short',this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.tel||'')}" placeholder="手机" onchange="setTier1Profile('${escQ(s)}','tel',this.value)"></td><td><input value="${esc(p.phone||'')}" placeholder="如/" onchange="setTier1Profile('${escQ(s)}','phone',this.value)"></td><td><input value="${esc(p.shr||'')}" placeholder="审核人" onchange="setTier1Profile('${escQ(s)}','shr',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><select onchange="setVatType('${escQ(s)}',this.value)" title="退税测算用：缺省一般纳税人(不设限)"><option value="gen"${p.vatType==='small'?'':' selected'}>一般纳税人</option><option value="small"${p.vatType==='small'?' selected':''}>小规模纳税人</option></select></td><td><input type="number" min="0" max="17" step="1" value="${(p.vatType==='small'&&p.vatRate!==undefined&&p.vatRate!=='')?esc(p.vatRate):(p.vatType==='small'?'3':'13')}"${p.vatType==='small'?'':' disabled'} style="width:56px" title="小规模纳税人票面征收率(1/3)" onchange="setTier1Profile('${escQ(s)}','vatRate',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
+        <table><tr><th style="width:14%">名称(采购合同抬头)</th><th style="width:17%">地址(乙方)</th><th style="width:9%">联系人</th><th style="width:11%">邮箱</th><th style="width:8%">货源地代码</th><th style="width:10%">货源地名称</th><th style="width:12%">纳税人性质</th><th style="width:8%">征收率</th><th style="width:11%">操作</th></tr><tbody>
+          ${t1.map((s,i)=>{const di=DB.tier1Suppliers.indexOf(s);const p=tier1Profile(s);return `<tr><td><input value="${esc(s)}" onchange="updTier1(${di},this.value)"></td><td><input value="${esc(p.addr||'')}" placeholder="地址" onchange="setTier1Profile('${escQ(s)}','addr',this.value)"></td><td><input value="${esc(p.contact||'')}" placeholder="联系人" onchange="setTier1Profile('${escQ(s)}','contact',this.value)"></td><td><input value="${esc(p.email||'')}" placeholder="邮箱" onchange="setTier1Profile('${escQ(s)}','email',this.value)"></td><td><input value="${esc(p.originCode||'')}" placeholder="如44019" style="width:72px" onchange="setTier1Profile('${escQ(s)}','originCode',this.value)"></td><td><input value="${esc(p.originName||'')}" placeholder="如广州其他" style="width:92px" onchange="setTier1Profile('${escQ(s)}','originName',this.value)"></td><td><select onchange="setVatType('${escQ(s)}',this.value)" title="退税测算用：缺省一般纳税人(不设限)"><option value="gen"${p.vatType==='small'?'':' selected'}>一般纳税人</option><option value="small"${p.vatType==='small'?' selected':''}>小规模纳税人</option></select></td><td><input type="number" min="0" max="17" step="1" value="${(p.vatType==='small'&&p.vatRate!==undefined&&p.vatRate!=='')?esc(p.vatRate):(p.vatType==='small'?'3':'13')}"${p.vatType==='small'?'':' disabled'} style="width:56px" title="小规模纳税人票面征收率(1/3)" onchange="setTier1Profile('${escQ(s)}','vatRate',this.value)"></td><td><button class="btn del" onclick="if(confirm('删除该一级供应商?其下归集将清空'))delTier1(${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newTier1" placeholder="+ 新一级供应商(签约主体)"><button class="btn add" onclick="addTier1()">添加</button></div>
       </div>
@@ -4547,13 +3960,11 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
       <div class="field"><label>美元汇率（换汇成本核用）</label><input value="${DB.price.exch}" onchange="DB.price.exch=+this.value;save();"></div></div>
       <div class="note">定价公式（未来/现行口径 = 毛利率法）：<br><code>申报价 = 不含税采购价 ÷ (1 − 毛利率)</code><br>例：不含税 102.9 ÷ 0.8 = <b>128.625</b>。退税基数 = 不含税采购价；应退 = 不含税采购价 × 13%。历史旧单 3 步法（×1.20575）已弃用。</div>`;
   } else if(curTab==='mon'){
-    /* 方案B单源化（2026-10-12）：目录渲染 MON_CATALOG（与 runMonitor 同源），并显示 DB.monSync 自检结果 */
-    const _ms=DB.monSync||null;
-    const _bad=_ms&&(_ms.missing.length||_ms.extra.length);
-    h='<p class="muted">监控规则库（生成时后台静默跑，分 <span class="badge bad">BLOCK</span> 阻断 / <span class="badge warn">WARN</span> 提示）。本目录与执行层 runMonitor 单源联动'+(_ms?('，最近校验 '+_ms.at):'（尚未运行监控——打开任一草单点「重跑监控」即校验）')+'：</p>';
-    if(_bad)h+='<div class="note" style="color:#f85149;border:1px solid #f85149">⚠ 规则库与执行层不同步 —— 目录有但执行层缺失：'+(_ms.missing.join('、')||'无')+'；执行层有但目录缺失：'+(_ms.extra.join('、')||'无')+'。请同步 MON_CATALOG 与 runMonitor 后刷新。</div>';
-    ['A','B'].forEach(c=>{h+='<h4 style="margin:12px 0 6px">'+(c==='A'?'A · 报关单填制规范':'B · 国家出口退税政策')+'</h4>';
-      MON_CATALOG[c].forEach(x=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${x.id} ${x.t}</div>`);});
+    h='<p class="muted">监控规则库（生成时后台静默跑，分 <span class="badge bad">BLOCK</span> 阻断 / <span class="badge warn">WARN</span> 提示）。仅两大类，覆盖你要求的两套合规：</p>';
+    h+='<h4 style="margin:12px 0 6px">A · 报关单填制规范</h4>';
+    ['A1 表头必填项齐全','A2 贸易国≠运抵国(转售区分)','A3 成交方式与运费保费一致','A4 申报要素无空值','A5 HS 10位且与品名材质一致','A6 法定计量单位匹配','A7 单价×数量=总价','A8 毛重≥净重','A9 币制与发票一致','A10 生产销售单位=发货人(铁律)','A11 归类归并正确','A12 出口享惠与目的国协定一致'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
+    h+='<h4 style="margin:12px 0 6px">B · 国家出口退税政策</h4>';
+    ['B1 票流一致(待进项发票)','B2 应退=不含税×13% 计算正确','B3 供货企业具退税资格','B4 换汇成本合理','B5 退税率与HS匹配','B6 收汇完成','B7 分项核算','B8 申报期内','B9 申报价>成本(防倒挂)'].forEach(r=>h+=`<div class="mline"><span class="ic badge bad">✕</span>${r}</div>`);
     h+='<div class="note">B1/B6 需外部凭证（进项发票/收汇水单）核对，系统在监控中标记「待补」；其余规则实时校验数据。</div>';
   } else if(curTab==='tmpl'){
     const keys=Object.keys(DB.templates);
