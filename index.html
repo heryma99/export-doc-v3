@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.36 · 2026-10-22（箱矩阵真箱重精确分摊：解析「第N箱」矩阵底部 Weight of box/箱号 块，行毛重=Σ(箱重×件数份额)，取代混箱重复计重与比例估算；缺重箱/Σ箱重≠表头/中英标签边界齐备，解析失败自动落回 v2.35 比例分摊）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v2.37 · 2026-10-22（供应商合规黑名单：预置贝蒙沃森（深圳）商贸有限公司——B12 闸 BLOCK 不可锁定、合并混票拦截、退税测算排除、设置中心可维护名单；红线：只隔离不提供灰色通道）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -1622,6 +1622,10 @@ function genMergedDraft(ids){
   const base=ords[0];
   const bad=ords.find(o=>bucketKey(o)!==bucketKey(base));
   if(bad){alert('合并拦截：订单 '+bad.id+' 的「'+describeDiff(base,bad)+'」与其它单不一致，禁止同桶合并。请只选同红线维度的订单。');return;}
+  /* v2.37 合规闸：黑名单供应商与非黑名单来源禁止同票合并（防污染整票退税）。全部为黑名单来源的合并不拦（B12 仍 BLOCK 锁定） */
+  let _hasNC=false,_hasOK=false;
+  ords.forEach(o=>{ordItems(o).forEach(it=>{if(ncOfLine(it))_hasNC=true;else _hasOK=true;});});
+  if(_hasNC&&_hasOK){alert('合规拦截：所选订单混有「不合规供应商（见设置中心黑名单）」与合规供应商的货物——禁止同票合并，否则整票退税被污染。请分单：不合规部分单独成一票，处理通道与税务顾问确认。');return;}
   const destCountry=base.destCountry;
   /* 合并箱序全局错位（2026-10-14 修复）：各票 boxSeq 均从 1 起数，直接合并会跨票碰撞——按累计箱数偏移 */
   let _shift=0;const items=[];const _sums=[];const _refVers={};
@@ -2014,9 +2018,25 @@ function exportRebate(){
 /* MON_CATALOG：监控规则单一事实源（2026-10-12 方案B单源化）。
    设置中心「监控规则」Tab 渲染本常量；runMonitor 每次执行后比对实际 add 的 id 集合，
    不一致则写 DB.monSync 报警（设置中心目录顶部标红）——加/删规则时只改这里+runMonitor，忘了同步会自报警。 */
+/* ── v2.37 供应商合规黑名单（2026-10-22 用户确认）──
+   业务：不合规供应商（如贝蒙沃森（深圳）商贸有限公司）的货物禁止做合规出口/退税申报。
+   四层防线：B12 监控 BLOCK（不可锁定）+ 合并混票拦截 + 退税测算排除 + 设置中心维护。
+   匹配：行供应商（二级原厂 / 归集一级 / 商品库供应商字段）模糊命中关键词（全半角括号/空格/大小写归一）。
+   红线：系统只做隔离与标记，不提供任何灰色通道；货物去向由业务与税务顾问确认。 */
+const _BL_DEF=[{key:'贝蒙沃森',name:'贝蒙沃森（深圳）商贸有限公司',reason:'不合规供应商，禁止合规出口',date:'2026-10-22'}];
+function _ncNorm(s){return String(s||'').toLowerCase().replace(/\s+/g,'').replace(/（/g,'(').replace(/）/g,')');}
+function blList(){return ((DB.complianceBL&&DB.complianceBL.length)?DB.complianceBL:_BL_DEF).filter(x=>x&&x.key);}
+function ncHitSupplier(sup){const t=_ncNorm(sup);if(!t)return null;const L=blList();for(let i=0;i<L.length;i++){if(t.indexOf(_ncNorm(L[i].key))>=0)return L[i];}return null;}
+function ncOfLine(l){
+  if(!l)return null;
+  let h=ncHitSupplier(l.supplier)||ncHitSupplier(consolidatedSupplier(l.supplier));
+  if(h)return h;
+  const s=(typeof getSku==='function')?getSku(l.sku):null;
+  return s?ncHitSupplier(s.supplier||s.factory):null;
+}
 const MON_CATALOG={
  A:[{id:'A1',t:'表头必填项齐全(9项报关要素+发票号/销售交货日期/采购交货日期)'},{id:'A2',t:'贸易国≠运抵国(转售场景应区分)'},{id:'A3',t:'成交方式与运费/保费一致(非FOB需核对)'},{id:'A4',t:'申报要素无空值(品牌类型/HS齐全)'},{id:'A5',t:'HS为10位商品编号'},{id:'A6',t:'法定计量单位与申报单位匹配'},{id:'A7',t:'单价×数量=总价(金额一致)'},{id:'A8',t:'毛重≥净重'},{id:'A9',t:'币制与随附发票一致'},{id:'A10',t:'生产销售单位=境内发货人(铁律)'},{id:'A11',t:'归类归并正确(同HS+同要素+同单价可归并)'},{id:'A12',t:'出口享惠与目的国协定一致'},{id:'A13',t:'商品项数≤50项/单(海关总署公告2019-18号)'},{id:'A14',t:'交货日期≥签订日期(销售/采购合同防倒签)'},{id:'A15',t:'净重自洽(净≈毛/隐含皮重超界/同票离群,WARN)'},{id:'A16',t:'发票号规范(格式/日期晚于签订日期,WARN)'},{id:'A17',t:'明细行合计=表头合计(毛/净)'},{id:'A18',t:'表头毛/净重≥1(单一窗口录入规则)'},{id:'A19',t:'件数≠0(报关单填制规范:件数不得为0)'}],
- B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购价(防倒挂·不含税口径)'}]
+ B:[{id:'B1',t:'采购进项发票与报关单品名/数量一致(票流一致)'},{id:'B2',t:'应退税额=Σ不含税采购价×实际退税率(按编码率×供应商主体孰低)'},{id:'B3',t:'供货企业具退税资格'},{id:'B4',t:'换汇成本合理'},{id:'B5',t:'商品退税率与HS匹配'},{id:'B6',t:'收汇完成(资金流一致)'},{id:'B7',t:'同票多品类不同退税率分项核算'},{id:'B8',t:'申报日期在退税申报期内'},{id:'B9',t:'申报价>成本(防倒挂)'},{id:'B10',t:'货源地与供应商档案一致(退税归属)'},{id:'B11',t:'归集加权申报价≥组内最高采购价(防倒挂·不含税口径)'},{id:'B12',t:'供应商合规闸(黑名单供应商禁止合规出口)'}]
 };
 function runMonitor(did){
   const d=DB.drafts.find(x=>x.id===did);const R=[];let block=0,warn=0;
@@ -2116,12 +2136,13 @@ function runMonitor(did){
   // B 出口退税政策
   /* 退税测算（v2.5 起）：用「真实退税率表 × 供应商主体性质」取代原硬编码 0.13。
      只改 B2/B5/B7 的「取值来源」，编号/其余检查项/阻断逻辑一律不动。 */
-  const _rb=rebateCalc({lines:L});
+  const _rb=rebateCalc({lines:L.filter(l=>!ncOfLine(l))});   /* v2.37：黑名单供应商行排除出退税测算（B12 点名），防止污染应退税额 */
+  const _ncCnt=L.filter(l=>ncOfLine(l)).length;
   const _unHs=[...new Set(_rb.unlisted.map(r=>r.hs||'(空编码)'))];
   const _rateTxt=_rb.rateSet.length?_rb.rateSet.map(r=>r+'%').join(' / '):'—';
   add('B','B1','采购进项发票与报关单品名/数量一致(票流一致)','WARN',false,'待上传进项发票核对票流（外部凭证）');
   add('B','B2','应退税额=Σ不含税采购价×实际退税率 计算正确',_unHs.length?'WARN':(_rb.total>0?'OK':'WARN'),_unHs.length?false:_rb.total>0,
-    '应退 ¥'+_rb.total.toFixed(2)+(_unHs.length?('（'+_unHs.length+' 个编码未收录退税率，该部分未计入）'):'（逐行算：不含税采购价×实际退税率）'),true);
+    '应退 ¥'+_rb.total.toFixed(2)+(_unHs.length?('（'+_unHs.length+' 个编码未收录退税率，该部分未计入）'):'（逐行算：不含税采购价×实际退税率）')+(_ncCnt?('；已排除不合规供应商 '+_ncCnt+' 行（见 B12）'):''),true);
   const badsup=L.some(l=>l.supplier.includes('不退税'));
   add('B','B3','供货企业具退税资格',badsup?'WARN':'OK',!badsup,badsup?'存在标记「不退税」的供应商':'全部具退税资格');
   /* B10 货源地一致性：每项号货源地须从供应商档案带出(退税归属=进项发票地区)；未维护则 WARN */
@@ -2172,6 +2193,21 @@ function runMonitor(did){
   add('B','B8','申报日期在退税申报期内','OK','OK','申报日 '+H.declDate);
   const b9=L.every(l=>(+l.decl)>(+l.cost));
   add('B','B9','申报价>成本(防倒挂)',b9?'OK':'BLOCK',b9,'存在申报价≤成本，倒挂影响退税基数');
+  /* B12 供应商合规闸（2026-10-22 v2.37 用户确认）：黑名单供应商（预置：贝蒙沃森（深圳）商贸有限公司）的货物
+     禁止做合规出口/退税申报——涉及行 BLOCK 不可锁定；退税测算（B2）已排除该部分；提示分单隔离。
+     通道去向（不退税一般贸易/暂缓出货/换主体采购）由业务与税务顾问确认，系统只做隔离与标记。 */
+  (function(){
+    const _bl=blList();
+    const _nc=L.filter(l=>{const b=ncOfLine(l);if(b)l._blName=b.name||b.key;return !!b;});
+    if(!_bl.length){add('B','B12','供应商合规闸(黑名单供应商禁止合规出口)','OK',true,'黑名单为空');return;}
+    if(_nc.length){
+      const _cost=_nc.reduce((a,l)=>a+(+l.cost||0)*(+l.qty||0),0);
+      add('B','B12','供应商合规闸(黑名单供应商禁止合规出口)','BLOCK',false,
+        '涉不合规供应商「'+_nc[0]._blName+'」'+_nc.length+' 行（SKU：'+[...new Set(_nc.map(l=>l.sku))].slice(0,5).join(',')+(_nc.length>5?'…':'')+'）——不可做合规出口、本票不可锁定；不含税货值 ¥'+decRound(_cost,2)+' 已排除出退税测算（见 B2）。请分单隔离，处理通道与税务顾问确认');
+    } else {
+      add('B','B12','供应商合规闸(黑名单供应商禁止合规出口)','OK',true,'本票不涉及黑名单供应商（在册 '+_bl.length+' 家）');
+    }
+  })();
   /* 单源自检（2026-10-12 方案B）：实际执行的规则 id 集合 vs MON_CATALOG，不一致写 DB.monSync，设置中心标红报警。
      注意 id 本身已含 A/B 前缀（cat 是分组、id 是唯一键），直接用 r.id 比对，勿拼 cat+id（会变 AA1 双前缀）。 */
   (function(){
@@ -4286,6 +4322,15 @@ function impParty(ev){
   };rd.readAsText(f);
   ev.target.value='';
 }
+/* v2.37 合规黑名单维护（设置中心→供应商归集 Tab） */
+function blAdd(){
+  const n=prompt('供应商全名：');if(!n||!n.trim())return;
+  const k=prompt('匹配关键词（行供应商名包含即命中，如「贝蒙沃森」）：',n.trim().replace(/（深圳）.*$/,'').slice(0,6));if(!k||!k.trim())return;
+  const rs=prompt('原因/备注：','不合规供应商，禁止合规出口');
+  (DB.complianceBL=DB.complianceBL||[]).push({name:n.trim(),key:k.trim(),reason:(rs||'').trim(),date:today()});
+  save();if(typeof renderSetBody==='function')renderSetBody();
+}
+function blDel(i){if(!confirm('删除该黑名单项？删除后相关供应商恢复可合规出口。'))return;(DB.complianceBL=DB.complianceBL||[]).splice(i,1);save();if(typeof renderSetBody==='function')renderSetBody();}
 function renderSetBody(){
   const b=document.getElementById('setBody');let h='';
   if(curTab==='party'){
@@ -4381,6 +4426,11 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
     h+='<div class="note">源字段只读（来自商品信息表）；仅「供应商 / 品牌类型」可维护（写进覆盖层，体积小可持久化）。数据量大时按页加载，不撑爆本地存储。归类弹窗可「写回」更新此处。</div>';
     renderSkuTable();
   } else if(curTab==='supmap'){
+    /* v2.37 供应商合规黑名单维护（预置：贝蒙沃森（深圳）商贸有限公司） */
+    const _blUI=blList();
+    let _blHtml='<div class="cd" style="margin-bottom:12px"><div class="hd"><div class="bar" style="background:#d9534f"></div><p class="ttl">供应商合规黑名单（禁止合规出口/退税）</p><span class="cnt">'+_blUI.length+' 家</span><span style="flex:1"></span><button class="small" onclick="blAdd()">+ 新增</button></div>';
+    _blHtml+=_blUI.map((b,i)=>'<div class="mline" style="display:flex;gap:8px;align-items:center"><span class="ic badge bad">✕</span><span style="flex:1"><b>'+esc(b.name||b.key)+'</b> <span class="muted">关键词「'+esc(b.key)+'」 · '+esc(b.reason||'')+' · '+esc(b.date||'')+'</span></span><button class="small" onclick="blDel('+i+')">删除</button></div>').join('');
+    _blHtml+='<div class="note">命中规则：行供应商（二级原厂/归集一级/商品库供应商字段）包含关键词即命中 → B12 阻断该票锁定 + 合并混票拦截 + 退税测算排除。名单随共享配置发布，全公司统一。</div></div>';
     /* 二级工厂 = 商品库已出现的(可隐藏) ∪ 手工维护 extraSup2(可改/删)；排除已隐藏 */
     const hp=new Set(DB.hiddenParties||[]);
     const hs=new Set(DB.hiddenSup2||[]);
@@ -4390,7 +4440,7 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
     const secs=[...secSet].filter(v=>!hs.has(v)).sort();
     const sm=DB.supplierMap||{};
     const t1=(DB.tier1Suppliers||[]).filter(s=>s&&s.trim()&&!hp.has(s.trim()));
-    h=`<div class="erp">
+    h=_blHtml+`<div class="erp">
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#7F77DD"></div><p class="ttl">一级供应商(签约主体)</p><span class="cnt">${t1.length} 个</span></div>
         <table><tr><th style="width:11%">名称(采购合同抬头)</th><th style="width:8%">简称(文件名用)</th><th style="width:12%">地址(乙方)</th><th style="width:7%">联系人</th><th style="width:8%">手机</th><th style="width:6%">电话</th><th style="width:7%">审核人</th><th style="width:8%">邮箱</th><th style="width:7%">货源地代码</th><th style="width:8%">货源地名称</th><th style="width:8%">纳税人性质</th><th style="width:6%">征收率</th><th style="width:8%">操作</th></tr><tbody>
