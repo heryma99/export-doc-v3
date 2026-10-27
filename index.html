@@ -376,6 +376,7 @@ async function purchaseTplDownload(d,suffix){
     await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
   }
   outWb.worksheets.forEach(function(w){ applyA4PageSetup(w,'国内采购合同'); });
+  sealWorkbookAll(outWb);
   var b=await outWb.xlsx.writeBuffer();
   _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),(suffix||'国内采购合同')+'.xlsx');
 }
@@ -3781,6 +3782,7 @@ async function composeSetWorkbook(doc,prefix){
     }
     /* A4 打印设置注入(所有 sheet, 屏幕显示不受影响) */
     ej.worksheets.forEach(function(w){ applyA4PageSetup(w, w.name.replace(/^(set\d+_)/,'')); });
+    sealWorkbookAll(ej);
     return {type:'exceljs', wb:ej};
   }
   /* 采购页无模板：xlsContract 并入 SheetJS */
@@ -3851,6 +3853,7 @@ function downloadDocXlsx(docI,idx){
           try{
             const ej=new ExcelJS.Workbook(); await ej.xlsx.load(sjBuf);
             ej.worksheets.forEach(function(w){ applyA4PageSetup(w,o.type); });
+            sealWorkbookAll(ej);
             const b=await ej.xlsx.writeBuffer();
             _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),_fx+'.xlsx');
           }catch(e2){ console.warn('A4 注入失败回退 SheetJS',e2); xlsDownload(_fx,wb); }
@@ -3862,12 +3865,36 @@ function downloadDocXlsx(docI,idx){
 /* Word 导出：HTML → .doc(application/msword)，Word/WPS 直接打开；销售合同/国内采购合同用 */
 /* ===== 电子印章(v3.1)：销售合同/Invoice/装箱单 落款盖章，图源 assets/seal_*.png，转dataURI供Word导出 ===== */
 const SEAL={uris:{},on:localStorage.getItem('v3.sealOn')!=='0',wm:localStorage.getItem('v3.sealWm')!=='0'};
-function sealInit(){['clean','decl'].forEach(function(k){fetch('assets/seal_'+k+'.png?v=1').then(function(r){return r.ok?r.blob():Promise.reject();}).then(function(bl){var fr=new FileReader();fr.onload=function(){SEAL.uris[k]=fr.result;};fr.readAsDataURL(bl);}).catch(function(){});});}
+function sealInit(){['clean','decl'].forEach(function(k){fetch('assets/seal_'+k+'.png?v='+(k==='decl'?'2':'1')).then(function(r){return r.ok?r.blob():Promise.reject();}).then(function(bl){var fr=new FileReader();fr.onload=function(){SEAL.uris[k]=fr.result;};fr.readAsDataURL(bl);}).catch(function(){});});}
 function sealImgHtml(){if(!SEAL.on)return '';var u=SEAL.uris[SEAL.wm?'decl':'clean'];if(!u)return '';
   return '<img src="'+u+'" style="width:25mm;height:25mm;vertical-align:middle;opacity:.94">';}
 function sealSet(k,v){if(k==='on'){SEAL.on=v;localStorage.setItem('v3.sealOn',v?'1':'0');}else{SEAL.wm=v;localStorage.setItem('v3.sealWm',v?'1':'0');}}
 function sealBlockHtml(){if(!SEAL.on)return '';var u=SEAL.uris[SEAL.wm?'decl':'clean'];if(!u)return '';
   return '<div style="text-align:right;margin:10px 30px 0 0"><img src="'+u+'" style="width:25mm;height:25mm;opacity:.94"></div>';}
+/* Excel盖章：扫描定位——甲方（盖章）行盖A列(采购,井太兰=甲方)；否则表尾右侧。全try包裹绝不影响导出 */
+function sealWorkbookAll(wb){
+  if(!SEAL.on)return;
+  var uri=SEAL.uris[SEAL.wm?'decl':'clean'];
+  if(!uri||typeof ExcelJS==='undefined')return;
+  var imgId=null;
+  try{ imgId=wb.addImage({base64:uri,extension:'png'}); }catch(e){ console.warn('seal img fail',e); return; }
+  wb.worksheets.forEach(function(ws){
+    try{
+      var rA=null;
+      ws.eachRow(function(row,rn){
+        row.eachCell({includeEmpty:false},function(cell,cn){
+          if(rA)return;
+          var v=cell.value;
+          if(v&&v.richText)v=v.richText.map(function(t){return t.text;}).join('');
+          v=String(v==null?'':v);
+          if(v.indexOf('\u7532\u65b9\uff08\u76d6\u7ae0\uff09')>=0)rA={r:rn,c:cn}; /*甲方（盖章）*/
+        });
+      });
+      if(rA){ ws.addImage(imgId,{tl:{col:rA.c-1+0.35,row:rA.r-1-0.15},ext:{width:95,height:95},editAs:'oneCell'}); }
+      else{ var lr=(ws.actualRowCount||0); if(lr>0)ws.addImage(imgId,{tl:{col:6,row:lr+0.4},ext:{width:95,height:95},editAs:'oneCell'}); }
+    }catch(e){ console.warn('seal sheet fail',ws.name,e); }
+  });
+}
 function docFromHtml(html,name){
   const shell='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
     +'<head><meta charset="utf-8"><title>'+name+'</title>'
