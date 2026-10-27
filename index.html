@@ -2908,7 +2908,7 @@ function renderPLHtml(data){
   /* v2.13 用户规则：PL 按款行渲染（M0-M6 归并行），Description/Model/qty/GW/NW 一款一行不合并；
      仅 Ge.Crate 列由 plCrateModel 三场景处理（同箱多款 → 场景②竖排合并填 1；跨项混箱 → 场景③整列合并）。
      v2.12 的 boxView 拼接行撤销（description/model 被拼接不符合用户预期）。 */
-  const lines=(data.lines||[]).map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:+l.gw||0,nw:+l.nw||0};});
+  const lines=(data.lines||[]).map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:Math.round((+l.gw||0)*100)/100,nw:Math.round((+l.nw||0)*100)/100};}); /* v3.1 先2位化再余差修正, 与报关草单同口径 */
   const n=lines.length;
   const boxCount=physicalBoxCount(data.lines||[]);
   const totalQty=lines.reduce((a,l)=>a+l.qty,0);
@@ -3393,7 +3393,7 @@ function xlsTable(type,d){
     addRow2(['Ctn.No.','Description','Model','Ge.Crate(CTNS)','Ge.Quantity','','G.W. (KG):','N.W. (KG):']); r++;
     /* R7- 数据：直接渲染合并后的行(与归并模式一致)；Ge.Crate 列(索引3)合并成一个单元格=物理箱数(场景2B)，毛净重按 mergeLines 分摊后的值 */
     /* v2.13 用户规则：PL 按款行渲染，仅 Ge.Crate 列由 plCrateModel 三场景合并（同箱多款→竖排合并填1）。v2.12 boxView 撤销 */
-    const _lines=(d.lines||[]).map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:+l.gw||0,nw:+l.nw||0};});
+    const _lines=(d.lines||[]).map(function(l){return {name:l.name,model:l.model||l.sku||'',qty:+l.qty||0,gw:Math.round((+l.gw||0)*100)/100,nw:Math.round((+l.nw||0)*100)/100};}); /* v3.1 先2位化再余差修正, 与报关草单同口径 */
     const _bc=physicalBoxCount(d.lines||[]);
     const ds=r;
     const _totalQty=_lines.reduce((a,l)=>a+l.qty,0);
