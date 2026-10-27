@@ -2701,7 +2701,7 @@ function builtin(name,data){
     <h3 style="margin:10px 0 4px;font-size:14px">第八條 合同落款</h3>
     <table border="0" cellspacing="0" cellpadding="3" style="width:100%;font-size:12px"><tr>
     <td style="width:38%;vertical-align:top"><b>甲方</b><br>公司公章：________________________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td>
-    <td style="width:62%;vertical-align:top"><b>乙方</b><br>公司公章：______________${sealImgHtml()}______________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td></tr></table>`;
+    <td style="width:62%;vertical-align:top"><b>乙方</b><br>公司公章：________________________<br>法定/授權代表簽字：________________________<br>簽署日期：______年____月____日</td></tr></table>`;
   }
   if(name==='国内采购合同')return `<h2 style="text-align:center;margin:6px 0">采购合同</h2>
     {{#each contracts}}<div style="border:1px solid #999;padding:8px;margin:8px 0">
@@ -3866,8 +3866,6 @@ function downloadDocXlsx(docI,idx){
 /* ===== 电子印章(v3.1)：销售合同/Invoice/装箱单 落款盖章，图源 assets/seal_*.png，转dataURI供Word导出 ===== */
 const SEAL={uris:{},on:localStorage.getItem('v3.sealOn')!=='0',wm:localStorage.getItem('v3.sealWm')!=='0'};
 function sealInit(){['clean','decl'].forEach(function(k){fetch('assets/seal_'+k+'.png?v='+(k==='decl'?'2':'1')).then(function(r){return r.ok?r.blob():Promise.reject();}).then(function(bl){var fr=new FileReader();fr.onload=function(){SEAL.uris[k]=fr.result;};fr.readAsDataURL(bl);}).catch(function(){});});}
-function sealImgHtml(){if(!SEAL.on)return '';var u=SEAL.uris[SEAL.wm?'decl':'clean'];if(!u)return '';
-  return '<img src="'+u+'" style="width:25mm;height:25mm;vertical-align:middle;opacity:.94">';}
 function sealSet(k,v){if(k==='on'){SEAL.on=v;localStorage.setItem('v3.sealOn',v?'1':'0');}else{SEAL.wm=v;localStorage.setItem('v3.sealWm',v?'1':'0');}}
 function sealBlockHtml(){if(!SEAL.on)return '';var u=SEAL.uris[SEAL.wm?'decl':'clean'];if(!u)return '';
   return '<div style="text-align:right;margin:10px 30px 0 0"><img src="'+u+'" style="width:25mm;height:25mm;opacity:.94"></div>';}
@@ -3880,18 +3878,17 @@ function sealWorkbookAll(wb){
   try{ imgId=wb.addImage({base64:uri,extension:'png'}); }catch(e){ console.warn('seal img fail',e); return; }
   wb.worksheets.forEach(function(ws){
     try{
-      var rA=null;
-      ws.eachRow(function(row,rn){
-        row.eachCell({includeEmpty:false},function(cell,cn){
-          if(rA)return;
-          var v=cell.value;
-          if(v&&v.richText)v=v.richText.map(function(t){return t.text;}).join('');
-          v=String(v==null?'':v);
-          if(v.indexOf('\u7532\u65b9\uff08\u76d6\u7ae0\uff09')>=0)rA={r:rn,c:cn}; /*甲方（盖章）*/
-        });
-      });
-      if(rA){ ws.addImage(imgId,{tl:{col:rA.c-1+0.35,row:rA.r-1-0.15},ext:{width:95,height:95},editAs:'oneCell'}); }
-      else{ var lr=(ws.actualRowCount||0); if(lr>0)ws.addImage(imgId,{tl:{col:6,row:lr+0.4},ext:{width:95,height:95},editAs:'oneCell'}); }
+      /* v3: 仅 Invoice发票 / Packing List装箱单 盖章 */
+      var nm=String(ws.name||'');
+      var hit=/invoice/i.test(nm)||/packing/i.test(nm);
+      if(!hit){ ws.eachRow(function(row,rn){ if(rn>8||hit)return;
+          row.eachCell({includeEmpty:false},function(cell){
+            var v=cell.value;
+            if(v&&v.richText)v=v.richText.map(function(t){return t.text;}).join('');
+            v=String(v==null?'':v);
+            if(v.indexOf('Invoice No')>=0||v.indexOf('Ctn.No.')>=0)hit=true;
+          }); }); }
+      if(hit){ var lr=(ws.actualRowCount||0); if(lr>0)ws.addImage(imgId,{tl:{col:6,row:lr+0.4},ext:{width:95,height:95},editAs:'oneCell'}); }
     }catch(e){ console.warn('seal sheet fail',ws.name,e); }
   });
 }
@@ -4596,7 +4593,7 @@ return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||''
     keys.forEach(k=>{const _up=DB.templates[k]&&typeof DB.templates[k]==='object'&&DB.templates[k].v===TPL_REV;h+=`<div class="tcard"><h4>${k}</h4><div class="st">${_up?'✓ 已上传':'○ 内置版式'}</div>
       <div class="ops"><button class="small" onclick="upTpl('${k}')">上传</button><button class="small ghost" onclick="delTpl('${k}')">${_up?'删':'重置'}</button></div></div>`;});
     h+='</div><div class="note">上传 .html 模板（含 {{字段}} 占位符，如 {{header.shipper}}、{{#each lines}}…{{/each}}）即内嵌进文件。五类各自独立，支持一次性输出。报关草单/发票/装箱单/销售合同/国内采购合同。</div>';
-    h+='<div class="note" style="margin-top:8px"><b>🖨 单证盖章</b>（销售合同乙方落款 / Invoice / Packing List，25mm）：<br><label style="cursor:pointer"><input type="checkbox" '+(SEAL.on?'checked':'')+' onchange="sealSet(\'on\',this.checked)"> 加盖电子印章</label>　<label style="cursor:pointer"><input type="checkbox" '+(SEAL.wm?'checked':'')+' onchange="sealSet(\'wm\',this.checked)"> 水印「仅供报关用」</label><span class="muted" style="margin-left:8px">'+(SEAL.uris.decl?'印章已加载 ✓':'印章异步加载中…')+'</span></div>';
+    h+='<div class="note" style="margin-top:8px"><b>🖨 单证盖章</b>（仅 Invoice发票 / Packing List装箱单，表尾右下 25mm）：<br><label style="cursor:pointer"><input type="checkbox" '+(SEAL.on?'checked':'')+' onchange="sealSet(\'on\',this.checked)"> 加盖电子印章</label>　<label style="cursor:pointer"><input type="checkbox" '+(SEAL.wm?'checked':'')+' onchange="sealSet(\'wm\',this.checked)"> 水印「仅供报关用」</label><span class="muted" style="margin-left:8px">'+(SEAL.uris.decl?'印章已加载 ✓':'印章异步加载中…')+'</span></div>';
   }
   b.innerHTML=h;
 }
