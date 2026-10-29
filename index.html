@@ -995,7 +995,7 @@ const PL_ALIAS=[
   ['qtyPerBox',['每箱件数','每箱件數','每箱数量','每箱數量','箱内件数','箱內件數','每箱pcs','unitperbox','unitsperbox','每箱单位数','每箱單位數','每箱商品数','每箱商品數']],
   ['gw',    ['毛重','毛重量','gw','grossweight','gross','毛重kg','毛重(kg)','毛重（kg）','箱毛重','总毛重','總毛重','grossweightkg','重量','重量kg','重量(kg)','重量（kg）','总重','總重','总重量','總重量']],
   ['nw',    ['净重','淨重','净重量','淨重量','nw','netweight','净重kg','净重(kg)','净重（kg）','箱净重','總淨重','总净重','netweightkg']],
-  ['bw',    ['包装箱重量','包裝箱重量','纸箱重量','紙箱重量','箱皮重','箱重','箱子重量','箱子皮重','boxweight','cartonweight','tareweight','boxweightkg','包装箱重量（千克）','包装箱重量(千克)','包装箱重量kg']],
+  ['bw',    ['纸箱重量','紙箱重量','箱皮重','箱重','箱子重量','箱子皮重','boxweight','cartonweight','tareweight','boxweightkg']] /* v3.2 移除「包装箱重量」(FBA此列=整箱毛重,归gw) */,
   ['length',['长','長','长cm','長cm','l','length','长度','長度','箱子长度','箱子長度','纸箱长','紙箱長','箱长','箱長','长(厘米)','长（厘米）','箱子长度（厘米）','箱子长度(厘米)']],
   ['width', ['宽','寬','宽cm','寬cm','w','width','宽度','寬度','箱子宽度','箱子寬度','纸箱宽','紙箱寬','箱宽','箱寬','宽(厘米)','宽（厘米）','箱子宽度（厘米）','箱子宽度(厘米)']],
   ['height',['高','高cm','h','height','高度','箱子高度','箱子高度','纸箱高','紙箱高','箱高','高(厘米)','高（厘米）','箱子高度（厘米）','箱子高度(厘米)']],
@@ -1039,7 +1039,7 @@ function mapColumns(head){
           /* 排除会被误抢 sku 的子表头/批次元数据列(FNSKU/FBA/MSKU/MerchantSKU) */
           if(key==='sku'&&(H[j]==='fnsku'||H[j].indexOf('fnsku')===0||H[j].indexOf('fba')===0||H[j]==='fba'||H[j]==='msku'||H[j]==='merchantsku')) continue;
           if(key==='qty'&&(H[j]==='qtyperbox'||H[j].indexOf('每箱')===0)) continue; /* 「每箱件数」归 qtyPerBox 不归 qty */
-          if(key==='gw'&&/净|包装箱|皮重/.test(H[j])) continue; /* gw 的「重量」含匹配不可抢「净重/包装箱重量/皮重」列 */
+          if(key==='gw'&&/净|皮重/.test(H[j])) continue; /* gw 的「重量」含匹配不可抢「净重/皮重」列; v3.2 放行「包装箱重量」=FBA整箱毛重 */
           idx=j; break;
         }
       }
@@ -1144,7 +1144,7 @@ function parseGrid(grid,forceSku,opts){
     if(!qty&&qpb&&bc) qty=qpb*bc;
     /* 「箱子毛重/单箱毛重」列是单箱值 → 乘箱数得该行总毛重 */
     const gwHead=head[m.gw]||'';
-    if((normHead(gwHead).indexOf('箱子')>=0||normHead(gwHead).indexOf('单箱')>=0) && bc>1) gw=Math.round(gw*bc*1000)/1000;
+    if((normHead(gwHead).indexOf('箱子')>=0||normHead(gwHead).indexOf('单箱')>=0||normHead(gwHead).indexOf('包装箱')>=0) && bc>1) /* v3.2 包装箱重量=单箱毛重 */ gw=Math.round(gw*bc*1000)/1000;
     /* 净重：有则取上传值；无则 行总毛重 − 单箱皮重×箱数 */
     if(!nw&&gw) nw=Math.max(0,Math.round((gw-bw*bc)*1000)/1000);
     /* FBA 无毛净重列 → 商品库单件净重推导：nw = sku.gw × qty；gw = nw + bw × 箱数 */
