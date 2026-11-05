@@ -3831,7 +3831,7 @@ function downloadDocXlsx(docI,idx){
       const doc=DB.docs[docI]; const o=doc.out[idx]; const d=buildData(doc);
       const _PUR=['国内采购合同','送货单','入库单'];
       const _QT=['供应商报价单','询价单'];
-      const _fx=(o.type==='报关草单')?(exportFname(d)+'_报关草单'):((o.type==='销售报价单')?(o.type+'_'+dtStamp()):((o.type==='询价单')?(o.type+'_'+dtStamp()):((_QT.indexOf(o.type)>=0)?(o.type+((d.contracts&&d.contracts.length===1)?('_'+supShort(d.contracts[0].supplier)):'')+'_'+dtStamp()):(((_PUR.indexOf(o.type)>=0)&&d.contracts&&d.contracts.length===1)?((d.contracts[0]._no||exportNo(d))+'_'+o.type):(exportNo(d)+'_'+o.type)))))); /* v3.3 询价单文件名不带公司名 */
+      const _fx=(o.type==='报关草单')?(exportFname(d)+'_报关草单'):((o.type==='销售报价单')?(o.type+'_'+dtStamp()):((o.type==='询价单')?(o.type+'_'+dtStamp()):((_QT.indexOf(o.type)>=0)?(o.type+((d.contracts&&d.contracts.length===1)?('_'+supShort(d.contracts[0].supplier)):'')+'_'+dtStamp()):(((_PUR.indexOf(o.type)>=0)&&d.contracts&&d.contracts.length===1)?((d.contracts[0]._no||exportNo(d))+'_'+o.type):(exportNo(d)+'_'+o.type))))); /* v3.3 询价单文件名不带公司名 */
       dcLog('dl',doc.dftId,o.type,'Excel',safeRender(o.type,d));
       if(o.type==='国内采购合同'){
         if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d,_fx).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
