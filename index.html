@@ -3601,8 +3601,9 @@ function xlsContract(c,d,idx){
   const rhead=t=>{ putCell(R,r,4,t); addMerge(MG,r,4,7); r++; };
   const lrow=t=>{ putCell(R,r,0,t); addMerge(MG,r,0,3); r++; };
   const rrow=t=>{ putCell(R,r,4,t); addMerge(MG,r,4,7); r++; };
-  row('采购合同');
-  row('合同编号：'+no);
+  /* v3.4 表头与模板盖章链路统一: 行1编号右对齐、行2标题居中 */
+  putCell(R,r,0,{t:'s',v:'合同编号：'+no,s:{alignment:{horizontal:'right',vertical:'center'},font:{name:'宋体',sz:11}}}); addMerge(MG,r,0,C-1); r++;
+  putCell(R,r,0,{t:'s',v:'采购合同',s:{alignment:{horizontal:'center',vertical:'center'},font:{name:'宋体',sz:16,bold:true}}}); addMerge(MG,r,0,C-1); r++;
   row('');
   two('甲方（采购方）：'+bName,'乙方（供货方）：'+supName);
   lrow('住所/注册地址：'+(B.addr||'')); rrow('住所/注册地址：'+(PB.addr||''));
