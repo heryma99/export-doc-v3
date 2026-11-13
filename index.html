@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261111 · 2026-11-11（含：询价单/销售报价单/销售合同文件名与内容统一繁体 / 询价单不体现公司名 / Invoice与装箱单电子印章）</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261113 · 2026-11-13（含：监控清单默认只显示触发项·通过项折叠可展开 / 询价单·销售报价单·销售合同文件名繁体 / Invoice与装箱单电子印章）</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -2259,8 +2259,19 @@ function renderMonitor(m,did){
   let h=`<div class="monitor"><div class="mh">监控结果：`;
   h+=m.block?`<span class="badge bad">${m.block} 阻断</span>`:`<span class="badge ok">无阻断</span>`;
   h+=` <span class="badge warn">${m.warn} 提示</span> <span class="muted">（阻断=BLOCK不可锁定；提示=WARN标红可继续）</span></div>`;
-  m.list.forEach(r=>{const cls=r.ok?'ok':(r.sev==='BLOCK'?'bad':'warn');const ic=r.ok?'✓':(r.sev==='BLOCK'?'✕':'!');
-    h+=`<div class="mline"><span class="ic badge ${cls}">${ic}</span><span><b>[${r.cat}${r.id}]</b> ${r.desc}${(r.ok&&!r.always)?'':' — '+r.msg}</span></div>`;});
+  /* v3.6 显示层改造(2026-11-13 用户确认)：默认只显示触发项(阻断/提示)+带金额的通过项(always),其余通过项折叠为可展开摘要;
+     检查逻辑/数据结构(d.monitor.list)/锁定闸门零改动——纯渲染层。 */
+  const _hit=m.list.filter(r=>!r.ok);
+  const _money=m.list.filter(r=>r.ok&&r.always);
+  const _rest=m.list.filter(r=>r.ok&&!r.always);
+  _hit.forEach(r=>{const cls=r.sev==='BLOCK'?'bad':'warn';const ic=r.sev==='BLOCK'?'✕':'!';
+    h+=`<div class="mline"><span class="ic badge ${cls}">${ic}</span><span><b>[${r.cat}${r.id}]</b> ${r.desc} — ${r.msg}</span></div>`;});
+  _money.forEach(r=>{h+=`<div class="mline"><span class="ic badge ok">✓</span><span><b>[${r.cat}${r.id}]</b> ${r.desc} — ${r.msg}</span></div>`;});
+  h+=_rest.length===m.list.length
+    ?`<details><summary class="mline" style="cursor:pointer"><span class="ic badge ok">✓</span><span><b>${m.list.length} 项全部通过</b>（点击展开复查）</span></summary>`
+    :`<details><summary class="mline" style="cursor:pointer"><span class="ic badge ok">✓</span><span><b>${_rest.length} 项通过</b>（点击展开复查）</span></summary>`;
+  _rest.forEach(r=>{h+=`<div class="mline"><span class="ic badge ok">✓</span><span><b>[${r.cat}${r.id}]</b> ${r.desc}</span></div>`;});
+  h+='</details>';
   if(m.suggest&&did)h+=`<div class="mline"><span class="ic badge ok">💡</span><span>已试跑 16 种归并组合：建议切换 <b>${m.suggest.mode}${m.suggest.sup?'+供应商分行':''}</b>（拆为 ${m.suggest.n} 行，预计全部通过） <button class="primary" style="padding:2px 10px;font-size:11px" onclick="applySuggest('${did}')">一键切换</button></span></div>`;
   h+='</div>';return h;
 }
