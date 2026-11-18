@@ -3696,7 +3696,8 @@ function xlsVoucher(type,c,d){
   putCell(R,r,0,'合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
   if(isIn){ two('入库时间：'+((d.header&&d.header.shipDate)||''),'录入人员：____________'); }
   else{ row('注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。'); two('开单人：____________','收货人：____________'); two('日　期：____________','日　期：____________'); }
-  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:22},{wch:14},{wch:8},{wch:10},{wch:10}]); /* v3.7 列宽压缩防打印超A4(原179.8mm超可打印区5.4mm) */
+  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:22},{wch:14},{wch:8},{wch:10},{wch:10}]); /* v3.7 列宽压缩防打印超A4 */
+  _ws['!margins']={left:0.39,right:0.39,top:0.55,bottom:0.55,header:0.3,footer:0.3}; /* v3.7.1 自定义页边距(左右1cm): SheetJS写盘每列+0.83内边距抵消了压列宽,实测179.6mm>默认边距174.4mm; 缩边距后可打印190mm,单页放得下 */
   autoHeightsSheetJS(_ws);
   return _ws;
 }
