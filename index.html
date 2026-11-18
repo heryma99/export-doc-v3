@@ -347,11 +347,12 @@ async function stampPurchaseSheet(ws,tpl,items,pctx){
   ws.getCell(tailStart+6,1).value='开户行：'+(pctx.acctBank||'');     /* src R29 */
   ws.getCell(tailStart+7,1).value='账号  ： '+(pctx.acctNo||'');        /* src R30 */
   ws.getCell(tailStart+10,1).value='1．交货时间：'+(pctx.deliveryDate||'')+' 前'; /* src R33 */
-  ws.getCell(tailStart+11,1).value='交货地点：'+(pctx.deliveryPlace||'');          /* src R34 */
+  ws.getCell(tailStart+11,1).value='2．交货地点：'+(pctx.deliveryPlace||'');          /* src R34 */
   ws.getCell(tailStart+24,1).value='甲方（盖章）：'+(pctx.aName||'')+'                      '; /* src R47 */
   ws.getCell(tailStart+24,4).value='  乙方（盖章）：'+(pctx.bName||'');
   ws.getCell(tailStart+25,1).value='授权代表（签字）：________________________';
   ws.getCell(tailStart+25,4).value='授权代表（签字）：________________________';
+  ws.getCell(tailStart+26,1).value='签署日期：'+(pctx.signDate||'');   ws.getCell(tailStart+26,4).value='签署日期：'+(pctx.signDate||'');   /* 2026-11-18 用户确认:签署日期自动填签订日期(header.signDate,与销售合同同源/A14同源),空则留标签手填,烤入模板R49预印2026被运行时覆盖 */
   /* 2026-10-13 用户拍板A：采购合同日期口径=交货日期，删除尾部「签订日期」行（原与销售合同共用 signDate 字段，口径错误） */
   autoHeightsExcelJS(ws,widths);   /* 行高自适应(2026-09-11): 模板个别行高不足(如 R24/R35/R40/R41)按内容加高, 只增不减 */
 }
@@ -3693,7 +3694,7 @@ function xlsVoucher(type,c,d){
   putCell(R,r,0,'合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
   if(isIn){ two('入库时间：'+((d.header&&d.header.shipDate)||''),'录入人员：____________'); }
   else{ row('注：收到货请及时检验，如发现问题请于三日内书面提出，逾期视为验收合格。'); two('开单人：____________','收货人：____________'); two('日　期：____________','日　期：____________'); }
-  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:26},{wch:14},{wch:8},{wch:10},{wch:12}]);
+  const _ws=xwsFrom(R,MG,[{wch:6},{wch:16},{wch:22},{wch:14},{wch:8},{wch:10},{wch:10}]); /* v3.7 列宽压缩防打印超A4(原179.8mm超可打印区5.4mm) */
   autoHeightsSheetJS(_ws);
   return _ws;
 }
