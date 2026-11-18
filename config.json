@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-10-13T10:15:29.940Z",
+  "_at": "2026-11-18T11:18:30.082Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司"
@@ -58,20 +58,20 @@
   "tier1Suppliers": [
     "广州自衍空间科创有限公司",
     "Lo Monte International Limited",
-    "INDIGO COLLECTIVE LIMITED"
+    "INDIGO COLLECTIVE LIMITED",
+    "贝蒙沃森（深圳）商贸有限公司"
   ],
   "tier1Profiles": {
     "广州自衍空间科创有限公司": {
       "addr": "广州市白云区锦石四路57号1801房",
-      "contact": "曾丽娴",
+      "contact": "/",
       "email": "/",
       "usci": "91440111MAEH87G029",
       "originCode": "44019",
       "originName": "广州其他",
-      "tel": "13827251893",
+      "tel": "/",
       "phone": "/",
-      "shr": "黄新娣",
-      "short": "广州自衍"
+      "shr": "黄新娣"
     },
     "Lo Monte International Limited": {
       "addr": "广州",
@@ -117,7 +117,8 @@
     "送货单": null,
     "入库单": null,
     "供应商报价单": null,
-    "销售报价单": null
+    "销售报价单": null,
+    "询价单": null
   },
   "skuOverride": {},
   "bankInfo": {
