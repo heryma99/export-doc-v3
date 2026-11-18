@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261116：商品库材质统一100%前缀 / 监控清单只显示触发项 / 文件名繁体 / 电子印章</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261118：采购合同独立签订日期(默认跟随销售日期,可手改) / 交货地点序号 / 签署日期自动填 / 送货入库Excel列宽防超A4</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -352,7 +352,7 @@ async function stampPurchaseSheet(ws,tpl,items,pctx){
   ws.getCell(tailStart+24,4).value='  乙方（盖章）：'+(pctx.bName||'');
   ws.getCell(tailStart+25,1).value='授权代表（签字）：________________________';
   ws.getCell(tailStart+25,4).value='授权代表（签字）：________________________';
-  ws.getCell(tailStart+26,1).value='签署日期：'+(pctx.signDate||'');   ws.getCell(tailStart+26,4).value='签署日期：'+(pctx.signDate||'');   /* 2026-11-18 用户确认:签署日期自动填签订日期(header.signDate,与销售合同同源/A14同源),空则留标签手填,烤入模板R49预印2026被运行时覆盖 */
+  ws.getCell(tailStart+26,1).value='签署日期：'+(pctx.psignDate||'');   ws.getCell(tailStart+26,4).value='签署日期：'+(pctx.psignDate||'');   /* 2026-11-18 用户确认:签署日期自动填签订日期(header.signDate,与销售合同同源/A14同源),空则留标签手填,烤入模板R49预印2026被运行时覆盖 */
   /* 2026-10-13 用户拍板A：采购合同日期口径=交货日期，删除尾部「签订日期」行（原与销售合同共用 signDate 字段，口径错误） */
   autoHeightsExcelJS(ws,widths);   /* 行高自适应(2026-09-11): 模板个别行高不足(如 R24/R35/R40/R41)按内容加高, 只增不减 */
 }
@@ -373,7 +373,7 @@ async function purchaseTplDownload(d,suffix){
     var pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
       deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.pdeliveryDate)||'':(H.pdeliveryDate||''),
       deliveryPlace:H.deliveryPlace||cleanDeliveryPlace(partyProfile(H.shipper||'').addr),acctBank:PA.bank||'',acctNo:PA.no||'',
-      signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
+      signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||'')),       psignDate:((typeof fmtDateCN==='function')?fmtDateCN(H.pSignDate||H.signDate):(H.pSignDate||H.signDate||''))};
     await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
   }
   outWb.worksheets.forEach(function(w){ applyA4PageSetup(w,'国内采购合同'); });
@@ -1760,6 +1760,7 @@ function renderDrafts(){
     <div class="field"><label>汇率(CNY→本币,留空用全局默认 ${DB.price.exch})</label><input type="number" step="0.0001" min="0" value="${H.exch||''}" onchange="setHeader('${d.id}','exch',this.value?+this.value:0)" placeholder="${DB.price.exch}"></div>
     <div class="field"><label>合同簽訂地點</label><input value="${H.signPlace||'【東莞】'}" onchange="setHeader('${d.id}','signPlace',this.value)"></div>
     <div class="field"><label>合同簽訂日期</label><input type="date" value="${H.signDate||''}" onchange="setHeader('${d.id}','signDate',this.value)"></div>
+    <div class="field"><label>采購合同簽訂日期</label><input type="date" value="${H.pSignDate||H.signDate||''}" onchange="setHeader('${d.id}','pSignDate',this.value)"></div>
     <div class="field"><label><span style="color:#d33;font-weight:bold">*</span>销售交货日期(销售合同)</label><input type="date" value="${H.deliveryDate||''}" onchange="setHeader('${d.id}','deliveryDate',this.value)"></div>
     <div class="field"><label><span style="color:#d33;font-weight:bold">*</span>采购交货日期(采购合同)</label><input type="date" value="${H.pdeliveryDate||''}" onchange="setHeader('${d.id}','pdeliveryDate',this.value)"></div>
     <div class="field"><label>送货/入库日期(送货单/入库单,可空导出后补)</label><input type="date" value="${H.shipDate||''}" onchange="setHeader('${d.id}','shipDate',this.value)"></div>
@@ -2102,7 +2103,7 @@ function runMonitor(did){
   add('A','A13','商品项数≤50项/单(报关单填制规范,海关总署公告2019-18号)',a13?'OK':'WARN',a13,'归并后 '+L.length+' 项，超 50 项上限，须分单申报');
   /* A14 合同日期逻辑（2026-10-13 拆双交货日期）：销售交货 ≥ 簽訂 且 采购交货 ≥ 簽訂（各自填了才查，WARN级） */
   const _a14s=H.deliveryDate&&H.signDate&&String(H.deliveryDate)<String(H.signDate);
-  const _a14p=H.pdeliveryDate&&H.signDate&&String(H.pdeliveryDate)<String(H.signDate);
+  const _ps14=H.pSignDate||H.signDate;const _a14p=H.pdeliveryDate&&_ps14&&String(H.pdeliveryDate)<String(_ps14); /* v3.8 采购侧比对采购合同签订日期 */
   const a14=!_a14s&&!_a14p;
   const _a14m=(_a14s?('销售交货日期 '+H.deliveryDate+' 早于签订日期 '+H.signDate+'；'):'')+(_a14p?('采购交货日期 '+H.pdeliveryDate+' 早于签订日期 '+H.signDate):'');
   add('A','A14','交货日期≥签订日期(销售/采购合同防倒签)',a14?'OK':'WARN',a14,_a14m||'销售/采购交货日期均≥签订日期');
@@ -2466,6 +2467,7 @@ function buildData(doc){
     bankInfo:acctFor(d.header.currency)||{},
     bankAccounts:DB.bankAccounts||[],
     signDateCN:fmtDateCN(d.header.signDate),
+    psignDateCN:fmtDateCN(d.header.pSignDate||d.header.signDate), /* v3.8 采购合同签订日期独立字段,缺省跟随销售合同日期 */
     deliveryDateCN:fmtDateCN(d.header.deliveryDate),
     pdeliveryDateCN:fmtDateCN(d.header.pdeliveryDate),
     destCn:cnCountry((d.header&&d.header.destCountry)||''),
@@ -2742,7 +2744,7 @@ function builtin(name,data){
     <p>争议协商不成，任一方可依法向甲方所在地有管辖权的人民法院提起诉讼。</p>
     <p>甲方（盖章）：{{header.partyB.name}} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 乙方（盖章）：{{supplier}}</p>
     <p>授权代表（签字）：________________________ &nbsp;&nbsp; 授权代表（签字）：________________________</p>
-    <p>签署日期：______年____月____日 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 签署日期：______年____月____日</p>
+    <p>签署日期：{{psignDateCN}} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 签署日期：{{psignDateCN}}</p>
     </div>{{/each}}`;
   /* ── 送货单/入库单（2026-10-12 v2.25）：货流凭证，与采购合同同源 contracts，每家一级供应商一份 ── */
   if(name==='送货单')return `<div style="font-size:12px;max-width:660px;margin:0 auto;font-family:'Microsoft YaHei',sans-serif">
@@ -3664,7 +3666,7 @@ function xlsContract(c,d,idx){
   row('');
   two('甲方（盖章）：'+bName,'乙方（盖章）：'+supName);
   two('授权代表（签字）：________________________','授权代表（签字）：________________________');
-  two('签署日期：______年____月____日','签署日期：______年____月____日');
+  two('签署日期：'+((typeof fmtDateCN==='function')?(fmtDateCN(H.pSignDate||H.signDate)||'______年____月____日'):'______年____月____日'),'签署日期：'+((typeof fmtDateCN==='function')?(fmtDateCN(H.pSignDate||H.signDate)||'______年____月____日'):'______年____月____日')); /* v3.8 采购签订日期独立字段 */
   var _wsC=xwsFrom(R,MG,[{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:14},{wch:14},{wch:14}]);
   autoHeightsSheetJS(_wsC);   /* 行高自适应(2026-09-11): 兜底采购合同长条款行加高 */
   return _wsC;
@@ -3789,7 +3791,7 @@ async function composeSetWorkbook(doc,prefix){
       const pctx={no:c._no,aName:aName,bName:c.supplier,aAddr:aAddr,bAddr:PB.addr||'',cur:curTxt,
         deliveryDate:(typeof fmtDateCN==='function')?fmtDateCN(H.pdeliveryDate)||'':(H.pdeliveryDate||''),
         deliveryPlace:H.deliveryPlace||cleanDeliveryPlace(partyProfile(H.shipper||'').addr),acctBank:PA.bank||'',acctNo:PA.no||'',
-        signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||''))};
+        signDate:((typeof fmtDateCN==='function')?fmtDateCN(H.signDate):(H.signDate||'')),       psignDate:((typeof fmtDateCN==='function')?fmtDateCN(H.pSignDate||H.signDate):(H.pSignDate||H.signDate||''))};
       await stampPurchaseSheet(ws,wbTpl.getWorksheet('合同'),items,pctx);
     }
     /* A4 打印设置注入(所有 sheet, 屏幕显示不受影响) */
