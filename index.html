@@ -1650,7 +1650,7 @@ function genDraft(ordId){
   /* 自动引用主体档案：销售合同甲方=境外收货人、乙方=境内发货人(主体信息维护一次, 全单据引用) */
   const _pa=partyProfile(dft.header.consignee),_pb=partyProfile(dft.header.shipper);
   dft.header.partyA={name:dft.header.consignee||'',addr:_pa.addr||'',contact:_pa.contact||'',email:_pa.email||''};
-  dft.header.partyB={name:dft.header.shipper||'',addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''};
+  dft.header.partyB={name:dft.header.shipper||'',addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||'',phone:_pb.phone||''};
   DB.drafts.push(dft);DB.sel.dft=dft.id;save();renderDrafts();
 }
 function genMergedDraft(ids){
@@ -1688,7 +1688,7 @@ function genMergedDraft(ids){
   dft.header.prodUSCI=_cd.usci||''; dft.header.prodReg=_cd.reg||'';
   const _pa=partyProfile(dft.header.consignee),_pb=partyProfile(dft.header.shipper);
   dft.header.partyA={name:dft.header.consignee||'',addr:_pa.addr||'',contact:_pa.contact||'',email:_pa.email||''};
-  dft.header.partyB={name:dft.header.shipper||'',addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||''};
+  dft.header.partyB={name:dft.header.shipper||'',addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||'',phone:_pb.phone||''};
   DB.drafts.push(dft);DB.sel.dft=dft.id;DB.mergeSel=[];save();renderDrafts();
   alert('已合并 '+ords.length+' 个订单为草单 '+dft.id+'（'+rawLines.length+' 项源明细，'+dft.lines.length+' 行聚合）。源订单原样保留，可继续单独用。');
 }
@@ -1863,7 +1863,7 @@ function renderDrafts(){
     </div>${mh}</div></div>`;
   updRail();
 }
-function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;const dot=f.indexOf('.');if(dot>0){const k=f.slice(0,dot),sk=f.slice(dot+1);if(!d.header[k]||typeof d.header[k]!=='object')d.header[k]={};d.header[k][sk]=v;}else{d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}/* 主体变更 → 销售合同甲乙方自动跟随(档案引用) */if(f==='shipper'||f==='consignee'){const pa=partyProfile(d.header.consignee),pb=partyProfile(d.header.shipper);d.header.partyA={name:d.header.consignee||'',addr:pa.addr||'',contact:pa.contact||'',email:pa.email||''};d.header.partyB={name:d.header.shipper||'',addr:pb.addr||'',contact:pb.contact||'',email:pb.email||''};}}save();renderDrafts();}
+function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;const dot=f.indexOf('.');if(dot>0){const k=f.slice(0,dot),sk=f.slice(dot+1);if(!d.header[k]||typeof d.header[k]!=='object')d.header[k]={};d.header[k][sk]=v;}else{d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}/* 主体变更 → 销售合同甲乙方自动跟随(档案引用) */if(f==='shipper'||f==='consignee'){const pa=partyProfile(d.header.consignee),pb=partyProfile(d.header.shipper);d.header.partyA={name:d.header.consignee||'',addr:pa.addr||'',contact:pa.contact||'',email:pa.email||''};d.header.partyB={name:d.header.shipper||'',addr:pb.addr||'',contact:pb.contact||'',email:pb.email||'',tel:pb.tel||'',phone:pb.phone||''};}}save();renderDrafts();}
 function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
   /* 单写多读第二批（2026-10-15）：手工修改记入覆盖层——记录刷新重建行后可重新应用 */
   d.overrides=d.overrides||[];
@@ -2439,7 +2439,7 @@ function buildData(doc){
     /* 乙方信息/账户按规则自动引用：乙方=一级供应商档案, 账户=该供应商绑定的账户(owner 匹配) */
     const _pb=tier1Profile(s),_pa=acctFor((d.header&&d.header.currency)||'',s);
     return {supplier:s,items,qitems:qrows.filter(q=>q.sup===s),_no:((d.header&&d.header.no)||'')+'-'+(ci+1),rkNo:((d.header&&d.header.no)||'')+'-'+(ci+1)+'-RK',qtyTotal:decRound(items.reduce((a,l)=>a+(+l.qty||0),0),0),taxTotal:decRound(items.reduce((a,l)=>a+(+l.taxAmount||0),0),2).toFixed(2),amount:decRound(items.reduce((a,l)=>a+(+l.cost)*(+l.qty),0),2).toFixed(2),count:items.length,
-      purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||'',phone:_pb.phone||'',shr:_pb.shr||'',shrF:_pb.shr||'____________',phoneF:_pb.phone||'____________'},purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
+      purchaseB:{addr:_pb.addr||'',contact:_pb.contact||'',email:_pb.email||'',tel:_pb.tel||'',phone:_pb.phone||'',shr:_pb.shr||'',shrF:_pb.shr||'____________',phoneF:_pb.phone||'____________'},buyerPB:(function(){const _hb=Object.assign({},partyProfile(H.shipper||'')||{},(H.partyB||{}));return {contact:_hb.contact||'____________',tel:_hb.tel||'____________',phone:_hb.phone||'____________'};})(), /* v3.7.2 井太兰收货对接人: 订单表头partyB优先,主体档案兜底 */purchaseAcct:{bank:_pa.bank||'',no:_pa.no||'',name:_pa.name||''}};});
   /* 合计对齐（2026-10-15 定稿）：mergeLines 自带按箱分摊已保证 Σ明细行=权威合计（真实三票复现验证），
      此处仅做分级尾差对齐（adjustResidual 自带保护：差额超过每行1分即拒绝涂改，不会掩盖真实错误）。
      此前在此处按残缺 boxSeq 重分摊的做法已撤销——它会覆盖 mergeLines 的正确行值并产生 NaN。 */
@@ -2752,9 +2752,9 @@ function builtin(name,data){
     <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}}</h2>
     <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">送货单</h3>
     <p style="margin:2px 0">录单日期：{{header.shipDate}} &nbsp;&nbsp;&nbsp; <span style="display:inline-block;vertical-align:top;line-height:1.35">送货单号<br>采购单号</span>：<b>{{_no}}</b></p>
-    <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：{{purchaseB.shrF}}</p>
-    <p style="margin:2px 0">送货地址：{{deliveryPlace}} &nbsp;&nbsp; 联 系 人：{{purchaseB.contact}}</p>
-    <p style="margin:2px 0">手　机：{{purchaseB.tel}} &nbsp;&nbsp; 电　话：{{purchaseB.phoneF}}</p>
+    <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：____________</p>
+    <p style="margin:2px 0">送货地址：{{deliveryPlace}} &nbsp;&nbsp; 联 系 人：{{buyerPB.contact}}</p>
+    <p style="margin:2px 0">手　机：{{buyerPB.tel}} &nbsp;&nbsp; 电　话：{{buyerPB.phone}}</p>
     <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
     <tr><th>序号</th><th>产品名称</th><th>具体型号</th><th>材质标准</th><th>单位</th><th>数量</th><th>备注</th></tr>
     {{#each items}}<tr><td style="text-align:center">{{_i}}</td><td>{{name}}</td><td>{{model}}</td><td>{{mat}}</td><td style="text-align:center">{{unit}}</td><td style="text-align:right">{{qty}}</td><td></td></tr>{{/each}}
@@ -3688,9 +3688,9 @@ function xlsVoucher(type,c,d){
   else{ /* 对齐供应商原版(2026-10-13)：标签格两行堆叠+数值独立相邻格（原版 E3/F3:G3 结构） */
     putCell(R,r,0,'录单日期：'+((d.header&&d.header.shipDate)||'')); addMerge(MG,r,0,3);
     putCell(R,r,4,'送货单号\n采购单号'); putCell(R,r,5,(c._no||'')); addMerge(MG,r,5,6); r++;
-    two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：'+(PB.shr||'____________'));
-    two('送货地址：'+cleanDeliveryPlace((H.partyB&&H.partyB.addr)||''),'联 系 人：'+(PB.contact||'____________'));
-    two('手　机：'+(PB.tel||'____________'),'电　话：'+(PB.phone||'____________')); }
+    const _bp=Object.assign({},partyProfile(H.shipper||'')||{},(H.partyB||{})); /* v3.7.2 送货单显示井太兰收货对接人 */ two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：____________');
+    two('送货地址：'+cleanDeliveryPlace((H.partyB&&H.partyB.addr)||''),'联 系 人：'+(_bp.contact||'____________'));
+    two('手　机：'+(_bp.tel||'____________'),'电　话：'+(_bp.phone||'____________')); }
   ['序号','产品名称','具体型号','材质标准','单位','数量','备注'].forEach((h,i)=>putCell(R,r,i,h)); r++;
   c.items.forEach((l,i)=>{ [i+1,l.name,l.model,l.mat||'',l.unit||'个',l.qty,''].forEach((v,j)=>putCell(R,r,j,v)); r++; });
   putCell(R,r,0,'合计'); addMerge(MG,r,0,4); putCell(R,r,5,c.qtyTotal!=null?c.qtyTotal:''); putCell(R,r,6,''); r++;
@@ -4271,7 +4271,7 @@ function partyEditSave(t,di){
   if(nv!==old&&!confirm('名称将由「'+old+'」改为「'+nv+'」。\n地址/联系人/邮箱档案会同步迁移；已生成草单中的旧名称不会自动更新。确认修改？'))return;
   if(nv!==old){if(t==='buyer')updBuyer(di,nv);else updParty(t,di,nv);}
   if(t==='shipper'){updCode(di,'usci',gv('pe_usci'));updCode(di,'reg',gv('pe_reg'));}
-  if(t!=='buyer'){setPartyProfile(nv,'addr',gv('pe_addr'));setPartyProfile(nv,'contact',gv('pe_contact'));setPartyProfile(nv,'email',gv('pe_email'));}
+  if(t!=='buyer'){setPartyProfile(nv,'addr',gv('pe_addr'));setPartyProfile(nv,'contact',gv('pe_contact'));setPartyProfile(nv,'tel',gv('pe_tel'));setPartyProfile(nv,'phone',gv('pe_phone'));setPartyProfile(nv,'email',gv('pe_email'));}
   partyEdit=null;renderSetBody();
 }
 /* 采购主体 */
@@ -4442,10 +4442,10 @@ function renderSetBody(){
       </div>
       <div class="cd">
         <div class="hd"><div class="bar" style="background:#378ADD"></div><p class="ttl">境内发货人</p><span class="cnt">${shippers.length} 个</span></div>
-        <table><tr><th style="width:16%">名称</th><th style="width:13%">统一社会信用代码</th><th style="width:12%">海关注册编码</th><th style="width:22%">地址(销售合同乙方/采购合同甲方)</th><th style="width:10%">联系人</th><th style="width:15%">邮箱</th><th style="width:12%">操作</th></tr><tbody>
+        <table><tr><th style="width:14%">名称</th><th style="width:13%">统一社会信用代码</th><th style="width:12%">海关注册编码</th><th style="width:17%">地址(销售合同乙方/采购合同甲方)</th><th style="width:8%">联系人</th><th style="width:8%">手机</th><th style="width:8%">电话</th><th style="width:12%">邮箱</th><th style="width:8%">操作</th></tr><tbody>
           ${shippers.map((s,i)=>{const di=DB.parties.shippers.indexOf(s);const c=(DB.parties.codes&&DB.parties.codes[s])||{};const p=partyProfile(s);const ed=partyEdit&&partyEdit.t==='shipper'&&partyEdit.di===di;
-if(ed)return `<tr><td><input id="pe_name" value="${esc(s)}"></td><td><input id="pe_usci" value="${esc(c.usci||'')}" placeholder="18位"></td><td><input id="pe_reg" value="${esc(c.reg||'')}" placeholder="10位"></td><td><input id="pe_addr" value="${esc(p.addr||'')}" placeholder="地址"></td><td><input id="pe_contact" value="${esc(p.contact||'')}" placeholder="联系人"></td><td><input id="pe_email" value="${esc(p.email||'')}" placeholder="邮箱"></td><td><button class="btn add" onclick="partyEditSave('shipper',${di})">保存</button> <button class="btn" onclick="partyEditOff()">取消</button></td></tr>`;
-return `<tr><td>${esc(s)}</td><td>${esc(c.usci||'')}</td><td>${esc(c.reg||'')}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||'')}</td><td>${esc(p.email||'')}</td><td><button class="btn" onclick="partyEditOn('shipper',${di})">编辑</button> <button class="btn del" onclick="if(confirm('删除该发货人?'))delParty('shipper',${di})">删除</button></td></tr>`;}).join('')}
+if(ed)return `<tr><td><input id="pe_name" value="${esc(s)}"></td><td><input id="pe_usci" value="${esc(c.usci||'')}" placeholder="18位"></td><td><input id="pe_reg" value="${esc(c.reg||'')}" placeholder="10位"></td><td><input id="pe_addr" value="${esc(p.addr||'')}" placeholder="地址"></td><td><input id="pe_contact" value="${esc(p.contact||'')}" placeholder="联系人"></td><td><input id="pe_tel" value="${esc(p.tel||'')}" placeholder="手机"></td><td><input id="pe_phone" value="${esc(p.phone||'')}" placeholder="电话"></td><td><input id="pe_email" value="${esc(p.email||'')}" placeholder="邮箱"></td><td><button class="btn add" onclick="partyEditSave('shipper',${di})">保存</button> <button class="btn" onclick="partyEditOff()">取消</button></td></tr>`;
+return `<tr><td>${esc(s)}</td><td>${esc(c.usci||'')}</td><td>${esc(c.reg||'')}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||'')}</td><td>${esc(p.tel||'')}</td><td>${esc(p.phone||'')}</td><td>${esc(p.email||'')}</td><td><button class="btn" onclick="partyEditOn('shipper',${di})">编辑</button> <button class="btn del" onclick="if(confirm('删除该发货人?'))delParty('shipper',${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newParty_shipper" placeholder="+ 新增境内发货人"><button class="btn add" onclick="addParty('shipper')">添加</button></div>
       </div>
@@ -4462,8 +4462,8 @@ return `<tr><td>${esc(s)}</td><td><button class="btn" onclick="partyEditOn('buye
         <div class="hd"><div class="bar" style="background:#1D9E75"></div><p class="ttl">境外收货人</p><span class="cnt">${consignees.length} 个</span></div>
         <table><tr><th style="width:22%">名称</th><th style="width:30%">地址(销售合同甲方/客户发票抬头)</th><th style="width:13%">联系人</th><th style="width:20%">邮箱</th><th style="width:15%">操作</th></tr><tbody>
           ${consignees.map((s,i)=>{const di=DB.parties.consignees.indexOf(s);const p=partyProfile(s);const ed=partyEdit&&partyEdit.t==='consignee'&&partyEdit.di===di;
-if(ed)return `<tr><td><input id="pe_name" value="${esc(s)}"></td><td><input id="pe_addr" value="${esc(p.addr||'')}" placeholder="地址"></td><td><input id="pe_contact" value="${esc(p.contact||'')}" placeholder="联系人"></td><td><input id="pe_email" value="${esc(p.email||'')}" placeholder="邮箱"></td><td><button class="btn add" onclick="partyEditSave('consignee',${di})">保存</button> <button class="btn" onclick="partyEditOff()">取消</button></td></tr>`;
-return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||'')}</td><td>${esc(p.email||'')}</td><td><button class="btn" onclick="partyEditOn('consignee',${di})">编辑</button> <button class="btn del" onclick="if(confirm('删除该收货人?'))delParty('consignee',${di})">删除</button></td></tr>`;}).join('')}
+if(ed)return `<tr><td><input id="pe_name" value="${esc(s)}"></td><td><input id="pe_addr" value="${esc(p.addr||'')}" placeholder="地址"></td><td><input id="pe_contact" value="${esc(p.contact||'')}" placeholder="联系人"></td><td><input id="pe_tel" value="${esc(p.tel||'')}" placeholder="手机"></td><td><input id="pe_phone" value="${esc(p.phone||'')}" placeholder="电话"></td><td><input id="pe_email" value="${esc(p.email||'')}" placeholder="邮箱"></td><td><button class="btn add" onclick="partyEditSave('consignee',${di})">保存</button> <button class="btn" onclick="partyEditOff()">取消</button></td></tr>`;
+return `<tr><td>${esc(s)}</td><td>${esc(p.addr||'')}</td><td>${esc(p.contact||'')}</td><td>${esc(p.tel||'')}</td><td>${esc(p.phone||'')}</td><td>${esc(p.email||'')}</td><td><button class="btn" onclick="partyEditOn('consignee',${di})">编辑</button> <button class="btn del" onclick="if(confirm('删除该收货人?'))delParty('consignee',${di})">删除</button></td></tr>`;}).join('')}
         </tbody></table>
         <div class="add"><input id="newParty_consignee" placeholder="+ 新增境外收货人"><button class="btn add" onclick="addParty('consignee')">添加</button></div>
       </div>
