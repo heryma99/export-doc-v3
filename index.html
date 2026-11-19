@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261119：申报单位改独立手填(默认空) / 申报人员默认空 / 修复输出单据页报错 / 采购合同独立签订日期 / 送货入库Excel列宽防超A4</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261119：送货单审核人恢复取一级供应商 / 申报单位改独立手填 / 申报人员默认空 / 修复输出单据页报错 / 采购合同独立签订日期</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -2755,7 +2755,7 @@ function builtin(name,data){
     <h2 style="text-align:center;margin:4px 0;font-size:16px">{{supplier}}</h2>
     <h3 style="text-align:center;margin:2px 0 8px;font-size:16px;letter-spacing:8px">送货单</h3>
     <p style="margin:2px 0">录单日期：{{header.shipDate}} &nbsp;&nbsp;&nbsp; <span style="display:inline-block;vertical-align:top;line-height:1.35">送货单号<br>采购单号</span>：<b>{{_no}}</b></p>
-    <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：____________</p>
+    <p style="margin:2px 0">客　　户：{{header.partyB.name}}（井太兰） &nbsp;&nbsp; 审　核：{{purchaseB.shrF}}</p>
     <p style="margin:2px 0">送货地址：{{deliveryPlace}} &nbsp;&nbsp; 联 系 人：{{buyerPB.contact}}</p>
     <p style="margin:2px 0">手　机：{{buyerPB.tel}} &nbsp;&nbsp; 电　话：{{buyerPB.phone}}</p>
     <table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
@@ -3691,7 +3691,7 @@ function xlsVoucher(type,c,d){
   else{ /* 对齐供应商原版(2026-10-13)：标签格两行堆叠+数值独立相邻格（原版 E3/F3:G3 结构） */
     putCell(R,r,0,'录单日期：'+((d.header&&d.header.shipDate)||'')); addMerge(MG,r,0,3);
     putCell(R,r,4,'送货单号\n采购单号'); putCell(R,r,5,(c._no||'')); addMerge(MG,r,5,6); r++;
-    const _bp=Object.assign({},partyProfile(H.shipper||'')||{},(H.partyB||{})); /* v3.7.2 送货单显示井太兰收货对接人 */ two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：____________');
+    const _bp=Object.assign({},partyProfile(H.shipper||'')||{},(H.partyB||{})); /* v3.7.2 送货单显示井太兰收货对接人 */ two('客　　户：'+((H.partyB&&H.partyB.name)||H.shipper||''),'审　核：'+(PB.shr||'____________'));
     two('送货地址：'+cleanDeliveryPlace((H.partyB&&H.partyB.addr)||''),'联 系 人：'+(_bp.contact||'____________'));
     two('手　机：'+(_bp.tel||'____________'),'电　话：'+(_bp.phone||'____________')); }
   ['序号','产品名称','具体型号','材质标准','单位','数量','备注'].forEach((h,i)=>putCell(R,r,i,h)); r++;
