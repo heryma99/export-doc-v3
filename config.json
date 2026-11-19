@@ -1,9 +1,10 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-11-18T11:18:30.082Z",
+  "_at": "2026-11-19T01:03:43.754Z",
   "parties": {
     "shippers": [
-      "井太兰(东莞)贸易有限公司"
+      "井太兰(东莞)贸易有限公司",
+      "深圳祥拓国际贸易有限公司"
     ],
     "consignees": [
       "Leading Trade One Limited",
@@ -18,13 +19,19 @@
       "井太兰(东莞)贸易有限公司": {
         "usci": "91441900MAK6NAER11",
         "reg": "4419963TC4"
+      },
+      "深圳祥拓国际贸易有限公司": {
+        "usci": "91440300MAKQNA5U7M",
+        "reg": "4403166FSJ"
       }
     },
     "profiles": {
       "井太兰(东莞)贸易有限公司": {
         "addr": "广东省东莞市厚街镇恒通路6号3栋601室",
         "contact": "曾麗嫻",
-        "email": "zlx@jtl-trade.com"
+        "email": "zlx@jtl-trade.com",
+        "tel": "/",
+        "phone": "/"
       },
       "Leading Trade One Limited": {
         "addr": "FLAT/RM 1911 LEE GARDEN ONE 33 HYSAN AVENUE CAUSEWAY BAY，HONGKONG",
@@ -42,6 +49,13 @@
         "addr": "ROOM 30 34/F TIMES SQUARE TOWER ONE 1 MATHESON STREET CAUSEWAY BAY HK",
         "contact": "徐芳芳",
         "email": "product@soyamagroup.com"
+      },
+      "深圳祥拓国际贸易有限公司": {
+        "addr": "深圳市南山区粤海街道科技园社区科苑路6号科技园工业大厦E658",
+        "contact": "馬金火",
+        "tel": "/",
+        "phone": "/",
+        "email": "mjh@xt.com"
       }
     }
   },
