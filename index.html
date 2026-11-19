@@ -1567,7 +1567,7 @@ function renderOrders(){
     h+='<div class="note" style="border:1px solid var(--warn);color:var(--warn);margin-bottom:10px">⚠ 检测到 '+_dups.length+' 条记录存在重复订单（同货件多套订单=重复报关风险）：'
       +_dups.map(k=>'<button class="small" style="margin-left:6px" onclick="dedupOrders(\''+k+'\')">清理 '+k+'</button>').join('')+'</div>';
   }
-  h+='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>收货人*</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
+  h+='<table><thead><tr><th></th><th>订单ID</th><th>外部单号</th><th>来源</th><th>最终目的国*</th><th>币种*</th><th>贸易国</th><th>运抵国</th><th>产终国</th><th>运输方式</th><th>监管方式</th><th>成交方式</th><th>境内发货人*</th><th>收货人*</th><th>SKU数</th><th>操作</th></tr></thead><tbody>';
   DB.orders.forEach(o=>{const ok=o.destCountry&&o.currency;
     h+=`<tr class="${DB.sel.ord===o.id?'sel':''}">
       <td><input type="checkbox" ${DB.sel.ord===o.id?'checked':''} onchange="pickOrd('${o.id}')"></td>
@@ -1580,6 +1580,7 @@ function renderOrders(){
       <td><select style="width:110px" onchange="setOrd('${o.id}','transMode',this.value)"><option value="">运输</option>${opt(CODE.trans,o.transMode.split(' ')[0])}</select></td>
       <td><select style="width:120px" onchange="setOrd('${o.id}','tradeMode',this.value)"><option value="">监管</option>${opt(CODE.tradeMode,o.tradeMode.split(' ')[0])}</select></td>
       <td><select style="width:90px" onchange="setOrd('${o.id}','tradeTerm',this.value)"><option value="">成交</option>${opt(CODE.tradeTerm,o.tradeTerm)}</select></td>
+      <td><select class="req" style="width:150px" onchange="setOrd('${o.id}','shipper',this.value)"><option value="">选发货人</option>${optStr(DB.parties.shippers,o.shipper||DB.parties.shippers[0])}</select></td> <!-- v3.8 境内发货人下拉(用户2026-11-19确认):选项=DB.parties.shippers(主体信息维护),生单时按所选值接线 -->
       <td><select class="req" style="width:160px" onchange="setOrd('${o.id}','consignee',this.value)"><option value="">选收货人</option>${optStr(DB.parties.consignees,o.consignee)}</select></td>
       <td>${ordItems(o).length}</td>
       <td><button class="primary" ${ok?'':'disabled'} onclick="genDraft('${o.id}')">生成草单→</button> <button class="ghost small" onclick="delOrd('${o.id}')">删</button></td></tr>`;});
@@ -1603,7 +1604,7 @@ function setOrd(id,k,v){const o=DB.orders.find(x=>x.id===id);if(o){o[k]=v;save()
 
 /* ============== 阶段3 草单 ============== */
 function defaultHeader(o){
-  return {no:o.no||'',shipper:DB.parties.shippers[0],buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:o.consignee||DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
+  return {no:o.no||'',shipper:(o.shipper||DB.parties.shippers[0]),buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:o.consignee||DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
     partyA:{name:'',addr:'',contact:'',email:''},partyB:{name:'',addr:'',contact:'',email:''},
     signPlace:'【東莞】',signDate:today(),deliveryDate:'',
     deliveryPlace:'',tradeMode:o.tradeMode||'0110 一般贸易',transMode:o.transMode||'2 水路运输',tradeTerm:o.tradeTerm||'FOB',port:'',levy:'1 照章征税',
