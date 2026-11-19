@@ -1,6 +1,6 @@
 {
   "_v": "export-doc-v3-config",
-  "_at": "2026-11-19T01:04:48.274Z",
+  "_at": "2026-11-19T10:23:09.723Z",
   "parties": {
     "shippers": [
       "井太兰(东莞)贸易有限公司",
@@ -31,7 +31,8 @@
         "contact": "曾麗嫻",
         "email": "zlx@jtl-trade.com",
         "tel": "/",
-        "phone": "/"
+        "phone": "/",
+        "contactS": "曾丽娴"
       },
       "Leading Trade One Limited": {
         "addr": "FLAT/RM 1911 LEE GARDEN ONE 33 HYSAN AVENUE CAUSEWAY BAY，HONGKONG",
@@ -55,7 +56,8 @@
         "contact": "馬金火",
         "tel": "/",
         "phone": "/",
-        "email": "mjh@xt.com"
+        "email": "mjh@xt.com",
+        "contactS": "马金火"
       }
     }
   },
