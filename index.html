@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261119：申报人员默认空 / 修复输出单据页报错(buildData缺H定义) / 采购合同独立签订日期 / 交货地点序号 / 签署日期自动填 / 送货入库Excel列宽防超A4</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261119：申报单位改独立手填(默认空) / 申报人员默认空 / 修复输出单据页报错 / 采购合同独立签订日期 / 送货入库Excel列宽防超A4</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -1612,7 +1612,7 @@ function defaultHeader(o){
     preNo:'',customsNo:'',vehicle:'',billNo:'',levyNature:'',license:'',
     destPort:o.destCountry,exitPort:'',packKind:'纸箱',
     freight:'/O/',premium:'/O/',misc:'/O/',container:'',attach:'合同；发票；装箱单',marks:'',special:'/',priceEff:'/',royalty:'/',
-    declarer:'',declUnit:DB.parties.shippers[0]}; /* v3.8.2 申报人员默认空(2026-11-19用户要求);申报单位仍默认境内发货人 */
+    declarer:'',declUnit:''}; /* v3.8.3 申报单位改独立手填字段、默认空、不跟发货人联动(2026-11-19用户确认B:委托报关行场景);存量草单旧值不动 */
 }
 function buildRawLines(items,destCountry){
   const e0=enjoysOf(destCountry||'');
@@ -1788,6 +1788,7 @@ function renderDrafts(){
     <div class="field"><label>委托协议号</label><input value="${H.entrustNo||''}" onchange="setHeader('${d.id}','entrustNo',this.value)"></div>
     <div class="field"><label>备案号</label><input value="${H.recordNo||''}" onchange="setHeader('${d.id}','recordNo',this.value)"></div>
     <div class="field"><label>境内货源地/产地</label><input value="${H.domSrc||''}" onchange="setHeader('${d.id}','domSrc',this.value)" placeholder="如 广州其他(44019)"></div>
+    <div class="field"><label>申报单位</label><input value="${H.declUnit||''}" onchange="setHeader('${d.id}','declUnit',this.value)" placeholder="自理报关填本公司;委托报关填报关行"></div>
     <div class="field"><label>申报人员</label><input value="${H.declarer||''}" onchange="setHeader('${d.id}','declarer',this.value)"></div>
     <div class="field"><label>申报人员证号</label><input value="${H.declarerNo||''}" onchange="setHeader('${d.id}','declarerNo',this.value)"></div>
     <div class="field"><label>电话</label><input value="${H.declPhone||''}" onchange="setHeader('${d.id}','declPhone',this.value)"></div>
