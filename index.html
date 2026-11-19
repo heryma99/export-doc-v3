@@ -1604,7 +1604,7 @@ function setOrd(id,k,v){const o=DB.orders.find(x=>x.id===id);if(o){o[k]=v;save()
 
 /* ============== 阶段3 草单 ============== */
 function defaultHeader(o){
-  return {no:o.no||'',shipper:(o.shipper||DB.parties.shippers[0]),buyer:(DB.buyerParties&&DB.buyerParties[0])||DB.parties.shippers[0],consignee:o.consignee||DB.parties.consignees[0],prodUnit:DB.parties.shippers[0],
+  return {no:o.no||'',shipper:(o.shipper||DB.parties.shippers[0]),buyer:(o.shipper||DB.parties.shippers[0]),consignee:o.consignee||DB.parties.consignees[0],prodUnit:(o.shipper||DB.parties.shippers[0]), /* v3.8.1 三字段恒等(修v3.8接线遗漏:原buyer=buyerParties[0]/prodUnit=shippers[0]不随订单所选发货人,会触发A10阻断) */
     partyA:{name:'',addr:'',contact:'',email:''},partyB:{name:'',addr:'',contact:'',email:''},
     signPlace:'【東莞】',signDate:today(),deliveryDate:'',
     deliveryPlace:'',tradeMode:o.tradeMode||'0110 一般贸易',transMode:o.transMode||'2 水路运输',tradeTerm:o.tradeTerm||'FOB',port:'',levy:'1 照章征税',
@@ -1751,7 +1751,7 @@ function renderDrafts(){
   const H=d.header;
   const h=`<div class="row" style="margin-bottom:10px">
     <div class="field"><label>境内发货人</label><select onchange="setHeader('${d.id}','shipper',this.value)">${optStr(DB.parties.shippers,H.shipper)}</select></div>
-    <div class="field"><label>采购主体(采购合同采购方)</label><select onchange="setHeader('${d.id}','buyer',this.value)">${optStr((DB.buyerParties&&DB.buyerParties.length?DB.buyerParties:[H.buyer||H.shipper]),H.buyer||H.shipper)}</select></div>
+    <div class="field"><label>采购主体(采购合同采购方)</label><select onchange="setHeader('${d.id}','buyer',this.value)">${optStr(Array.from(new Set([].concat(DB.buyerParties||[],DB.parties.shippers||[],[H.buyer||H.shipper]).filter(Boolean))),H.buyer||H.shipper)}</select></div>
     <div class="field"><label>境外收货人</label><select onchange="setHeader('${d.id}','consignee',this.value)">${optStr(DB.parties.consignees,H.consignee)}</select></div>
     <div class="field"><label>生产销售单位(=发货人)</label><input value="${H.prodUnit}" disabled style="color:var(--mut)"></div>
     <div class="field"><label>贸易方式</label><select onchange="setHeader('${d.id}','tradeMode',this.value)">${opt(CODE.tradeMode,H.tradeMode.split(' ')[0])}</select></div>
@@ -1864,7 +1864,7 @@ function renderDrafts(){
     </div>${mh}</div></div>`;
   updRail();
 }
-function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;const dot=f.indexOf('.');if(dot>0){const k=f.slice(0,dot),sk=f.slice(dot+1);if(!d.header[k]||typeof d.header[k]!=='object')d.header[k]={};d.header[k][sk]=v;}else{d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}/* 主体变更 → 销售合同甲乙方自动跟随(档案引用) */if(f==='shipper'||f==='consignee'){const pa=partyProfile(d.header.consignee),pb=partyProfile(d.header.shipper);d.header.partyA={name:d.header.consignee||'',addr:pa.addr||'',contact:pa.contact||'',email:pa.email||''};d.header.partyB={name:d.header.shipper||'',addr:pb.addr||'',contact:pb.contact||'',email:pb.email||'',tel:pb.tel||'',phone:pb.phone||''};}}save();renderDrafts();}
+function setHeader(did,f,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;const dot=f.indexOf('.');if(dot>0){const k=f.slice(0,dot),sk=f.slice(dot+1);if(!d.header[k]||typeof d.header[k]!=='object')d.header[k]={};d.header[k][sk]=v;}else{d.header[f]=v;if(f==='shipper'){d.header.prodUnit=v;d.header.buyer=v;/* v3.8.1 三字段恒等(用户2026-11-19确认):境内发货人=采购主体=生产销售单位 */const c=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c.usci||'';d.header.shipperReg=c.reg||'';d.header.prodUSCI=c.usci||'';}if(f==='buyer'){d.header.shipper=v;d.header.prodUnit=v;const c2=(DB.parties.codes&&DB.parties.codes[v])||{};d.header.shipperUSCI=c2.usci||'';d.header.shipperReg=c2.reg||'';d.header.prodUSCI=c2.usci||'';}/* 主体变更 → 销售合同甲乙方自动跟随(档案引用) */if(f==='shipper'||f==='consignee'){const pa=partyProfile(d.header.consignee),pb=partyProfile(d.header.shipper);d.header.partyA={name:d.header.consignee||'',addr:pa.addr||'',contact:pa.contact||'',email:pa.email||''};d.header.partyB={name:d.header.shipper||'',addr:pb.addr||'',contact:pb.contact||'',email:pb.email||'',tel:pb.tel||'',phone:pb.phone||''};}}save();renderDrafts();}
 function setLine(did,i,k,v){const d=DB.drafts.find(x=>x.id===did);if(!d)return;d.lines[i][k]=v;
   /* 单写多读第二批（2026-10-15）：手工修改记入覆盖层——记录刷新重建行后可重新应用 */
   d.overrides=d.overrides||[];
