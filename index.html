@@ -153,7 +153,7 @@
 <header>
   <h1>🟦 出口单证一体化 V3</h1>
   <span class="sub">记录 → 订单 → 报关草单 → 整套单据</span>
-  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261119：送货单审核人恢复取一级供应商 / 申报单位改独立手填 / 申报人员默认空 / 修复输出单据页报错 / 采购合同独立签订日期</span>
+  <span class="sub" style="opacity:.75" title="若与最新说明不一致请 Ctrl+Shift+R 硬刷新">构建 v20261123：合同续页右上角显示合同编号(首页不变) / 送货单联系人简体字段 / 审核人取供应商 / 申报单位独立手填</span>
   <span class="spacer"></span>
   <button class="ghost small" id="cloudBadge" onclick="openSharedPanel()" style="color:var(--mut)">☁ 配置同步中…</button>
   <!-- 2026-10-12：「清空本地数据」按钮已隐藏（破坏性最高却常驻顶栏，误触=业务流水不可逆全灭）。resetAll 函数保留；确需清空时控制台执行 localStorage.removeItem('exp3_data_v1');location.reload() -->
@@ -3759,6 +3759,23 @@ function applyA4PageSetup(ws,type){
       }
     }catch(e){}
     ws.pageSetup=ps;
+    /* v3.9 合同续页页眉(2026-11-23用户确认)：首页完全不变,第2页起右上角显示合同编号。
+       从sheet前3行扫描「合同编号：/合約編號：」提取编号(销售合同A2/采购合同模板A1),有编号才注入 → 天然只对合同sheet生效,
+       其他单证(无编号单元格)不受影响。exceljs 4.4.0: headerFooter字段必须是字符串,用&R=右对齐。 */
+    try{
+      var _cno='';
+      for(var rr=1;rr<=3&&!_cno;rr++){
+        for(var cc=1;cc<=2;cc++){
+          var _v=ws.getCell(rr,cc).value;
+          var _t=(_v&&typeof _v==='object'&&_v.text!==undefined)?_v.text:(typeof _v==='string'?_v:'');
+          var _m=String(_t).match(/(?:合同编号|合約編號)\s*[：:]\s*([A-Za-z0-9_\-]+)/);
+          if(_m){_cno=_m[1];break;}
+        }
+      }
+      if(_cno){
+        ws.headerFooter={differentFirst:true, oddHeader:'&R合同编号：'+_cno, firstHeader:''};
+      }
+    }catch(e){}
   }catch(e){ console.warn('A4 setup fail',e); }
 }
 /* ========== 整套 Excel 合成（2026-09-04 v2）：采购合同并入同一工作簿的一个 sheet ==========
