@@ -3778,6 +3778,54 @@ function applyA4PageSetup(ws,type){
     }catch(e){}
   }catch(e){ console.warn('A4 setup fail',e); }
 }
+/* ============== 物流申报要素模板（v3.10，2026-11-23 用户确认方案）==============
+   物流商/报关行索要的申报要素表：整套导出时按 M0（逐款一行）额外生成独立文件，
+   命名与现行规则一致 = {合同号}_物流申报要素模板.xlsx（exportNo 合同号段）。
+   不混入整套工作簿（整套含采购价，直接转发物流商有泄露风险）。
+   版式对齐用户空白样张（顶部 5 行说明 + 合并标题 + 9 列表头 + 序号预填 1~30 行，细线边框，宋体）。
+   检疫附加码列系统暂无数据 → 留空（用户确认，后续可做 HS→检疫码映射自动带出）。
+   品牌类型/出口享惠情况/其他申报要素复用报关串口径（brandTypeMap / enjoys / HS_LIB.seq 要素序列）。 */
+function xlsLogiDecl(d){
+  /* 固定 M0 口径：不随草稿归并模式（M2/M5 等），逐款一行——物流商对货需要逐 SKU 明细 */
+  const L=mergeLines((d.rawLines||[]).map(function(x){return Object.assign({},x);}),'M0',false);
+  const rows=L.map(function(l){
+    const ent=hsEntryOf(l.hs).entry;
+    let other='⚠ 要素序列待填('+(l.hs||'?')+')';
+    if(ent){ const map=specMap(l); const ps=ent.seq.map(function(k){return map[k];});
+      while(ps.length&&(ps[ps.length-1]==null||String(ps[ps.length-1]).trim()===''))ps.pop();
+      other=ps.join('|'); }
+    return {name:l.name||'',hs:l.hs||'',brand:l.brand||'',model:l.model||l.sku||'',bt:resolveBrandType(l),enj:l.enjoys||'0',other:other};
+  });
+  const N=Math.max(rows.length,30);   /* 样张固定预填 1~30 行序号，超出按实际款数续行 */
+  const R=[],MG=[],noB=[];
+  const cell=(r,c,v,s)=>{ R[r]=R[r]||[]; for(let i=0;i<=c;i++) if(R[r][i]===undefined) R[r][i]=''; R[r][c]={t:'s',v:String(v==null?'':v),s:s||{}}; };
+  const lf={wrapText:true,vertical:'center',horizontal:'left'};
+  const iS=b=>({font:{name:'宋体',sz:12,bold:!!b},alignment:lf});
+  /* R1~R3 顶部说明（样张原文，A1 加粗） */
+  cell(0,0,'(产品或者包装上有明显的logo，带R，TM标识的商标必须申报为品牌，有显示型号（model，type no.）的必须申报为型号)(申报的牌子型号要在产品或包装上有一模一样显示，海关查货的话会去比对拍照，对不上会升级整车查验和压车改单）',iS(true)); addMerge(MG,0,0,8); noB.push(0);
+  cell(1,0,'(申报的牌子型号要在产品或包装上有一模一样显示，海关查货的话会去比对拍照，对不上会升级整车查验和压车改单）',iS(false)); addMerge(MG,1,1,8); noB.push(1);
+  cell(2,0,'检验检疫附加编号：通过以下网站输入10位HS编号，再根据申报要素细分确定3位检疫附加编号',iS(false)); addMerge(MG,2,2,8); noB.push(2);
+  /* R4~R5 查询网址（A4:B5 上下合并标签；C4:I4 / C5:I5 各一行，宋体11） */
+  cell(3,0,'申报要素查询网址：',iS(false)); MG.push({s:{r:3,c:0},e:{r:4,c:1}});
+  cell(3,2,'https://www.i5a6.com/hscode/',{font:{name:'宋体',sz:11},alignment:lf}); addMerge(MG,3,2,8);
+  cell(4,2,'http://www.hscode.net/IntegrateQueries/QueryYS/',{font:{name:'宋体',sz:11},alignment:lf}); addMerge(MG,4,2,8);
+  noB.push(3); noB.push(4);
+  noB.push(5); /* R6 空行 */
+  /* R7 合并标题（样张宋体 20 居中） */
+  cell(6,0,'物流申报要素模板',{font:{name:'宋体',sz:20},alignment:{horizontal:'center',vertical:'center',wrapText:true}}); addMerge(MG,6,0,8); noB.push(6);
+  noB.push(7); /* R8 空行 */
+  /* R9 表头（样张宋体 10 居中细框） */
+  ['序号','品名','海关HS编码','检疫附加码','品牌','型号','品牌类型','出口享惠情况','其他申报要素'].forEach((v,i)=>cell(8,i,v,{font:{name:'宋体',sz:10},alignment:{horizontal:'center',vertical:'center'}}));
+  /* R10~ 数据行（M0 逐款）+ 空白序号行补足 30（样张原样）；品名/其他申报要素左对齐，其余居中 */
+  for(let i=0;i<N;i++){ const rr=9+i, t=rows[i];
+    const vals=t?[String(i+1),t.name,t.hs,'',t.brand,t.model,t.bt,t.enj,t.other]:[String(i+1)];
+    for(let c=0;c<9;c++) cell(rr,c,vals[c]==null?'':vals[c],{font:{name:'宋体',sz:12},alignment:{horizontal:(c===1||c===8)?'left':'center',vertical:'center',wrapText:c===8}});
+  }
+  /* 列宽 = 样张原值；表头行高 12、说明行 30、标题行 25 */
+  const ws=xwsFrom(R,MG,[{wch:10},{wch:13.6},{wch:15.6},{wch:10.8},{wch:11.8},{wch:16},{wch:11.5},{wch:15.4},{wch:76.9}],{noBorderRows:noB});
+  ws['!rows']=ws['!rows']||[]; ws['!rows'][0]={hpt:30}; ws['!rows'][6]={hpt:25}; ws['!rows'][7]={hpt:20}; ws['!rows'][8]={hpt:16};
+  return ws;
+}
 /* ========== 整套 Excel 合成（2026-09-04 v2）：采购合同并入同一工作簿的一个 sheet ==========
    思路：非采购页(报关/发票/装箱/销售)用 SheetJS 画 → XLSX.write 出 buffer → exceljs load 载入；
    采购页用模板盖章 append 到同一 exceljs workbook；最终 exceljs 输出单文件多 sheet。
@@ -3960,6 +4008,14 @@ function downloadAllXlsx(){
     try{
       const doc=DB.docs[DB.sel.doc]; if(!doc){alert('暂无可导出的单据');return;}
       dcLog('dl',doc.dftId,'整套单据','Excel多Sheet',safeRender('报关草单',buildData(doc)));
+      /* 物流申报要素模板（v3.10）：整套导出时按 M0 逐款一行额外生成独立文件，
+         命名与现行规则一致 = {合同号}_物流申报要素模板.xlsx；失败不影响整套导出 */
+      (function(){ try{ const _d=buildData(doc);
+        if(_d&&_d.rawLines&&_d.rawLines.length){
+          const wbL=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wbL,xlsLogiDecl(_d),sheetName('物流申报要素模板'));
+          setTimeout(function(){ try{ dcLog('dl',doc.dftId,'物流申报要素模板','Excel',safeRender('报关草单',_d)); xlsDownload(exportNo(_d)+'_物流申报要素模板',wbL); }catch(e2){ console.warn('物流申报要素模板下载失败',e2); } },600);
+        }
+      }catch(e){ console.warn('物流申报要素模板生成失败',e); }})();
       const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
       /* 含采购页 → exceljs 合成单工作簿(采购页并入)；否则 SheetJS 多sheet */
       if(hasPur && window.__PURCHASE_TPL_B64__){
