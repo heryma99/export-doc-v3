@@ -2870,6 +2870,7 @@ function renderOut(){
   h+=`<p class="seq">日期时序：合同簽訂(手填) → 送货/入库(手填,可空) → 发票/装箱单(取发票号日期,补全年) → 报关申报(手填申报日期)；出口日期留空待海关回执。</p>`;
   h+=`<div class="row" style="margin-top:10px"><button class="primary" onclick="downloadAll()">下载当前整套(单据)</button>
       <button class="primary xbtn" onclick="downloadAllXlsx()">下载当前整套EXCEL(工作簿)</button>
+      <button class="ghost" onclick="dlLogiDeclSingle(${docI})" title="单独下载：{合同号}_物流申报要素模板.xlsx（按 M0 逐款一行）">下载物流申报要素</button>
       <button class="ghost" onclick="printAll()">打印当前整套</button>
       <button class="ghost" onclick="openRebate(${docI})" title="只读测算面板：按海关编码×供应商身份算应退税额，不影响任何单证">退税测算</button></div>`;
 
@@ -3088,6 +3089,11 @@ function _dl(blob,fname){
 }
 function dl(name,html){
   _dl(new Blob(['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+name+'</title></head><body>'+html+'</body></html>'],{type:'text/html;charset=utf-8'}),name+'.html');
+}
+function dlLogiDeclSingle(docI){/* v3.10.4 页面单独下载物流申报要素模板（与其他单据的下载按钮同级） */
+  const doc=DB.docs[docI]; if(!doc){alert('暂无可导出的单据');return;}
+  if(window.XLSX&&Object.keys(XLSX).length>1){dlLogiDeclFile(doc,0);}
+  else{ensureXLSX(function(){dlLogiDeclFile(doc,0);});}
 }
 function downloadAll(){const i=DB.sel.doc;const doc=DB.docs[i];doc.out.forEach((o,idx)=>downloadDoc(i,idx));/* v3.10.1 物流申报要素模板随整套(单据)一起生成 */ if(window.XLSX&&Object.keys(XLSX).length>1){dlLogiDeclFile(doc,900);} else {ensureXLSX(function(){dlLogiDeclFile(doc,300);});}}
 function printAll(){const doc=DB.docs[DB.sel.doc];let all='';doc.out.forEach(o=>{all+=safeRender(o.type,buildData(doc));});
