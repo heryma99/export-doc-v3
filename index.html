@@ -3844,6 +3844,9 @@ async function composeSetWorkbook(doc,prefix){
     if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'||o.type==='询价单'){ (d.contracts||[]).forEach(function(c,ci){ const wsV=(o.type==='供应商报价单')?xlsQuoteSupplier(c,d):((o.type==='询价单')?xlsInquiry(c,d):xlsVoucher(o.type,c,d)); XLSX.utils.book_append_sheet(sj,wsV,sheetName((prefix||'')+((o.type==='询价单')?(docLabel(o.type)+((d.contracts.length>1)?'_'+(ci+1):'')):(o.type+'_'+c.supplier)))); addedSj=true; }); /* v3.3 询价单sheet名不带公司名; v3.5 繁体 */ return; }
     const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(sj,ws,sheetName((prefix||'')+docLabel(o.type))); addedSj=true; }
   });
+  /* v3.10.2（2026-11-23 用户要求）：物流申报要素模板作为最后一页 sheet 并入整套工作簿。
+     加在 sj 上 —— exceljs 合成路径会整体 load sjBuf，样式随载入自动保留；独立文件下载(dlLogiDeclFile)照旧保留 */
+  try{ if(d&&d.rawLines&&d.rawLines.length){ XLSX.utils.book_append_sheet(sj,xlsLogiDecl(d),sheetName((prefix||'')+'物流申报要素模板')); addedSj=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
   /* 采购页走 exceljs 模板盖章 → 与 SheetJS 页合成单工作簿 */
   if(hasPur && hasTpl){
     const ej=new ExcelJS.Workbook();
@@ -4036,6 +4039,8 @@ function downloadAllXlsx(){
         if(o.type==='国内采购合同'){ (buildData(doc).contracts||[]).forEach(function(c,ix){ XLSX.utils.book_append_sheet(wb,xlsContract(c,buildData(doc),ix),sheetName('采购合同_'+c.supplier)); added=true; }); return; }
         const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
       });
+      /* v3.10.2 物流申报要素模板 = 整套工作簿最后一页 sheet */
+      try{ const _d=buildData(doc); if(_d&&_d.rawLines&&_d.rawLines.length){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
       if(added){ xlsDownload(exportNo(buildData(doc)), wb); }
       else { alert('暂无可导出的单据'); return; }
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
@@ -4127,6 +4132,8 @@ function batchDownloadXlsx(){
                 if(o.type==='国内采购合同'){ (buildData(doc).contracts||[]).forEach(function(c,ix){ XLSX.utils.book_append_sheet(wb,xlsContract(c,buildData(doc),ix),sheetName('采购合同_'+c.supplier)); added=true; }); return; }
                 const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
               });
+              /* v3.10.2 批量EXCEL每套末尾并入物流申报要素模板 sheet */
+              try{ const _d=buildData(doc); if(_d&&_d.rawLines&&_d.rawLines.length){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
               if(added) xlsDownload(fname, wb);
             }
           }catch(e){ alert('批量 EXCEL 下载出错：'+e.message); }
@@ -4157,6 +4164,8 @@ function batchDownloadMergedXlsx(){
             else {
               const wb=XLSX.utils.book_new(); let added=false;
               (doc.out||[]).forEach(function(o){ const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; } });
+              /* v3.10.2 合并EXCEL逐套下载分支末尾并入物流申报要素模板 sheet */
+              try{ const _d=buildData(doc); if(_d&&_d.rawLines&&_d.rawLines.length){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
               if(added) xlsDownload(fname, wb);
             }
           }, idx*800);
@@ -4175,6 +4184,8 @@ function batchDownloadMergedXlsx(){
             const ws=xlsSheetFor(o.type,d); if(ws){ XLSX.utils.book_append_sheet(wb, ws, sheetName(prefix+o.type)); added=true; }
           }
         });
+        /* v3.10.2 纯SheetJS合并分支：每套末尾并入物流申报要素模板 sheet（带 setN 前缀防重名） */
+        try{ if(d.rawLines&&d.rawLines.length){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(d),sheetName(prefix+'物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
       });
       if(!added){ alert('所选无内容'); return; }
       xlsDownload(exportNo(buildData(DB.docs[sels[0]]))+'_等'+sels.length+'套', wb);
