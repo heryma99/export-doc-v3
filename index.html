@@ -2467,6 +2467,7 @@ function buildData(doc){
     totalNW:(d.sum?+d.sum.totalNW:boxDedupTotals(d.rawLines||lines).nw).toFixed(2),
     boxCount:d.sum?+d.sum.boxCount:totalBoxCount(lines),
     contractCount:contracts.length,
+    rawLines:d.rawLines||[],   /* v3.10.3 修复：主 return 一直漏传 rawLines → 物流申报要素模板守卫恒 false 静默跳过（2026-11-23 用户反馈"看不到"根因）；新增字段不动其他字段 */
     bankInfo:acctFor(d.header.currency)||{},
     bankAccounts:DB.bankAccounts||[],
     signDateCN:fmtDateCN(d.header.signDate),
@@ -3788,8 +3789,10 @@ function applyA4PageSetup(ws,type){
    检疫附加码列系统暂无数据 → 留空（用户确认，后续可做 HS→检疫码映射自动带出）。
    品牌类型/出口享惠情况/其他申报要素复用报关串口径（brandTypeMap / enjoys / HS_LIB.seq 要素序列）。 */
 function xlsLogiDecl(d){
-  /* 固定 M0 口径：不随草稿归并模式（M2/M5 等），逐款一行——物流商对货需要逐 SKU 明细 */
-  const L=mergeLines((d.rawLines||[]).map(function(x){return Object.assign({},x);}),'M0',false);
+  /* 固定 M0 口径：不随草稿归并模式（M2/M5 等），逐款一行——物流商对货需要逐 SKU 明细。
+     v3.10.3：源行兜底——rawLines 缺失时退回 buildData 的 lines（旧数据兼容） */
+  const _src=(d.rawLines&&d.rawLines.length)?d.rawLines:(d.lines||[]);
+  const L=mergeLines(_src.map(function(x){return Object.assign({},x);}),'M0',false);
   const rows=L.map(function(l){
     const ent=hsEntryOf(l.hs).entry;
     let other='⚠ 要素序列待填('+(l.hs||'?')+')';
@@ -3846,7 +3849,7 @@ async function composeSetWorkbook(doc,prefix){
   });
   /* v3.10.2（2026-11-23 用户要求）：物流申报要素模板作为最后一页 sheet 并入整套工作簿。
      加在 sj 上 —— exceljs 合成路径会整体 load sjBuf，样式随载入自动保留；独立文件下载(dlLogiDeclFile)照旧保留 */
-  try{ if(d&&d.rawLines&&d.rawLines.length){ XLSX.utils.book_append_sheet(sj,xlsLogiDecl(d),sheetName((prefix||'')+'物流申报要素模板')); addedSj=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
+  try{ if(d&&((d.rawLines&&d.rawLines.length)||(d.lines&&d.lines.length))){ XLSX.utils.book_append_sheet(sj,xlsLogiDecl(d),sheetName((prefix||'')+'物流申报要素模板')); addedSj=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
   /* 采购页走 exceljs 模板盖章 → 与 SheetJS 页合成单工作簿 */
   if(hasPur && hasTpl){
     const ej=new ExcelJS.Workbook();
@@ -4014,7 +4017,7 @@ function downloadDocWord(docI,idx){
 function dlLogiDeclFile(doc,delay){
   setTimeout(function(){ try{
     const _d=buildData(doc);
-    if(_d&&_d.rawLines&&_d.rawLines.length){
+    if(_d&&((_d.rawLines&&_d.rawLines.length)||(_d.lines&&_d.lines.length))){
       const wbL=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wbL,xlsLogiDecl(_d),sheetName('物流申报要素模板'));
       dcLog('dl',doc.dftId,'物流申报要素模板','Excel',safeRender('报关草单',_d));
       xlsDownload(exportNo(_d)+'_物流申报要素模板',wbL);
@@ -4040,7 +4043,7 @@ function downloadAllXlsx(){
         const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
       });
       /* v3.10.2 物流申报要素模板 = 整套工作簿最后一页 sheet */
-      try{ const _d=buildData(doc); if(_d&&_d.rawLines&&_d.rawLines.length){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
+      try{ const _d=buildData(doc); if(_d&&((_d.rawLines&&_d.rawLines.length)||(_d.lines&&_d.lines.length))){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
       if(added){ xlsDownload(exportNo(buildData(doc)), wb); }
       else { alert('暂无可导出的单据'); return; }
     }catch(e){ alert('EXCEL 导出出错：'+e.message); console.error(e); }
@@ -4133,7 +4136,7 @@ function batchDownloadXlsx(){
                 const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; }
               });
               /* v3.10.2 批量EXCEL每套末尾并入物流申报要素模板 sheet */
-              try{ const _d=buildData(doc); if(_d&&_d.rawLines&&_d.rawLines.length){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
+              try{ const _d=buildData(doc); if(_d&&((_d.rawLines&&_d.rawLines.length)||(_d.lines&&_d.lines.length))){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
               if(added) xlsDownload(fname, wb);
             }
           }catch(e){ alert('批量 EXCEL 下载出错：'+e.message); }
@@ -4165,7 +4168,7 @@ function batchDownloadMergedXlsx(){
               const wb=XLSX.utils.book_new(); let added=false;
               (doc.out||[]).forEach(function(o){ const ws=xlsSheetFor(o.type,buildData(doc)); if(ws){ XLSX.utils.book_append_sheet(wb,ws,sheetName(o.type)); added=true; } });
               /* v3.10.2 合并EXCEL逐套下载分支末尾并入物流申报要素模板 sheet */
-              try{ const _d=buildData(doc); if(_d&&_d.rawLines&&_d.rawLines.length){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
+              try{ const _d=buildData(doc); if(_d&&((_d.rawLines&&_d.rawLines.length)||(_d.lines&&_d.lines.length))){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(_d),sheetName('物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
               if(added) xlsDownload(fname, wb);
             }
           }, idx*800);
@@ -4185,7 +4188,7 @@ function batchDownloadMergedXlsx(){
           }
         });
         /* v3.10.2 纯SheetJS合并分支：每套末尾并入物流申报要素模板 sheet（带 setN 前缀防重名） */
-        try{ if(d.rawLines&&d.rawLines.length){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(d),sheetName(prefix+'物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
+        try{ if((d.rawLines&&d.rawLines.length)||(d.lines&&d.lines.length)){ XLSX.utils.book_append_sheet(wb,xlsLogiDecl(d),sheetName(prefix+'物流申报要素模板')); added=true; } }catch(e){ console.warn('物流申报要素模板 sheet 并入失败',e); }
       });
       if(!added){ alert('所选无内容'); return; }
       xlsDownload(exportNo(buildData(DB.docs[sels[0]]))+'_等'+sels.length+'套', wb);
