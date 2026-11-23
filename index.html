@@ -2829,6 +2829,11 @@ function renderOut(){
   const docI=DB.sel.doc, doc=DB.docs[docI], dt=buildData(doc);
   const supNamesNow=(doc.suppliers&&doc.suppliers.length)?doc.suppliers.join('、'):'未匹配';
   h+=`<div class="ctx-bar"><span class="ctx-label">正在浏览：</span><span class="ctx-val">草单 ${doc.dftId}</span><span class="ctx-extra">· ${doc.out.reduce((a,b)=>a+b.n,0)} 份单据 · 供应商：${supNamesNow}</span></div>`;
+  /* v3.10.5 物流申报要素模板：与其他单据同级的独立卡片（列表首位，免滚动即可见） */
+  h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
+      <h4 style="margin:0 8px 0 0">物流申报要素模板</h4>
+      <button class="small" onclick="dlLogiDeclSingle(${docI})">下载EXCEL</button>
+      <span style="color:var(--mut);font-size:11px">按 M0 逐款一行 · 文件名 {合同号}_物流申报要素模板.xlsx</span></div></div>`;
   doc.out.forEach((o,idx)=>{
     const tplHtml=tplOf(o.type)||builtin(o.type,dt);
     const isBroken=html=>/\{\{[\/#]|\{\{each/.test(html);
