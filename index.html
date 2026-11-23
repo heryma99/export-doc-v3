@@ -3819,27 +3819,32 @@ function xlsLogiDecl(d){
   const iS=b=>({font:{name:'宋体',sz:12,bold:!!b},alignment:lf});
   /* R1~R3 顶部说明（样张原文，A1 加粗） */
   cell(0,0,'(产品或者包装上有明显的logo，带R，TM标识的商标必须申报为品牌，有显示型号（model，type no.）的必须申报为型号)(申报的牌子型号要在产品或包装上有一模一样显示，海关查货的话会去比对拍照，对不上会升级整车查验和压车改单）',iS(true)); addMerge(MG,0,0,8); noB.push(0);
-  cell(1,0,'(申报的牌子型号要在产品或包装上有一模一样显示，海关查货的话会去比对拍照，对不上会升级整车查验和压车改单）',iS(false)); addMerge(MG,1,1,8); noB.push(1);
-  cell(2,0,'检验检疫附加编号：通过以下网站输入10位HS编号，再根据申报要素细分确定3位检疫附加编号',iS(false)); addMerge(MG,2,2,8); noB.push(2);
-  /* R4~R5 查询网址（A4:B5 上下合并标签；C4:I4 / C5:I5 各一行，宋体11） */
-  cell(3,0,'申报要素查询网址：',iS(false)); MG.push({s:{r:3,c:0},e:{r:4,c:1}});
-  cell(3,2,'https://www.i5a6.com/hscode/',{font:{name:'宋体',sz:11},alignment:lf}); addMerge(MG,3,2,8);
-  cell(4,2,'http://www.hscode.net/IntegrateQueries/QueryYS/',{font:{name:'宋体',sz:11},alignment:lf}); addMerge(MG,4,2,8);
+  cell(1,0,'(申报的牌子型号要在产品或包装上有一模一样显示，海关查货的话会去比对拍照，对不上会升级整车查验和压车改单）',{font:{name:'宋体',sz:12,bold:true},alignment:{vertical:'center',horizontal:'left'}}); addMerge(MG,1,0,8); noB.push(1);
+  cell(2,0,'检验检疫附加编号：通过以下网站输入10位HS编号，再根据申报要素细分确定3位检疫附加编号',{font:{name:'宋体',sz:12,bold:false},alignment:{vertical:'center',horizontal:'left'}}); addMerge(MG,2,0,8); noB.push(2);
+  /* R4~R5 查询网址（A4:B5 上下合并标签；C4:I4 / C5:I5 各一行，宋体11；样张均不换行） */
+  cell(3,0,'申报要素查询网址：',{font:{name:'宋体',sz:12,bold:false},alignment:{vertical:'center',horizontal:'left'}}); MG.push({s:{r:3,c:0},e:{r:4,c:1}});
+  cell(3,2,'https://www.i5a6.com/hscode/',{font:{name:'宋体',sz:11},alignment:{vertical:'center',horizontal:'left'}}); addMerge(MG,3,2,8);
+  cell(4,2,'http://www.hscode.net/IntegrateQueries/QueryYS/',{font:{name:'宋体',sz:11},alignment:{vertical:'center',horizontal:'left'}}); addMerge(MG,4,2,8);
   noB.push(3); noB.push(4);
   noB.push(5); /* R6 空行 */
   /* R7 合并标题（样张宋体 20 居中） */
   cell(6,0,'物流申报要素模板',{font:{name:'宋体',sz:20},alignment:{horizontal:'center',vertical:'center',wrapText:true}}); addMerge(MG,6,0,8); noB.push(6);
   noB.push(7); /* R8 空行 */
-  /* R9 表头（样张宋体 10 居中细框） */
-  ['序号','品名','海关HS编码','检疫附加码','品牌','型号','品牌类型','出口享惠情况','其他申报要素'].forEach((v,i)=>cell(8,i,v,{font:{name:'宋体',sz:10},alignment:{horizontal:'center',vertical:'center'}}));
-  /* R10~ 数据行（M0 逐款）+ 空白序号行补足 30（样张原样）；品名/其他申报要素左对齐，其余居中 */
+  /* R9 表头（样张宋体 10 居中细框自动换行） */
+  ['序号','品名','海关HS编码','检疫附加码','品牌','型号','品牌类型','出口享惠情况','其他申报要素'].forEach((v,i)=>cell(8,i,v,{font:{name:'宋体',sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true}}));
+  /* R10~ 数据行（M0 逐款）+ 空白序号行补足 30（样张原样）；全部居中+自动换行，序号数值型，G/H 列宋体 11，行高 36 对齐样张 */
   for(let i=0;i<N;i++){ const rr=9+i, t=rows[i];
-    const vals=t?[String(i+1),t.name,t.hs,'',t.brand,t.model,t.bt,t.enj,t.other]:[String(i+1)];
-    for(let c=0;c<9;c++) cell(rr,c,vals[c]==null?'':vals[c],{font:{name:'宋体',sz:12},alignment:{horizontal:(c===1||c===8)?'left':'center',vertical:'center',wrapText:c===8}});
+    const vals=t?[i+1,t.name,t.hs,'',t.brand,t.model,t.bt,t.enj,t.other]:[i+1];
+    for(let c=0;c<9;c++){ const st={font:{name:'宋体',sz:(c===6||c===7)?11:12},alignment:{horizontal:'center',vertical:'center',wrapText:true}};
+      R[rr]=R[rr]||[]; for(let k=0;k<=c;k++) if(R[rr][k]===undefined) R[rr][k]='';
+      R[rr][c]=(c===0)?{t:'n',v:i+1,s:st}:{t:'s',v:String(vals[c]==null?'':vals[c]),s:st};
+    }
   }
-  /* 列宽 = 样张原值；表头行高 12、说明行 30、标题行 25 */
-  const ws=xwsFrom(R,MG,[{wch:10},{wch:13.6},{wch:15.6},{wch:10.8},{wch:11.8},{wch:16},{wch:11.5},{wch:15.4},{wch:76.9}],{noBorderRows:noB});
-  ws['!rows']=ws['!rows']||[]; ws['!rows'][0]={hpt:30}; ws['!rows'][6]={hpt:25}; ws['!rows'][7]={hpt:20}; ws['!rows'][8]={hpt:16};
+  /* 列宽 = 样张原值（xlsx-js-style 写盘自带 +0.83 内边距，预扣对齐样张实测值）；行高：说明 30/标题 25/间隔 20/表头 12/数据 36 */
+  const ws=xwsFrom(R,MG,[{wch:9.17},{wch:12.78},{wch:14.73},{wch:10.0},{wch:10.98},{wch:15.14},{wch:10.7},{wch:14.59},{wch:76.11}],{noBorderRows:noB});
+  ws['!rows']=ws['!rows']||[];
+  ws['!rows'][0]={hpt:30}; ws['!rows'][6]={hpt:25}; ws['!rows'][7]={hpt:20}; ws['!rows'][8]={hpt:12};
+  for(let i=0;i<N;i++) ws['!rows'][9+i]={hpt:36};
   return ws;
 }
 /* ========== 整套 Excel 合成（2026-09-04 v2）：采购合同并入同一工作簿的一个 sheet ==========
