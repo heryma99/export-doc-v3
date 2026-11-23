@@ -3088,7 +3088,7 @@ function _dl(blob,fname){
 function dl(name,html){
   _dl(new Blob(['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+name+'</title></head><body>'+html+'</body></html>'],{type:'text/html;charset=utf-8'}),name+'.html');
 }
-function downloadAll(){const i=DB.sel.doc;const doc=DB.docs[i];doc.out.forEach((o,idx)=>downloadDoc(i,idx));}
+function downloadAll(){const i=DB.sel.doc;const doc=DB.docs[i];doc.out.forEach((o,idx)=>downloadDoc(i,idx));/* v3.10.1 物流申报要素模板随整套(单据)一起生成 */ if(window.XLSX&&Object.keys(XLSX).length>1){dlLogiDeclFile(doc,900);} else {ensureXLSX(function(){dlLogiDeclFile(doc,300);});}}
 function printAll(){const doc=DB.docs[DB.sel.doc];let all='';doc.out.forEach(o=>{all+=safeRender(o.type,buildData(doc));});
   const w=window.open('');w.document.write('<html lang="zh-CN"><head><meta charset="UTF-8"><title>整套单据</title></head><body>'+all+'</body></html>');w.document.close();setTimeout(()=>w.print(),400);}
 
@@ -3763,17 +3763,19 @@ function applyA4PageSetup(ws,type){
        从sheet前3行扫描「合同编号：/合約編號：」提取编号(销售合同A2/采购合同模板A1),有编号才注入 → 天然只对合同sheet生效,
        其他单证(无编号单元格)不受影响。exceljs 4.4.0: headerFooter字段必须是字符串,用&R=右对齐。 */
     try{
-      var _cno='';
+      var _cno='',_lab='';
       for(var rr=1;rr<=3&&!_cno;rr++){
         for(var cc=1;cc<=2;cc++){
           var _v=ws.getCell(rr,cc).value;
           var _t=(_v&&typeof _v==='object'&&_v.text!==undefined)?_v.text:(typeof _v==='string'?_v:'');
-          var _m=String(_t).match(/(?:合同编号|合約編號)\s*[：:]\s*([A-Za-z0-9_\-]+)/);
-          if(_m){_cno=_m[1];break;}
+          var _m=String(_t).match(/(合同编号|合約編號)\s*[：:]\s*([A-Za-z0-9_\-]+)/);
+          if(_m){_lab=_m[1];_cno=_m[2];break;}
         }
       }
       if(_cno){
-        ws.headerFooter={differentFirst:true, oddHeader:'&R合同编号：'+_cno, firstHeader:''};
+        /* v3.10.1(2026-11-23 用户纠正)：续页页眉的字段名必须与首页一致——
+           首页写「合約編號」续页也用「合約編號」，首页写「合同编号」就用「合同编号」，编号值本身取自首页单元格 */
+        ws.headerFooter={differentFirst:true, oddHeader:'&R'+(_lab||'合同编号')+'：'+_cno, firstHeader:''};
       }
     }catch(e){}
   }catch(e){ console.warn('A4 setup fail',e); }
@@ -4003,19 +4005,26 @@ function downloadDocWord(docI,idx){
     docFromHtml(html,exportNo(d)+'_'+name);
   }catch(e){ alert('Word 导出出错：'+e.message); console.error(e); }
 }
+/* v3.10.1（2026-11-23 用户反馈"生成整套没看到"）：物流申报要素模板独立文件下载，
+   统一挂进所有整套导出路径：下载当前整套(单据)/下载当前整套EXCEL(工作簿)/批量EXCEL/合并EXCEL。
+   延迟触发避免与主文件下载撞车；失败不影响整套导出。命名 = {合同号}_物流申报要素模板.xlsx */
+function dlLogiDeclFile(doc,delay){
+  setTimeout(function(){ try{
+    const _d=buildData(doc);
+    if(_d&&_d.rawLines&&_d.rawLines.length){
+      const wbL=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wbL,xlsLogiDecl(_d),sheetName('物流申报要素模板'));
+      dcLog('dl',doc.dftId,'物流申报要素模板','Excel',safeRender('报关草单',_d));
+      xlsDownload(exportNo(_d)+'_物流申报要素模板',wbL);
+    }
+  }catch(e){ console.warn('物流申报要素模板生成失败',e); } },delay||600);
+}
 function downloadAllXlsx(){
   ensureXLSX(function(){
     try{
       const doc=DB.docs[DB.sel.doc]; if(!doc){alert('暂无可导出的单据');return;}
       dcLog('dl',doc.dftId,'整套单据','Excel多Sheet',safeRender('报关草单',buildData(doc)));
-      /* 物流申报要素模板（v3.10）：整套导出时按 M0 逐款一行额外生成独立文件，
-         命名与现行规则一致 = {合同号}_物流申报要素模板.xlsx；失败不影响整套导出 */
-      (function(){ try{ const _d=buildData(doc);
-        if(_d&&_d.rawLines&&_d.rawLines.length){
-          const wbL=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wbL,xlsLogiDecl(_d),sheetName('物流申报要素模板'));
-          setTimeout(function(){ try{ dcLog('dl',doc.dftId,'物流申报要素模板','Excel',safeRender('报关草单',_d)); xlsDownload(exportNo(_d)+'_物流申报要素模板',wbL); }catch(e2){ console.warn('物流申报要素模板下载失败',e2); } },600);
-        }
-      }catch(e){ console.warn('物流申报要素模板生成失败',e); }})();
+      /* 物流申报要素模板（v3.10.1）：整套导出时按 M0 逐款一行额外生成独立文件 */
+      dlLogiDeclFile(doc,600);
       const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
       /* 含采购页 → exceljs 合成单工作簿(采购页并入)；否则 SheetJS 多sheet */
       if(hasPur && window.__PURCHASE_TPL_B64__){
@@ -4107,6 +4116,7 @@ function batchDownloadXlsx(){
           try{
             const doc=DB.docs[docI]; if(!doc) return;
             dcLog('dl',doc.dftId,'整套单据(批量)','Excel',safeRender('报关草单',buildData(doc)));
+            dlLogiDeclFile(doc,400); /* v3.10.1 批量EXCEL也带物流申报要素模板 */
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
             const fname=exportNo(buildData(doc));
             if(hasPur && window.__PURCHASE_TPL_B64__){
@@ -4140,6 +4150,7 @@ function batchDownloadMergedXlsx(){
           setTimeout(function(){
             const doc=DB.docs[docI]; if(!doc) return;
             dcLog('dl',doc.dftId,'整套单据(合并)','Excel',safeRender('报关草单',buildData(doc)));
+            dlLogiDeclFile(doc,400); /* v3.10.1 合并EXCEL(逐套下载分支)也带物流申报要素模板 */
             const hasPur=(doc.out||[]).some(function(o){return o.type==='国内采购合同';});
             const fname=exportNo(buildData(doc));
             if(hasPur){ ensureExcelJS(function(){ downloadSetExcel(doc,fname,'set'+(idx+1)+'_').catch(function(e){ alert('合并 EXCEL 导出出错：'+e.message); console.error(e); }); }); }
