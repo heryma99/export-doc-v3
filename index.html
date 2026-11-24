@@ -899,7 +899,21 @@ function _rhIsWide(cp){ return (cp>=0x1100&&cp<=0x115F)||(cp>=0x2E80&&cp<=0xA4CF
 function _rhUnits(s){ var u=0,i; for(i=0;i<s.length;i++) u+=_rhIsWide(s.charCodeAt(i))?2:1; return u; }
 function _rhLines(text,W,fs){
   var cap=Math.max(6,W*0.92), k=(fs/11)*1.02, lines=0;
-  String(text).replace(/[ \t\u3000]+$/gm,'').split('\n').forEach(function(seg){ lines+=Math.max(1,Math.ceil((_rhUnits(seg)*k)/cap)); });
+  String(text).replace(/[ \t\u3000]+$/gm,'').split('\n').forEach(function(seg){
+    /* v3.10.9 贪心断行模拟：Excel 在逗号/分号/顿号/空格处优先换行（token 间换行浪费行内剩余空间），
+       仅当单个 token 超过整行宽才中间断——原连续填充式 ceil(总宽/行宽) 低估 SKU 列表类内容的实际行数，致行高不足底部被裁 */
+    var parts=seg.split(/([,，;；、])/), toks=[];
+    for(var i=0;i<parts.length;i+=2){ var t=parts[i]+(parts[i+1]||''); if(t) toks.push(t); }
+    if(!toks.length){ lines+=1; return; }
+    var ln=1, cur=0;
+    for(var i=0;i<toks.length;i++){
+      var u=_rhUnits(toks[i])*k;
+      if(cur+u<=cap){ cur+=u; continue; }
+      if(u<=cap){ ln++; cur=u; }
+      else { var lt=Math.ceil(u/cap); if(cur>0){ ln++; cur=0; } ln+=lt; cur=u-(lt-1)*cap; }
+    }
+    lines+=Math.max(1,ln);
+  });
   return lines;
 }
 /* SheetJS 版: 就地提高 ws['!rows'][r].hpt */
@@ -918,7 +932,15 @@ function autoHeightsSheetJS(ws){
         var mm=null,i; for(i=0;i<merges.length;i++){ var M=merges[i]; if(r>=M.r1&&r<=M.r2&&c>=M.c1&&c<=M.c2){ mm=M; break; } }
         if(mm&&mm.r2>mm.r1&&r!==mm.r1) continue;   /* 纵向合并只按起始行计 */
         var sz=(cell.s&&cell.s.font&&cell.s.font.sz)||9;
-        need=Math.max(need,_rhLines(cell.v,wOf(r,c),sz)*(sz*1.35)+2.85);
+        /* v3.10.9 方案C兜底：窄列内容估行>6 时降字号到 8 重算（仅单格/窄合并列，条款宽合并行不缩） */
+        var eff=sz, ln=_rhLines(cell.v,wOf(r,c),sz);
+        if(ln>6&&(!mm||(mm.c2-mm.c1)<=2)&&sz>8){
+          var l8=_rhLines(cell.v,wOf(r,c),8);
+          if(l8*(8*1.35)+2.85<ln*(sz*1.35)+2.85){
+            cell.s=cell.s||{}; cell.s.font=Object.assign({},cell.s.font||{},{sz:8}); eff=8; ln=l8;
+          }
+        }
+        need=Math.max(need,ln*(eff*1.35)+2.85);
       }
       if(need<=0) continue;
       need=Math.round(need*10)/10;
@@ -948,7 +970,15 @@ function autoHeightsExcelJS(ws,widthsIn){
         var mm=null,i; for(i=0;i<merges.length;i++){ var M=merges[i]; if(r>=M.r1&&r<=M.r2&&c>=M.c1&&c<=M.c2){ mm=M; break; } }
         if(mm&&mm.r2>mm.r1&&r!==mm.r1) continue;
         var sz=(cell.font&&cell.font.size)||12;
-        need=Math.max(need,_rhLines(v,wOf(r,c),sz)*(sz*1.35)+2.85);
+        /* v3.10.9 方案C兜底：窄列内容估行>6 时降字号到 8 重算（仅单格/窄合并列，条款宽合并行不缩） */
+        var eff=sz, ln=_rhLines(v,wOf(r,c),sz);
+        if(ln>6&&(!mm||(mm.c2-mm.c1)<=2)&&sz>8){
+          var l8=_rhLines(v,wOf(r,c),8);
+          if(l8*(8*1.35)+2.85<ln*(sz*1.35)+2.85){
+            cell.font=Object.assign({},cell.font||{},{size:8}); eff=8; ln=l8;
+          }
+        }
+        need=Math.max(need,ln*(eff*1.35)+2.85);
       }
       if(need<=0) continue;
       need=Math.round(need*10)/10;
