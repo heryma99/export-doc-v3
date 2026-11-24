@@ -2829,30 +2829,6 @@ function renderOut(){
   const docI=DB.sel.doc, doc=DB.docs[docI], dt=buildData(doc);
   const supNamesNow=(doc.suppliers&&doc.suppliers.length)?doc.suppliers.join('、'):'未匹配';
   h+=`<div class="ctx-bar"><span class="ctx-label">正在浏览：</span><span class="ctx-val">草单 ${doc.dftId}</span><span class="ctx-extra">· ${doc.out.reduce((a,b)=>a+b.n,0)} 份单据 · 供应商：${supNamesNow}</span></div>`;
-  /* v3.10.7 物流申报要素模板：与其他单据同款完整卡片（含预览表格，列表首位） */
-  (function(){
-    let pv='<p style="color:var(--mut);font-size:11px;margin:4px 0">⚠ 暂无可用的商品明细</p>';
-    try{
-      const _src=(dt.rawLines&&dt.rawLines.length)?dt.rawLines:(dt.lines||[]);
-      const _all=mergeLines(_src.map(function(x){return Object.assign({},x);}),'M0',false);
-      if(_all.length){
-        const _hd=['序号','品名','海关HS编码','品牌','型号','品牌类型','出口享惠','其他申报要素'];
-        pv='<table style="border-collapse:collapse;width:100%;font-size:11px;color:#111">'+
-          '<tr>'+_hd.map(t=>'<th style="border:1px solid #bbb;padding:3px 5px;background:#f2f2f2;font-weight:bold">'+t+'</th>').join('')+'</tr>'+
-          _all.slice(0,8).map(function(l,i){ const ent=hsEntryOf(l.hs).entry;
-            let other='⚠ 要素序列待填('+(l.hs||'?')+')';
-            if(ent){ const mp=specMap(l); const ps=ent.seq.map(function(k){return mp[k];});
-              while(ps.length&&(ps[ps.length-1]==null||String(ps[ps.length-1]).trim()===''))ps.pop(); other=ps.join('|'); }
-            return '<tr>'+[i+1,l.name||'',l.hs||'',l.brand||'',l.model||l.sku||'',resolveBrandType(l),l.enjoys||'0',other].map(v=>'<td style="border:1px solid #bbb;padding:3px 5px">'+v+'</td>').join('')+'</tr>'; }).join('')+
-          '</table><p style="color:var(--mut);font-size:11px;margin:4px 0">共 '+_all.length+' 款 · 导出后按 M0 逐款一行（不足自动补空白行至 30 行）</p>';
-      }
-    }catch(e){}
-    h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
-      <h4 style="margin:0 8px 0 0">物流申报要素模板</h4>
-      <button class="small" onclick="dlLogiDeclSingle(${docI})">下载EXCEL</button>
-      <span style="color:var(--mut);font-size:11px">文件名 {合同号}_物流申报要素模板.xlsx</span></div>
-      <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px;background:#fff;font-size:11px">${pv}</div></div>`;
-  })();
   doc.out.forEach((o,idx)=>{
     const tplHtml=tplOf(o.type)||builtin(o.type,dt);
     const isBroken=html=>/\{\{[\/#]|\{\{each/.test(html);
@@ -2889,6 +2865,31 @@ function renderOut(){
       ${stillBroken?'<p style="color:red;font-size:12px;margin:2px 0">⚠ 模板渲染异常（残留未处理的模板标签）。请到「设置→模板管理」重置该模板，或检查数据完整性。</p>':''}
       <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px;background:#fff;color:#111;font-size:11px">${preview}</div></div>`;
   });
+
+  /* v3.10.8 物流申报要素模板：完整卡片置于所有单据卡片之后（用户指定最后一张） */
+  (function(){
+    let pv='<p style="color:var(--mut);font-size:11px;margin:4px 0">⚠ 暂无可用的商品明细</p>';
+    try{
+      const _src=(dt.rawLines&&dt.rawLines.length)?dt.rawLines:(dt.lines||[]);
+      const _all=mergeLines(_src.map(function(x){return Object.assign({},x);}),'M0',false);
+      if(_all.length){
+        const _hd=['序号','品名','海关HS编码','品牌','型号','品牌类型','出口享惠','其他申报要素'];
+        pv='<table style="border-collapse:collapse;width:100%;font-size:11px;color:#111">'+
+          '<tr>'+_hd.map(t=>'<th style="border:1px solid #bbb;padding:3px 5px;background:#f2f2f2;font-weight:bold">'+t+'</th>').join('')+'</tr>'+
+          _all.slice(0,8).map(function(l,i){ const ent=hsEntryOf(l.hs).entry;
+            let other='⚠ 要素序列待填('+(l.hs||'?')+')';
+            if(ent){ const mp=specMap(l); const ps=ent.seq.map(function(k){return mp[k];});
+              while(ps.length&&(ps[ps.length-1]==null||String(ps[ps.length-1]).trim()===''))ps.pop(); other=ps.join('|'); }
+            return '<tr>'+[i+1,l.name||'',l.hs||'',l.brand||'',l.model||l.sku||'',resolveBrandType(l),l.enjoys||'0',other].map(v=>'<td style="border:1px solid #bbb;padding:3px 5px">'+v+'</td>').join('')+'</tr>'; }).join('')+
+          '</table><p style="color:var(--mut);font-size:11px;margin:4px 0">共 '+_all.length+' 款 · 导出后按 M0 逐款一行（不足自动补空白行至 30 行）</p>';
+      }
+    }catch(e){}
+    h+=`<div class="docout"><div class="toolbar" style="margin:0 0 6px">
+      <h4 style="margin:0 8px 0 0">物流申报要素模板</h4>
+      <button class="small" onclick="dlLogiDeclSingle(${docI})">下载EXCEL</button>
+      <span style="color:var(--mut);font-size:11px">文件名 {合同号}_物流申报要素模板.xlsx</span></div>
+      <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px;background:#fff;font-size:11px">${pv}</div></div>`;
+  })();
 
   /* ── 4. 当前整套快捷操作（单套，非批量）── */
   h+=`<p class="seq">日期时序：合同簽訂(手填) → 送货/入库(手填,可空) → 发票/装箱单(取发票号日期,补全年) → 报关申报(手填申报日期)；出口日期留空待海关回执。</p>`;
