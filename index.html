@@ -3817,7 +3817,10 @@ function applyA4PageSetup(ws,type){
     try{
       if(ws.rowCount>0&&ws.columnCount>0){
         var _cl=function(n){var s='';while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;};
-        ps.printArea='A1:'+_cl(ws.columnCount)+ws.rowCount;
+        /* v3.10.10 打印区域行列必须双绝对($A$1:$H$12)：exceljs 只给列补$, 行不补 →
+           'A1:H12' 落盘成 $A1:$H12(行相对引用), Excel/WPS 按当前选中单元格解释相对行 →
+           光标不在 A1 时打印区域整体平移, 打印预览显示不全(Invoice/PackingList 用户实测)。行也写死 $ */
+        ps.printArea='A$1:'+_cl(ws.columnCount)+'$'+ws.rowCount;
       }
     }catch(e){}
     ws.pageSetup=ps;
