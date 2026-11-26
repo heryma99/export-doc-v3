@@ -3806,7 +3806,7 @@ function xlsSheetFor(type,d){ if(type==='报关草单') return xlsCur(d); if(typ
    方向(用户拍板 09-07 二次调整)：仅报关草单=横向；Invoice发票/Packing List装箱单/客户发票/销售合同/国内采购合同=纵向 */
 function applyA4PageSetup(ws,type){
   try{
-    var LANDSCAPE=['报关草单'];
+    var LANDSCAPE=['报关草单','物流申报要素模板'];
     var landscape=LANDSCAPE.indexOf(type)>=0;
     var ps={ paperSize:9, orientation:landscape?'landscape':'portrait',
       fitToPage:true, fitToWidth:1, fitToHeight:0,
@@ -3988,6 +3988,21 @@ function xlsDownload(name,wb){
     _dl(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),name+'.xlsx');
   }catch(e){ alert('EXCEL 生成失败：'+e.message); console.error(e); }
 }
+/* v3.10.11 SheetJS直出单据统一接入 exceljs A4 注入（用户确认方案A：屏幕/打印/内容全部显示全且符合A4）：
+   fitToWidth=1 自动按页宽缩放——任何列宽都完整塞进 A4；注入失败自动回退原 SheetJS 下载 */
+function a4InjectDownload(wb,filename,typeOf){
+  try{
+    const sjBuf=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
+    ensureExcelJS(function(){ (async function(){
+      try{
+        const ej=new ExcelJS.Workbook(); await ej.xlsx.load(sjBuf);
+        ej.worksheets.forEach(function(w){ applyA4PageSetup(w,(typeof typeOf==='function')?typeOf(w.name):typeOf); });
+        const b=await ej.xlsx.writeBuffer();
+        _dl(new Blob([b],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),filename+'.xlsx');
+      }catch(e2){ console.warn('A4 注入失败回退 SheetJS',e2); xlsDownload(filename,wb); }
+    })(); });
+  }catch(e){ console.warn('A4 序列化失败回退 SheetJS',e); xlsDownload(filename,wb); }
+}
 function downloadDocXlsx(docI,idx){
   ensureXLSX(function(){
     try{
@@ -3998,13 +4013,13 @@ function downloadDocXlsx(docI,idx){
       dcLog('dl',doc.dftId,o.type,'Excel',safeRender(o.type,d));
       if(o.type==='国内采购合同'){
         if(window.__PURCHASE_TPL_B64__){ ensureExcelJS(function(){ purchaseTplDownload(d,_fx).catch(function(e){ alert('EXCEL 模板导出出错：'+e.message); console.error(e); }); }); }
-        else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); xlsDownload(_fx,wb0); }
+        else { const wb0=XLSX.utils.book_new(); d.contracts.forEach((c,ix)=>XLSX.utils.book_append_sheet(wb0,xlsContract(c,d,ix),sheetName('采购合同_'+c.supplier))); a4InjectDownload(wb0,_fx,'国内采购合同'); }
         return;
       }
       /* 送货单/入库单/供应商报价单（v2.25）：每家一级供应商一份 sheet */
       if(o.type==='送货单'||o.type==='入库单'||o.type==='供应商报价单'||o.type==='询价单'){
         const wbv=XLSX.utils.book_new(); d.contracts.forEach((c,ci)=>{ const wsV=(o.type==='供应商报价单')?xlsQuoteSupplier(c,d):((o.type==='询价单')?xlsInquiry(c,d):xlsVoucher(o.type,c,d)); XLSX.utils.book_append_sheet(wbv,wsV,(o.type==='询价单')?sheetName(docLabel(o.type)+((d.contracts.length>1)?'_'+(ci+1):'')):sheetName(o.type+'_'+c.supplier)); }); /* v3.3 询价单sheet名不带公司名; v3.5 繁体 */
-        xlsDownload(_fx,wbv); return;
+        a4InjectDownload(wbv,_fx,o.type); return;
       }
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,xlsSheetFor(o.type,d),sheetName(docLabel(o.type)));
@@ -4089,7 +4104,7 @@ function dlLogiDeclFile(doc,delay){
     if(_d&&((_d.rawLines&&_d.rawLines.length)||(_d.lines&&_d.lines.length))){
       const wbL=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wbL,xlsLogiDecl(_d),sheetName('物流申报要素模板'));
       dcLog('dl',doc.dftId,'物流申报要素模板','Excel',safeRender('报关草单',_d));
-      xlsDownload(exportNo(_d)+'_物流申报要素模板',wbL);
+      a4InjectDownload(wbL,exportNo(_d)+'_物流申报要素模板','物流申报要素模板');
     }
   }catch(e){ console.warn('物流申报要素模板生成失败',e); } },delay||600);
 }
